@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the paper below."
+title: "audit-tenant"
+authors:
+  - family-names: Bhasin
+    given-names: Satvik
+repository-code: "https://github.com/BodhiSatvik/audit-tenant"
+license: "Apache-2.0"
+preferred-citation:
+  type: conference-paper
+  title: "{{PAPER_TITLE}}"
+  authors:
+    - family-names: Bhasin
+      given-names: Satvik
+  doi: "{{PAPER_DOI}}"
+  year: 2026

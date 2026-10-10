@@ -1,0 +1,23 @@
+# secrets
+.env
+.env.*
+*.pem
+# python
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+# go
+/bin/
+# os / editors
+.DS_Store
+.idea/
+.vscode/
+# benchmark raw data (commit summaries only)
+bench/raw/
+# agent tools (gstack local state, personal Claude Code settings)
+.gstack/
+.gstack-worktrees/
+.claude/settings.local.json

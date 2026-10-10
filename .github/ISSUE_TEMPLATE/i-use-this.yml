@@ -1,0 +1,30 @@
+name: I use this
+description: Tell us how you use this project. It helps the project and other users.
+title: "[I use this] "
+labels: ["adopter"]
+body:
+  - type: input
+    id: who
+    attributes:
+      label: Organization or project (optional)
+  - type: textarea
+    id: what
+    attributes:
+      label: What do you use it for?
+    validations:
+      required: true
+  - type: input
+    id: since
+    attributes:
+      label: Since when?
+  - type: textarea
+    id: change
+    attributes:
+      label: What changed for you? Numbers welcome (latency, cost, error rate).
+  - type: checkboxes
+    id: listing
+    attributes:
+      label: Listing
+      options:
+        - label: You may list us in ADOPTION.md
+        - label: You may contact me about a short case study
