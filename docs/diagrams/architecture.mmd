@@ -7,7 +7,7 @@ graph LR
   CFG --> SAFE
   SAFE --> API["Kubernetes API server<br/>(the cluster)"]
   API --> RBAC["RBAC<br/>permission list"]
-  API --> ADM["Admission<br/>PSA or policy webhook"]
+  API --> ADM["Admission<br/>PSA, webhook or policy"]
   API --> STORE["Stored objects<br/>quota, limits, netpol,<br/>labels, workloads"]
   RUN --> REP["Report<br/>PASS / FAIL / SKIP / ERROR<br/>reason + hint per result"]
   REP --> OUT["Printers<br/>checklist (default), wide, plain,<br/>json, policyreport"]
