@@ -1,0 +1,116 @@
+// Package cluster builds the per-run connection: the clientset behind the safety transport, the
+// startup sequence of DESIGN.md section 6, the identity for the header, and the one-list-per-kind cache.
+package cluster
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	authzv1 "k8s.io/api/authorization/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/safety"
+)
+
+// Attributes is one "may I <verb> <resource>?" question for a SelfSubjectAccessReview.
+type Attributes = authzv1.ResourceAttributes
+
+// Options is what the CLI knows before the first request.
+type Options struct {
+	Namespace string
+	Context   string        // kubeconfig context name, for messages and the header
+	User      string        // kubeconfig user name, shown when the identity cannot be verified
+	As        string        // --as; empty in self mode
+	AsGroups  []string      // --as-group
+	Timeout   time.Duration // the run deadline, for the timeout message
+}
+
+// Client is one run's connection. Every request goes through the safety transport.
+type Client struct {
+	Clientset kubernetes.Interface
+	Recorder  *safety.Recorder
+	Namespace string
+	Server    string
+	Version   string
+	Identity  report.Identity
+	// NamespaceObject is the target namespace read once at startup; NamespaceErr is the error
+	// that read returned (a 403 is kept for AT-09).
+	NamespaceObject *corev1.Namespace
+	NamespaceErr    error
+
+	firstSSAR   *authzv1.SelfSubjectAccessReview // startup answer, reused once by AT-01
+	quotas      func() ([]corev1.ResourceQuota, error)
+	limitRanges func() ([]corev1.LimitRange, error)
+}
+
+// Connect builds the client and runs the startup sequence. It returns when startup is done or
+// when ctx ends, so a hung credential plugin or a silent server cannot stall the run.
+func Connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, error) {
+	type outcome struct {
+		c   *Client
+		err error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		c, err := connect(ctx, cfg, opts)
+		done <- outcome{c, err}
+	}()
+	select {
+	case o := <-done:
+		return o.c, o.err
+	case <-ctx.Done():
+		return nil, opts.ended(ctx)
+	}
+}
+
+func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, error) {
+	cfg = rest.CopyConfig(cfg)
+	cfg.QPS, cfg.Burst = 50, 300 // kubectl's values; client-go's defaults would throttle the run
+	rec := &safety.Recorder{}
+	cfg.Wrap(safety.Wrap(opts.Namespace, rec))
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	c := &Client{Clientset: cs, Recorder: rec, Namespace: opts.Namespace, Server: cfg.Host}
+	c.quotas = sync.OnceValues(func() ([]corev1.ResourceQuota, error) {
+		l, err := cs.CoreV1().ResourceQuotas(opts.Namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	})
+	c.limitRanges = sync.OnceValues(func() ([]corev1.LimitRange, error) {
+		l, err := cs.CoreV1().LimitRanges(opts.Namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, err
+		}
+		return l.Items, nil
+	})
+	if err := c.startup(ctx, opts); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// Quotas lists the namespace's ResourceQuotas once per run.
+func (c *Client) Quotas() ([]corev1.ResourceQuota, error) { return c.quotas() }
+
+// LimitRanges lists the namespace's LimitRanges once per run.
+func (c *Client) LimitRanges() ([]corev1.LimitRange, error) { return c.limitRanges() }
+
+// SelfSubjectAccessReview asks the cluster "may I?". The answer startup already fetched for
+// AT-01's first question is handed out once instead of being asked again.
+func (c *Client) SelfSubjectAccessReview(ctx context.Context, attrs Attributes) (*authzv1.SelfSubjectAccessReview, error) {
+	if first := c.firstSSAR; first != nil && attrs == FirstQuestion {
+		c.firstSSAR = nil
+		return first, nil
+	}
+	ssar := &authzv1.SelfSubjectAccessReview{Spec: authzv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &attrs}}
+	return c.Clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, ssar, metav1.CreateOptions{})
+}

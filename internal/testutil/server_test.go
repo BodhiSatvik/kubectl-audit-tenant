@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -24,5 +25,15 @@ func TestServerLogsEveryRequestAndServesCannedRoutes(t *testing.T) {
 	want := []string{"GET /version", "GET /api/v1/namespaces/tenant-a"}
 	if got := srv.Hits(); !slices.Equal(got, want) {
 		t.Errorf("Hits() = %v, want %v", got, want)
+	}
+}
+
+func TestStatusAnswersAForbiddenTheClientRecognizes(t *testing.T) {
+	srv := NewServer(t, map[string]http.HandlerFunc{
+		"GET /api/v1/namespaces/tenant-a": Status(http.StatusForbidden, metav1.StatusReasonForbidden, `namespaces "tenant-a" is forbidden`),
+	})
+	_, err := srv.Client(t, "tenant-a", nil).CoreV1().Namespaces().Get(t.Context(), "tenant-a", metav1.GetOptions{})
+	if !apierrors.IsForbidden(err) {
+		t.Errorf("error = %v, want a Forbidden status error", err)
 	}
 }

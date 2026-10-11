@@ -4,6 +4,7 @@
 package testutil
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -68,4 +70,14 @@ func JSON(status int, body string) http.HandlerFunc {
 		w.WriteHeader(status)
 		_, _ = io.WriteString(w, body)
 	}
+}
+
+// Status answers like the API server does when it refuses a request: a Status object with the
+// reason client-go's apierrors helpers read.
+func Status(code int32, reason metav1.StatusReason, message string) http.HandlerFunc {
+	body, _ := json.Marshal(metav1.Status{
+		TypeMeta: metav1.TypeMeta{Kind: "Status", APIVersion: "v1"},
+		Status:   metav1.StatusFailure, Message: message, Reason: reason, Code: code,
+	})
+	return JSON(int(code), string(body))
 }

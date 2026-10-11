@@ -18,7 +18,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B1 Module, tooling and CI
 - [x] B2 Report types and check registry
 - [x] B3 Safety transport
-- [ ] B4 Cluster client, startup and cache
+- [x] B4 Cluster client, startup and cache
 - [ ] B5 Runner
 - [ ] B6 SSAR helper and AT-01
 - [ ] B7 CLI command surface
