@@ -31,7 +31,7 @@ First adopters: three platform engineers at other companies (interviewed before 
 
 **In.** Ten checks (section 5). Two identity modes: self (current kubeconfig identity) and impersonation (`--as`, `--as-group`). Four verdicts: PASS, FAIL, SKIP, ERROR (ADR 0004). Outputs: checklist (default), `-o wide`, `--plain`, `-o json`, `-o policyreport`. Exit codes for CI. Subcommands `list-checks` and `version`. Binaries for darwin and linux (amd64, arm64) and windows/amd64. krew manifest. Unit, envtest and kind end-to-end tests.
 
-**Out (goes to `TODOS.md` as "later").** Network behavior tests (need running pods). Writing the PolicyReport into the cluster. Capsule `Tenant` discovery. SARIF. Gatekeeper constraint mapping. Helm chart or operator. Many namespaces or clusters in one run. `--baseline` file (v0.2). DaemonSets, Jobs, CronJobs and bare Pods in the headroom math (ADR 0006). Cloud lookups for service principals (ADR 0009). Checking whether the network plugin enforces NetworkPolicy.
+**Out (goes to `TODOS.md` as "later").** Network behavior tests (need running pods). Writing the PolicyReport into the cluster. Capsule `Tenant` discovery. SARIF. Gatekeeper constraint mapping. Helm chart or operator. Many namespaces or clusters in one run. `--baseline` file (v0.2). Argo Rollouts in the headroom math (v0.2; deferred in the CEO review of 2026-10-10, ADR 0006). DaemonSets, Jobs, CronJobs and bare Pods in the headroom math (ADR 0006). Cloud lookups for service principals (ADR 0009). Checking whether the network plugin enforces NetworkPolicy.
 
 **Fallback.** If v0.1.0 is not tagged by 2026-10-31, tag with whatever passes, minimum AT-01, 02, 04, 06, 09, 10. The README's check table and `list-checks` show only shipped checks, and the acceptance criteria in section 12 apply to the shipped set. Checks never ship half-done: a check is in or out.
 
@@ -63,7 +63,7 @@ Rules that shape the code:
 - **Run as the tenant (ADR 0002).** Behavioral checks ask the cluster. The tool never reads Roles or policies to guess.
 - **Fixed order, sequential.** Checks run one after another in ID order. About 35 requests per run. No concurrency in v0.1; a full run on kind must finish in under 10 seconds (section 7).
 - **One `--timeout` (default 30s)** bounds the whole run through a context deadline.
-- **No dependency on Argo.** Rollouts are read through the dynamic client as unstructured objects (`argoproj.io/v1alpha1`, `rollouts`) only when discovery shows the CRD. No Argo Go module.
+- **No Argo Rollouts in v0.1.** AT-10 counts only built-in workload kinds, so the tool needs no dynamic client and no discovery call. Rollouts return in v0.2 (`TODOS.md`), read as unstructured objects without an Argo Go module.
 - **Go style.** Code follows the JetBrains modern Go guidelines (agent skill `/modern-go-guidelines:use-modern-go`, loaded before any Go is written) and `golangci-lint` enforces what it can.
 - **Stdlib first.** `text/tabwriter` for columns, `golang.org/x/term` (already a client-go dependency) to detect a terminal, hand-written ANSI for the four colors. No table or color library.
 
@@ -105,7 +105,7 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 | AT-07 | LimitRange with defaults | config | - | low | LIST limitranges | an item of type `Container` with `default` and `defaultRequest` for both cpu and memory |
 | AT-08 | Default-deny NetworkPolicy | config | - | medium | LIST networkpolicies | a policy with empty `podSelector`, `Ingress` in `policyTypes`, no `ingress` rules; AND a policy (same or other) with empty `podSelector`, `Egress` in `policyTypes`, no `egress` rules. Other policies do not affect the verdict. Reason notes the tool cannot see whether the network plugin enforces policies |
 | AT-09 | Pod Security Admission enforced | config | - | high | GET namespace labels | `pod-security.kubernetes.io/enforce` is `baseline` or `restricted` (ADR 0007). Forbidden to read: SKIP with hint |
-| AT-10 | Quota covers rollout peak | computed | - | low | LIST deployments, statefulsets, horizontalpodautoscalers, resourcequotas, limitranges; LIST rollouts if the CRD exists | the summed rollout peak fits in every unscoped quota's `hard` for `requests.cpu`, `requests.memory`, `limits.cpu`, `limits.memory`, `pods` (ADR 0006) |
+| AT-10 | Quota covers rollout peak | computed | - | low | LIST deployments, statefulsets, horizontalpodautoscalers, resourcequotas, limitranges | the summed rollout peak fits in every unscoped quota's `hard` for `requests.cpu`, `requests.memory`, `limits.cpu`, `limits.memory`, `pods` (ADR 0006) |
 
 `--checks AT-04` selects all five sub-checks. `list-checks` prints ID, kind, MTB, severity, name, and the method in one line each.
 
@@ -121,12 +121,12 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 
 ### Headroom math (AT-10), ADR 0006
 
-- Counted: Deployments, StatefulSets, Argo Rollouts (if the CRD exists). Not counted: DaemonSets, Jobs, CronJobs, bare Pods. The reason shows each quota's `used` values so the reader sees what else consumes it.
+- Counted: Deployments, StatefulSets. Not counted in v0.1: Argo Rollouts (v0.2), DaemonSets, Jobs, CronJobs, bare Pods. The reason names the counted and not-counted kinds and shows each quota's `used` values so the reader sees what else consumes it.
 - Replicas: `spec.replicas` (default 1). If a `HorizontalPodAutoscaler` (autoscaling/v2) targets the workload, use its `maxReplicas` instead.
-- Peak pods: Deployment RollingUpdate = replicas + maxSurge (absolute, or percent of replicas rounded up; default 25%); Deployment Recreate = replicas; StatefulSet = replicas; Rollout blueGreen = replicas + (`previewReplicaCount` if set, else replicas); Rollout canary = replicas + maxSurge (default 25%).
+- Peak pods: Deployment RollingUpdate = replicas + maxSurge (absolute, or percent of replicas rounded up; default 25%); Deployment Recreate = replicas; StatefulSet = replicas.
 - Pod request and limit: Kubernetes rule, max(sum of regular containers, largest init container); init containers with `restartPolicy: Always` (sidecars) count as regular containers; ordered init containers contribute only their largest single request. Pod overhead from a RuntimeClass is not counted in v0.1 and the reason says so when any workload names a RuntimeClass. A container with no request or limit takes the LimitRange `defaultRequest` or `default` for type Container if one exists, else 0, and the reason says "N containers had no request; counted as 0".
 - Compare: for every unscoped ResourceQuota and each of the five keys it defines, peak sum ≤ hard. FAIL reason: `peak needs 6 cpu, hard is 4 cpu, short by 2 (deployments: api 3→4, worker 2→3)`. Assumes all workloads roll out at once; the reason says so.
-- Edge cases, checked in this order: no unscoped ResourceQuota → FAIL, reason "no ResourceQuota to compare against" (scoped quotas named if any), hint points at AT-06; then, no counted workloads → PASS, reason "no Deployments, StatefulSets or Rollouts; nothing to compare"; several LimitRanges → the first by name that has Container defaults is used and named in the reason; a quota that defines only some of the five keys → only those keys are compared; cannot LIST deployments, statefulsets or resourcequotas → SKIP with the missing permission in the hint; cannot LIST horizontalpodautoscalers or rollouts → continue without them and say so in the reason.
+- Edge cases, checked in this order: no unscoped ResourceQuota → FAIL, reason "no ResourceQuota to compare against" (scoped quotas named if any), hint points at AT-06; then, no counted workloads → PASS, reason "no Deployments or StatefulSets; nothing to compare"; several LimitRanges → the first by name that has Container defaults is used and named in the reason; a quota that defines only some of the five keys → only those keys are compared; cannot LIST deployments, statefulsets or resourcequotas → SKIP with the missing permission in the hint; cannot LIST horizontalpodautoscalers → continue without them and say so in the reason.
 
 ## 6. Interfaces
 
@@ -216,7 +216,7 @@ Numbers in `BENCHMARK.md` come only from runs of this code.
 
 | Layer | What | Tool |
 |---|---|---|
-| Unit | Every check against scripted cluster answers: allowed and denied SSARs; PSA, webhook, RBAC, quota and dry-run-refused rejections with real error strings; AT-06 to AT-09 object shapes (two-policy default deny, scoped quotas, missing keys); headroom math table tests (percent surge, HPA, blue/green, init containers, LimitRange defaults); every printer against golden files; safety transport allowlist | `client-go/kubernetes/fake`, fake dynamic client, golden files |
+| Unit | Every check against scripted cluster answers: allowed and denied SSARs; PSA, webhook, RBAC, quota and dry-run-refused rejections with real error strings; AT-06 to AT-09 object shapes (two-policy default deny, scoped quotas, missing keys); headroom math table tests (percent surge, HPA, init containers, LimitRange defaults); every printer against golden files; safety transport allowlist | `client-go/kubernetes/fake`, fake dynamic client, golden files |
 | Integration | AT-01 to AT-03 against a real API server with real RBAC: a Role and RoleBinding fixture per expected verdict; SSAR under impersonation; `--as-group` without `--as` rejected | `envtest` (`setup-envtest use 1.37.x` in CI) |
 | End-to-end | kind + Kyverno + fixtures (below); runs as cluster-admin with `--as`, as the service account's own token (self mode), and as cluster-admin without `--as`; asserts every verdict, the exit code, the admin hint, `-o json` against the schema, and `-o policyreport` with `kubectl apply --dry-run=server` after installing the PolicyReport CRD | GitHub Actions, kind, Helm |
 
