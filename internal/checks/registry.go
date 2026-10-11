@@ -10,9 +10,9 @@ import (
 
 // ResultSpec names one result a check produces. Most checks produce one; AT-04 produces five.
 type ResultSpec struct {
-	ID   string
-	Name string
-	MTB  string // "-" when none
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	MTB  string `json:"mtb"` // "-" when none
 }
 
 // RunFunc runs one check against the cluster and returns one Result per entry of spec.Results,
@@ -21,13 +21,13 @@ type RunFunc func(ctx context.Context, c *cluster.Client, spec Spec) []report.Re
 
 // Spec is the static description of a check, as list-checks prints it, plus its Run function.
 type Spec struct {
-	ID       string
-	Name     string
-	Kind     report.Kind
-	Severity report.Severity
-	Method   string
-	Results  []ResultSpec
-	Run      RunFunc
+	ID       string          `json:"id"`
+	Name     string          `json:"name"`
+	Kind     report.Kind     `json:"kind"`
+	Severity report.Severity `json:"severity"`
+	Method   string          `json:"method"`
+	Results  []ResultSpec    `json:"results"`
+	Run      RunFunc         `json:"-"`
 }
 
 // result builds one Result of this check.

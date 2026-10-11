@@ -2,6 +2,7 @@ package cluster_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -143,6 +144,16 @@ func TestConnectExitReasons(t *testing.T) {
 			"namespace tenant-a not found in context kind-dev; check -n or --context"},
 		{"first SSAR 403", "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "selfsubjectaccessreviews.authorization.k8s.io is forbidden"),
 			"this identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has"},
+		{"/version answers HTML (a login proxy)", "GET /version", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "<html>sign in</html>") },
+			"API server unreachable: /version returned no version"},
+		{"403 on /version", "GET /version", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "forbidden"),
+			"the API server refused /version for this identity"},
+		{"first SSAR 500", "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews", testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcd unavailable"),
+			"the first SelfSubjectAccessReview failed"},
+		{"401 late in startup", "GET /api/v1/namespaces/tenant-a", testutil.Status(http.StatusUnauthorized, metav1.StatusReasonUnauthorized, "Unauthorized"),
+			"unauthorized: the cluster rejected your credentials"},
+		{"cannot impersonate without a user name", "GET /version", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "cannot impersonate"),
+			"your identity may not impersonate team-a-dev"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

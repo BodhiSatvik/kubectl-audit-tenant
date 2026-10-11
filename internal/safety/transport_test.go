@@ -2,7 +2,9 @@ package safety_test
 
 import (
 	"errors"
+	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +14,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/safety"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
@@ -133,6 +137,24 @@ func TestSafety(t *testing.T) {
 			}},
 			{"cluster-scoped LIST", func() error { _, err := cs.CoreV1().Nodes().List(ctx, list); return err }},
 			{"pod GET by name", func() error { _, err := cs.CoreV1().Pods(ns).Get(ctx, "x", metav1.GetOptions{}); return err }},
+			{"pod exec POST with dryRun=All", func() error {
+				return cs.CoreV1().RESTClient().Post().Namespace(ns).Resource("pods").Name("x").SubResource("exec").Param("dryRun", "All").Do(ctx).Error()
+			}},
+			{"eviction POST with dryRun=All", func() error {
+				return cs.CoreV1().RESTClient().Post().Namespace(ns).Resource("pods").Name("x").SubResource("eviction").Param("dryRun", "All").Do(ctx).Error()
+			}},
+			{"create namespace with dryRun=All", func() error { _, err := cs.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{}, dryRun); return err }},
+			{"services POST with dryRun=None", func() error {
+				_, err := cs.CoreV1().Services(ns).Create(ctx, &corev1.Service{}, metav1.CreateOptions{DryRun: []string{"None"}})
+				return err
+			}},
+			{"watch on an allowed list path", func() error {
+				w, err := cs.CoreV1().ResourceQuotas(ns).Watch(ctx, list)
+				if err == nil {
+					w.Stop()
+				}
+				return err
+			}},
 		}
 		for _, c := range calls {
 			err := c.call()
@@ -144,6 +166,99 @@ func TestSafety(t *testing.T) {
 			t.Errorf("a denied request reached the server: %v", got[len(before):])
 		}
 	})
+}
+
+// TestSafetyRefusesARedirectToAnotherHost: client-go would re-attach the bearer token to the
+// redirected request, so the transport must stop it at the host check.
+func TestSafetyRefusesARedirectToAnotherHost(t *testing.T) {
+	other := testutil.NewServer(t, map[string]http.HandlerFunc{"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"evil"}`)})
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"GET /version": func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, other.URL+"/version", http.StatusFound)
+		},
+	})
+	cs := srv.Client(t, ns, nil)
+	_, err := cs.Discovery().ServerVersion()
+	if _, ok := errors.AsType[*safety.RefusedError](err); !ok {
+		t.Errorf("error = %v, want a RefusedError for the redirected host", err)
+	}
+	if hits := other.Hits(); len(hits) != 0 {
+		t.Errorf("the other host received %v", hits)
+	}
+}
+
+func TestSafetyMatchesPathsUnderTheServerPrefix(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"GET /k8s/clusters/c-demo/version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"GET /version":                     testutil.JSON(http.StatusOK, `{"gitVersion":"wrong"}`),
+	})
+	base, _ := url.Parse(srv.URL + "/k8s/clusters/c-demo")
+	cfg := &rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, nil)}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := cs.Discovery().ServerVersion()
+	if err != nil || v.GitVersion != "v1.37.0" {
+		t.Fatalf("ServerVersion() = %v, %v; want v1.37.0 through the prefix", v, err)
+	}
+	client := &http.Client{Transport: &safety.Transport{Namespace: ns, Base: base, Next: http.DefaultTransport}}
+	if _, err := client.Get(srv.URL + "/version"); err == nil {
+		t.Error("a path outside the prefix must be refused")
+	}
+	if got := srv.Hits(); len(got) != 1 || got[0] != "GET /k8s/clusters/c-demo/version" {
+		t.Errorf("server saw %v", got)
+	}
+}
+
+func TestSafetyGuardsAgainstCraftedRequests(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{"POST /api/v1/namespaces/tenant-a/pods": testutil.JSON(http.StatusCreated, `{}`)})
+	base, _ := url.Parse(srv.URL)
+	for _, tt := range []struct {
+		name      string
+		namespace string
+		mutate    func(*url.URL)
+	}{
+		{"opaque target", ns, func(u *url.URL) { u.Opaque = "/api/v1/namespaces/tenant-a/pods?x=1" }},
+		{"namespace with a slash", "tenant-a/secrets", func(*url.URL) {}},
+		{"namespace ..", "..", func(*url.URL) {}},
+		{"other scheme", ns, func(u *url.URL) { u.Scheme = "ftp" }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			tr := &safety.Transport{Namespace: tt.namespace, Base: base, Next: http.DefaultTransport}
+			u, _ := url.Parse(srv.URL + "/api/v1/namespaces/" + tt.namespace + "/pods?dryRun=All")
+			tt.mutate(u)
+			req, _ := http.NewRequest(http.MethodPost, u.String(), strings.NewReader("{}"))
+			req.URL = u
+			if _, err := tr.RoundTrip(req); err == nil {
+				t.Error("want a refusal")
+			}
+		})
+	}
+	if hits := srv.Hits(); len(hits) != 0 {
+		t.Errorf("server saw %v", hits)
+	}
+}
+
+func TestSafetyRecordsATruncatedPOSTAnswerAsAnError(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Length", "100")
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, "{")
+		},
+	})
+	base, _ := url.Parse(srv.URL)
+	rec := &safety.Recorder{}
+	client := &http.Client{Transport: &safety.Transport{Namespace: ns, Base: base, Next: http.DefaultTransport, Recorder: rec}}
+	resp, err := client.Post(srv.URL+"/apis/authorization.k8s.io/v1/selfsubjectaccessreviews", "application/json", strings.NewReader("{}"))
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("a truncated answer must surface as an error, not as a half body")
+	}
+	if reqs := rec.Requests(); len(reqs) != 1 || reqs[0].Status != http.StatusCreated || reqs[0].Body != "" {
+		t.Errorf("Requests() = %+v, want the failed POST recorded with status 201 and no body", reqs)
+	}
 }
 
 func TestSafetyRefusesEverythingWithoutATargetNamespace(t *testing.T) {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
+
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
 // BuildInfo is set by goreleaser through -ldflags.
@@ -39,11 +41,11 @@ func Main(args []string, info BuildInfo, streams genericiooptions.IOStreams) int
 	}
 	if ee, ok := errors.AsType[*exitError](err); ok {
 		if ee.msg != "" {
-			cmd.PrintErrln("error:", ee.msg)
+			cmd.PrintErrln("error:", report.Sanitize(ee.msg)) // startup errors carry server text
 		}
 		return ee.code
 	}
-	cmd.PrintErrf("error: %v\nrun 'kubectl audit-tenant --help' for the flags\n", err)
+	cmd.PrintErrf("error: %s\nrun 'kubectl audit-tenant --help' for the flags\n", report.Sanitize(err.Error()))
 	return 2
 }
 

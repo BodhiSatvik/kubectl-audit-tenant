@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,11 +59,29 @@ func TestRunnerRunsChecksInOrderAndKeepsEveryResult(t *testing.T) {
 	}
 }
 
-func TestRunnerSkipsChecksWithoutAnImplementation(t *testing.T) {
-	catalogOnly := Spec{ID: "AT-10", Results: []ResultSpec{{ID: "AT-10"}}}
-	got := Run(t.Context(), nil, []Spec{catalogOnly, fake("AT-01", 1, allPass)}, time.Minute)
-	if want := []string{"AT-01"}; !slices.Equal(ids(got), want) {
-		t.Errorf("result IDs = %v, want %v", ids(got), want)
+func TestRunnerAbandonsACheckThatIgnoresTheDeadline(t *testing.T) {
+	const timeout = 200 * time.Millisecond
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	defer cancel()
+	stuck := fake("AT-06", 1, func(context.Context, Spec) []report.Result {
+		time.Sleep(5 * time.Second) // a credential helper that never answers
+		return nil
+	})
+	start := time.Now()
+	got := Run(ctx, nil, []Spec{stuck, fake("AT-07", 1, allPass)}, timeout)
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("Run waited for the stuck check instead of the deadline")
+	}
+	if len(got) != 2 || got[0].Reason != "not run: timeout after 200ms" || got[1].Reason != "not run: timeout after 200ms" {
+		t.Errorf("results = %+v, want both marked not run at the deadline", got)
+	}
+}
+
+func TestRunnerTurnsAPanicIntoAnError(t *testing.T) {
+	boom := fake("AT-04", 2, func(context.Context, Spec) []report.Result { panic("nil map") })
+	got := Run(t.Context(), nil, []Spec{boom, fake("AT-05", 1, allPass)}, time.Minute)
+	if len(got) != 3 || got[0].Verdict != report.Error || !strings.Contains(got[0].Reason, "crashed: nil map") || got[0].Hint == "" || got[2].Verdict != report.Pass {
+		t.Errorf("results = %+v, want two crash ERRORs with a hint, then AT-05 PASS", got)
 	}
 }
 

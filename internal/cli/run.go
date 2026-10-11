@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 
@@ -51,8 +52,8 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if o.output != "checklist" {
 		return exit2("unknown output format %q (choose checklist)", o.output)
 	}
-	if len(*o.flags.ImpersonateGroup) > 0 && *o.flags.Impersonate == "" {
-		return exit2("--as-group needs --as: the API requires a user with the groups; use `--as audit-probe --as-group <group>` to test a group alone")
+	if *o.flags.Impersonate == "" && (len(*o.flags.ImpersonateGroup) > 0 || *o.flags.ImpersonateUID != "") {
+		return exit2("--as-group and --as-uid need --as: the API requires a user with the groups; use `--as audit-probe --as-group <group>` to test a group alone")
 	}
 	if o.timeout <= 0 {
 		return exit2("--timeout must be longer than 0")
@@ -66,12 +67,15 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		return exit2("cannot load the kubeconfig: %v", err)
 	}
 	contextName := cmp.Or(*o.flags.Context, raw.CurrentContext)
-	namespace, user := *o.flags.Namespace, ""
+	namespace, user := *o.flags.Namespace, *o.flags.AuthInfoName // --user overrides the context's user
 	if kctx := raw.Contexts[contextName]; kctx != nil {
-		namespace, user = cmp.Or(namespace, kctx.Namespace), kctx.AuthInfo
+		namespace, user = cmp.Or(namespace, kctx.Namespace), cmp.Or(user, kctx.AuthInfo)
 	}
 	if namespace == "" {
 		return exit2("namespace required: pass -n, or set a namespace in context %q", contextName)
+	}
+	if errs := validation.IsDNS1123Label(namespace); len(errs) > 0 {
+		return exit2("invalid namespace %q: a namespace is one DNS label (lowercase letters, digits and dashes)", namespace)
 	}
 	if o.otherNamespace == namespace {
 		return exit2("--other-namespace must differ from -n (%s)", namespace)
@@ -80,6 +84,9 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if err != nil {
 		return exit2("cannot load the kubeconfig: %v", err)
 	}
+	// The effective impersonation: the --as flags or the kubeconfig's as and as-groups entries
+	// (clientcmd already refuses groups without a user there).
+	as, asGroups := cfg.Impersonate.UserName, cfg.Impersonate.Groups
 
 	cfg.UserAgent = "audit-tenant/" + info.Version // what the API audit log shows
 	rec := &safety.Recorder{}
@@ -103,12 +110,15 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 
 	c, err := cluster.Connect(ctx, cfg, cluster.Options{
 		Namespace: namespace, Context: contextName, User: user,
-		As: *o.flags.Impersonate, AsGroups: *o.flags.ImpersonateGroup, Timeout: o.timeout, Recorder: rec,
+		As: as, AsGroups: asGroups, Timeout: o.timeout, Recorder: rec,
 	})
 	if err != nil {
 		return exit2("%v", err)
 	}
 	results := checks.Run(ctx, c, specs, o.timeout)
+	if len(results) == 0 {
+		return exit2("no check produced a result; this is a bug in audit-tenant")
+	}
 	rep := report.Report{
 		Tool:      report.Tool{Name: "audit-tenant", Version: info.Version},
 		Cluster:   report.Cluster{Context: contextName, Server: c.Server, Version: c.Version},

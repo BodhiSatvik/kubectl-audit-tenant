@@ -63,7 +63,7 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"--as-group without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-group", "team-a"}, "--as-group needs --as"},
+		{"--as-group without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-group", "team-a"}, "--as-group and --as-uid need --as"},
 		{"unknown check in --checks", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-99"}, `unknown check ID "AT-99"`},
 		{"unknown check in --skip", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--skip", "at-01"}, `unknown check ID "at-01"`},
 		{"empty selection", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-01", "--skip", "AT-01"}, "no checks selected"},
@@ -71,6 +71,9 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"other namespace equals target", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--other-namespace", "tenant-a"}, "--other-namespace must differ from -n"},
 		{"timeout zero", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--timeout", "0"}, "--timeout must be longer than 0"},
 		{"namespace required", []string{"--kubeconfig", noNS}, "namespace required"},
+		{"namespace is not one DNS label", []string{"-n", "kube-system/secrets", "--kubeconfig", withNS}, "invalid namespace"},
+		{"--as-uid without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-uid", "1234"}, "--as-group and --as-uid need --as"},
+		{"check not in this build", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-02"}, "not in this build yet"},
 		{"kubeconfig cannot load", []string{"-n", "tenant-a", "--kubeconfig", filepath.Join(t.TempDir(), "missing")}, "kubeconfig"},
 		{"unknown flag", []string{"-n", "tenant-a", "--bogus"}, "unknown flag"},
 		{"stray argument", []string{"-n", "tenant-a", "--kubeconfig", withNS, "extra"}, "unknown command"},
@@ -113,6 +116,38 @@ func TestRunPrintsTheChecklistAndExitsWithTheSummaryCode(t *testing.T) {
 	}
 	if strings.Contains(stderr, "Authorization") || strings.Contains(stderr, "test-token") || strings.Contains(stderr, "Impersonate") {
 		t.Errorf("--debug must not print request headers:\n%s", stderr)
+	}
+}
+
+func TestIdentityComesFromTheEffectiveConfig(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "forbidden"),
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`),
+	})
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	cfg := fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters: [{name: dev, cluster: {server: %q}}]
+contexts: [{name: kind-dev, context: {cluster: dev, user: kind-dev, namespace: tenant-a}}]
+current-context: kind-dev
+users:
+  - {name: kind-dev, user: {token: t1}}
+  - {name: alt, user: {token: t2}}
+  - {name: proxy, user: {token: t3, as: team-a-dev, as-groups: [team-a]}}
+`, srv.URL)
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// SelfSubjectReview is forbidden here, so the header shows the fallback identity.
+	_, stdout, _ := run(t, "--kubeconfig", path, "--user", "alt")
+	if !strings.Contains(stdout, "as alt (self) (unverified)") {
+		t.Errorf("--user must name the overriding user in the header:\n%s", stdout)
+	}
+	_, stdout, _ = run(t, "--kubeconfig", path, "--user", "proxy")
+	if !strings.Contains(stdout, "as team-a-dev (unverified) (groups: team-a)") {
+		t.Errorf("kubeconfig impersonation must show as impersonation:\n%s", stdout)
 	}
 }
 

@@ -8,8 +8,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
+	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // RefusedError is returned for a request outside the allowlist. It means a bug in audit-tenant,
@@ -23,20 +27,22 @@ func (e *RefusedError) Error() string {
 	return fmt.Sprintf("audit-tenant refused to send %s %s: not in its read-only allowlist (a bug in the tool; please report it)", e.Method, e.Path)
 }
 
-// Transport allows: GET of /version, of the target namespace and of six list paths inside it;
-// POST of SelfSubjectAccessReview and SelfSubjectReview; POST of pods and services in the target
-// namespace with dryRun=All. Paths must match exactly, so every subresource, every named object,
-// every other namespace and every other verb is refused.
+// Transport allows, on the configured server only: GET of /version, of the target namespace and
+// of six list paths inside it; POST of SelfSubjectAccessReview and SelfSubjectReview; POST of
+// pods and services in the target namespace with dryRun=All. Paths must match exactly under the
+// server's path prefix, so every subresource, every named object, every other namespace, every
+// other host (a redirect would carry the credentials along) and every other verb is refused.
 type Transport struct {
 	Namespace string
+	Base      *url.URL // scheme, host and path prefix of the API server (rest.DefaultServerUrlFor)
 	Next      http.RoundTripper
 	Recorder  *Recorder // nil records nothing
 }
 
 // Wrap returns the function rest.Config.WrapTransport expects.
-func Wrap(namespace string, rec *Recorder) func(http.RoundTripper) http.RoundTripper {
+func Wrap(namespace string, base *url.URL, rec *Recorder) func(http.RoundTripper) http.RoundTripper {
 	return func(next http.RoundTripper) http.RoundTripper {
-		return &Transport{Namespace: namespace, Next: next, Recorder: rec}
+		return &Transport{Namespace: namespace, Base: base, Next: next, Recorder: rec}
 	}
 }
 
@@ -66,14 +72,22 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (t *Transport) allowed(req *http.Request) bool {
-	if t.Namespace == "" {
-		return false // no target namespace, no requests: "/api/v1/namespaces/" would list them all
+	u := req.URL
+	if t.Base == nil || u.Opaque != "" || u.Scheme != t.Base.Scheme || u.Host != t.Base.Host || u.Query().Has("watch") {
+		return false
+	}
+	if len(validation.IsDNS1123Label(t.Namespace)) > 0 {
+		return false // a namespace that is not one label would widen the paths below
+	}
+	path, ok := strings.CutPrefix(u.EscapedPath(), strings.TrimSuffix(t.Base.Path, "/"))
+	if !ok {
+		return false
 	}
 	core := "/api/v1/namespaces/" + t.Namespace
 	apis := "/namespaces/" + t.Namespace
 	switch req.Method {
 	case http.MethodGet:
-		switch req.URL.Path {
+		switch path {
 		case "/version", core, core + "/resourcequotas", core + "/limitranges",
 			"/apis/networking.k8s.io/v1" + apis + "/networkpolicies",
 			"/apis/apps/v1" + apis + "/deployments",
@@ -82,12 +96,12 @@ func (t *Transport) allowed(req *http.Request) bool {
 			return true
 		}
 	case http.MethodPost:
-		switch req.URL.Path {
+		switch path {
 		case "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
 			"/apis/authentication.k8s.io/v1/selfsubjectreviews":
 			return true
 		case core + "/pods", core + "/services":
-			return slices.Contains(req.URL.Query()["dryRun"], "All")
+			return slices.Contains(u.Query()["dryRun"], "All")
 		}
 	}
 	return false

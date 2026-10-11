@@ -155,15 +155,47 @@ func TestWantColor(t *testing.T) {
 	if WantColor(&bytes.Buffer{}, false) {
 		t.Error("a buffer is not a terminal")
 	}
-	t.Setenv("NO_COLOR", "1")
-	if WantColor(os.Stdout, false) {
-		t.Error("NO_COLOR set means no color")
-	}
-	t.Setenv("NO_COLOR", "")
-	if WantColor(os.Stdout, true) {
-		t.Error("--no-color means no color")
-	}
 	if Width(&bytes.Buffer{}) != 0 {
 		t.Error("a buffer has no width")
+	}
+	for _, tt := range []struct {
+		name         string
+		tty, noColor bool
+		env          string
+		want         bool
+	}{
+		{"terminal", true, false, "", true},
+		{"NO_COLOR set", true, false, "1", false},
+		{"--no-color", true, true, "", false},
+		{"pipe", false, false, "", false},
+	} {
+		t.Setenv("NO_COLOR", tt.env)
+		if got := wantColor(tt.tty, tt.noColor); got != tt.want {
+			t.Errorf("%s: wantColor = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestChecklistAllPass(t *testing.T) {
+	r := sample()
+	for i := range r.Results {
+		r.Results[i].Verdict, r.Results[i].Hint = Pass, ""
+	}
+	r.Summary = Summarize(r.Results, false)
+	out := render(t, Checklist{}, r)
+	golden(t, "checklist-all-pass", out)
+	if !strings.Contains(out, "3 passed · 0 failed · 0 skipped · 0 errors · exit 0") || strings.Contains(out, "fix") {
+		t.Errorf("an all-PASS report has a bare summary and no fix lines:\n%s", out)
+	}
+}
+
+func TestChecklistSanitizesTheHeader(t *testing.T) {
+	r := sample()
+	r.Namespace = "team-a\x1b[2K"
+	r.Cluster.Context = "kind\u202eved"
+	r.Identity = Identity{Mode: ModeSelf, Username: "u\x1b[2K\rPASS", Groups: []string{"g\x1b]0;x\x07", "h\n"}}
+	out := render(t, Checklist{}, r)
+	if strings.ContainsAny(out, "\x1b\r\x07\u202e") || !strings.HasPrefix(out, "namespace team-a · as uPASS (self) (unverified) (groups: g, h) · cluster kindved\n") {
+		t.Errorf("header carries server text unsanitized: %q", strings.SplitN(out, "\n", 2)[0])
 	}
 }

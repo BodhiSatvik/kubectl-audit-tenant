@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"sync"
 	"testing"
@@ -55,7 +56,11 @@ func (s *Server) Hits() []string {
 // Client returns a real clientset that reaches the server through the safety transport.
 func (s *Server) Client(t testing.TB, namespace string, rec *safety.Recorder) *kubernetes.Clientset {
 	t.Helper()
-	cfg := &rest.Config{Host: s.URL, QPS: 50, Burst: 300, WrapTransport: safety.Wrap(namespace, rec)}
+	base, err := url.Parse(s.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &rest.Config{Host: s.URL, QPS: 50, Burst: 300, WrapTransport: safety.Wrap(namespace, base, rec)}
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewForConfig: %v", err)

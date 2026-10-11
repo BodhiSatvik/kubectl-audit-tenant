@@ -23,7 +23,7 @@ func (p Checklist) Print(r Report) error {
 		dot, ellipsis = " | ", "..."
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "namespace %s%s%s%scluster %s\n", r.Namespace, dot, identity(r.Identity), dot, r.Cluster.Context)
+	fmt.Fprintf(&b, "namespace %s%s%s%scluster %s\n", Sanitize(r.Namespace), dot, identity(r.Identity), dot, Sanitize(r.Cluster.Context))
 	if r.AdminHint {
 		b.WriteString("this identity looks like a cluster admin; add --as to test a tenant\n")
 	}
@@ -70,8 +70,10 @@ func (p Checklist) verdict(v Verdict, width int) string {
 	return colors[v] + s + reset
 }
 
+// identity renders the header's identity; the username and groups come from the server, so
+// they are sanitized like reasons.
 func identity(id Identity) string {
-	s := "as " + id.Username
+	s := "as " + Sanitize(id.Username)
 	if id.Mode == ModeSelf {
 		s += " (self)"
 	}
@@ -79,7 +81,11 @@ func identity(id Identity) string {
 		s += " (unverified)"
 	}
 	if len(id.Groups) > 0 {
-		s += " (groups: " + strings.Join(id.Groups, ", ") + ")"
+		groups := make([]string, len(id.Groups))
+		for i, g := range id.Groups {
+			groups[i] = Sanitize(g)
+		}
+		s += " (groups: " + strings.Join(groups, ", ") + ")"
 	}
 	return s
 }

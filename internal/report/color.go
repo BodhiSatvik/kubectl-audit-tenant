@@ -14,11 +14,13 @@ var colors = map[Verdict]string{Pass: "\x1b[32m", Fail: "\x1b[31m", Skip: "\x1b[
 // WantColor is true when w is a terminal, NO_COLOR is unset, --no-color is absent and, on
 // Windows, the console accepts escape codes.
 func WantColor(w io.Writer, noColor bool) bool {
-	if noColor || os.Getenv("NO_COLOR") != "" {
-		return false
-	}
 	f, ok := w.(*os.File)
-	return ok && term.IsTerminal(int(f.Fd())) && enableVT(f)
+	return wantColor(ok && term.IsTerminal(int(f.Fd())) && enableVT(f), noColor)
+}
+
+// wantColor is the decision without the terminal probe, so tests can cover it.
+func wantColor(isTerminal, noColor bool) bool {
+	return isTerminal && !noColor && os.Getenv("NO_COLOR") == ""
 }
 
 // Width is the terminal width of w, or 0 when w is not a terminal.

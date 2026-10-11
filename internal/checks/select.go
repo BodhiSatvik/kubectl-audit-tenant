@@ -3,6 +3,7 @@ package checks
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -11,7 +12,8 @@ var ErrNoChecks = errors.New("no checks selected")
 
 // Select keeps the results named by include (all of them when include is empty), then drops
 // those named by skip. An ID is a check (AT-04) or one result (AT-04.2). The returned specs
-// keep registry order and carry only the selected results.
+// keep registry order, carry only the selected results, and all have a Run function: asking
+// for a check that is not in this build is an error, never a silent empty report.
 func Select(include, skip []string) ([]Spec, error) {
 	in, err := resolve(include)
 	if err != nil {
@@ -21,8 +23,16 @@ func Select(include, skip []string) ([]Spec, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, id := range include {
+		if !available(strings.TrimSpace(id)) {
+			return nil, fmt.Errorf("check %s is not in this build yet; run list-checks", strings.TrimSpace(id))
+		}
+	}
 	var selected []Spec
 	for _, s := range Registry {
+		if s.Run == nil {
+			continue // shortcut: catalog-only until its task lands; at v0.1.0 drop unshipped checks from Registry instead (D28)
+		}
 		var results []ResultSpec
 		for _, r := range s.Results {
 			if (len(include) == 0 || in[r.ID]) && !out[r.ID] {
@@ -38,6 +48,16 @@ func Select(include, skip []string) ([]Spec, error) {
 		return nil, ErrNoChecks
 	}
 	return selected, nil
+}
+
+// available reports whether id names a check, or a result of a check, that has a Run function.
+func available(id string) bool {
+	for _, s := range Registry {
+		if s.Run != nil && (s.ID == id || slices.ContainsFunc(s.Results, func(r ResultSpec) bool { return r.ID == id })) {
+			return true
+		}
+	}
+	return false
 }
 
 // resolve expands check and result IDs into the set of result IDs they name.

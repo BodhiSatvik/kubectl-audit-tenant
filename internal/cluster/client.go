@@ -5,6 +5,7 @@ package cluster
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -76,8 +77,12 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 	cfg.QPS, cfg.Burst = 50, 300 // kubectl's values; client-go's defaults would throttle the run
 	// JSON on the wire, so --debug can print the SSAR and probe answers as text.
 	cfg.ContentType, cfg.AcceptContentTypes = runtime.ContentTypeJSON, runtime.ContentTypeJSON
+	base, _, err := rest.DefaultServerUrlFor(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("cannot load the kubeconfig: %w", err)
+	}
 	rec := cmp.Or(opts.Recorder, &safety.Recorder{})
-	cfg.Wrap(safety.Wrap(opts.Namespace, rec))
+	cfg.Wrap(safety.Wrap(opts.Namespace, base, rec))
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, err

@@ -1,13 +1,30 @@
 package checks
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
+// implemented gives every registry entry a Run for the duration of the test, so selection can
+// be tested over all ten checks before their tasks land.
+func implemented(t *testing.T) {
+	t.Helper()
+	saved := Registry
+	Registry = slices.Clone(Registry)
+	for i := range Registry {
+		Registry[i].Run = func(context.Context, *cluster.Client, Spec) []report.Result { return nil }
+	}
+	t.Cleanup(func() { Registry = saved })
+}
+
 func TestSelect(t *testing.T) {
+	implemented(t)
 	without := func(ids ...string) []string {
 		return slices.DeleteFunc(slices.Clone(allResultIDs), func(id string) bool { return slices.Contains(ids, id) })
 	}
@@ -39,7 +56,21 @@ func TestSelect(t *testing.T) {
 	}
 }
 
+func TestSelectRejectsChecksNotInThisBuild(t *testing.T) {
+	if _, err := Select([]string{"AT-02"}, nil); err == nil || !strings.Contains(err.Error(), "AT-02 is not in this build yet") {
+		t.Errorf("Select(AT-02) error = %v, want 'not in this build yet'", err)
+	}
+	if _, err := Select(nil, []string{"AT-01"}); !errors.Is(err, ErrNoChecks) {
+		t.Errorf("Select(skip AT-01) error = %v, want ErrNoChecks (nothing else is built)", err)
+	}
+	specs, err := Select(nil, nil)
+	if err != nil || len(specs) != 1 || specs[0].ID != "AT-01" || specs[0].Run == nil {
+		t.Errorf("Select() = %v, %v; want only the built check AT-01", ResultIDs(specs), err)
+	}
+}
+
 func TestSelectRejectsUnknownIDs(t *testing.T) {
+	implemented(t)
 	for _, tt := range []struct{ include, skip []string }{
 		{[]string{"AT-99"}, nil},
 		{nil, []string{"at-01"}},
@@ -53,6 +84,7 @@ func TestSelectRejectsUnknownIDs(t *testing.T) {
 }
 
 func TestSelectRejectsAnEmptySet(t *testing.T) {
+	implemented(t)
 	_, err := Select([]string{"AT-04"}, []string{"AT-04"})
 	if !errors.Is(err, ErrNoChecks) {
 		t.Errorf("Select() error = %v, want ErrNoChecks", err)

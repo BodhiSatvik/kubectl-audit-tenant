@@ -22,6 +22,9 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec) []report.Result {
 	for _, q := range questions {
 		ans, err := can(ctx, c, q.verb, q.group, q.resource, "")
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil // interrupted or out of time: the runner says so
+			}
 			return []report.Result{spec.result(r, report.Error, "-", err.Error(), hintFor(err))}
 		}
 		action := q.verb + " " + q.resource

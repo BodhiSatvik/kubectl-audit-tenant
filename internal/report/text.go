@@ -18,7 +18,7 @@ func Sanitize(s string) string {
 	s = strings.ReplaceAll(s, "\t", " ")
 	s = strings.Join(strings.FieldsFunc(s, func(r rune) bool { return r == '\n' }), "; ")
 	return strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) { // Cf: bidi overrides, zero-width joiners
 			return -1
 		}
 		return r
