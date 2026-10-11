@@ -11,6 +11,7 @@ Build list for this repo. Lab-level work (outreach, pilots, evidence) stays on t
 - [ ] CITATION.cff with the paper DOI
 - [ ] Clean-room check passes
 - [ ] Release to the public registry
+- [ ] Register `audit-tenant.dev` (Satvik, before tagging v0.1.0); if taken, switch the JSON apiVersion and the probe annotation to `audit-tenant.bodhisatvik.github.io` (CEO review D20)
 
 ## Later (not v0.1; locked in the spec session, 2026-10-10)
 - [ ] Network behavior tests (need running pods)
@@ -27,3 +28,4 @@ Build list for this repo. Lab-level work (outreach, pilots, evidence) stays on t
 - [ ] Detect whether the network plugin enforces NetworkPolicy
 - [ ] Weekly CI run against the oldest supported server (1.28)
 - [ ] krew-release-bot for releases after v0.1.0
+- [ ] Signed releases and SBOM (v0.2): goreleaser `signs` with cosign keyless (`id-token: write`), `sboms` with syft, and a README "verify the download" section (CEO review D21)
