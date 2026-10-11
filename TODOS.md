@@ -175,4 +175,5 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 - [ ] Detect whether the network plugin enforces NetworkPolicy
 - [ ] Weekly CI run against the oldest supported server (1.28)
 - [ ] krew-release-bot for releases after v0.1.0
+- [ ] Migrate the e2e Kyverno policy from the legacy `restrict-nodeport` ClusterPolicy (pinned in `test/e2e/versions.env`; kyverno/policies keeps only CEL policies since 2026-09-29) to a CEL `ValidatingPolicy` at the next Kyverno bump (Checkpoint 1, D39)
 - [ ] Signed releases and SBOM (v0.2): goreleaser `signs` with cosign keyless (`id-token: write`), `sboms` with syft, and a README "verify the download" section (CEO review D21)
