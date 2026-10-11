@@ -26,3 +26,11 @@ jobs:
       - run: hack/check-public.sh --self-test && hack/check-public.sh
       - run: make check
       - run: make vuln
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: Snapshot has five archives, checksums.txt and the krew manifest
+        run: |
+          test "$(ls dist/*.tar.gz dist/*.zip | wc -l)" -eq 5
+          test -s dist/checksums.txt && test -s dist/krew/audit-tenant.yaml

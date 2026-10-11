@@ -24,7 +24,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B7 CLI command surface
 - [x] B8 Checklist printer
 - [x] B9 e2e scaffold on kind
-- [ ] B10 Release pipeline dry run
+- [x] B10 Release pipeline dry run
 
 ### Checkpoint 1: walking skeleton
 - [ ] `make check` green; e2e asserts AT-01 for all four identities; snapshot release builds; review with Satvik

@@ -1,0 +1,55 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  krew-install:
+    needs: goreleaser
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Install krew
+        run: |
+          set -euo pipefail
+          os=$(uname | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+          cd "$(mktemp -d)"
+          curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/latest/download/krew-${os}_${arch}.tar.gz"
+          tar zxf "krew-${os}_${arch}.tar.gz"
+          "./krew-${os}_${arch}" install krew
+          echo "$HOME/.krew/bin" >> "$GITHUB_PATH"
+      - name: Install from the manifest and archive, then from the manifest URL, each in a clean KREW_ROOT
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          os=$(uname | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern audit-tenant.yaml --pattern "*_${os}_${arch}.tar.gz"
+          export KREW_ROOT
+          KREW_ROOT=$(mktemp -d)
+          kubectl krew install --manifest=audit-tenant.yaml --archive=./*_"${os}_${arch}".tar.gz
+          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "${tag#v}"
+          KREW_ROOT=$(mktemp -d)
+          kubectl krew install --manifest-url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/audit-tenant.yaml"
+          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "${tag#v}"

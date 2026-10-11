@@ -1,0 +1,56 @@
+# goreleaser v2. On a v* tag: five archives (darwin and linux amd64/arm64, windows amd64),
+# checksums.txt, and the krew manifest written to dist/krew/audit-tenant.yaml and uploaded as
+# a release asset. ci.yml builds the same as a snapshot on every push.
+version: 2
+project_name: kubectl-audit-tenant
+builds:
+  - id: plugin
+    main: ./cmd/kubectl-audit_tenant
+    binary: kubectl-audit_tenant
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .ShortCommit }} -X main.date={{ .Date }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+archives:
+  - id: plugin
+    ids: [plugin]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+changelog:
+  disable: true # CHANGELOG.md is written by hand
+krews:
+  - name: audit-tenant
+    ids: [plugin]
+    repository:
+      owner: BodhiSatvik
+      name: kubectl-audit-tenant
+    skip_upload: true # the manifest is a release asset; the krew-index PR is manual (DESIGN.md section 9)
+    homepage: https://github.com/BodhiSatvik/kubectl-audit-tenant
+    short_description: Prove a namespace meets a tenant governance baseline
+    description: |
+      kubectl audit-tenant runs ten tenant-governance checks as the tenant identity against one
+      namespace and prints one verdict per check (PASS, FAIL, SKIP, ERROR) with the reason and a
+      hint. It never changes the cluster: it asks "may I?" (SelfSubjectAccessReview) and
+      rehearses creates with server-side dry-run.
+    caveats: |
+      Run it against your own namespace with your own kubeconfig, or as an admin with
+      --as <tenant identity>. Exit code 1 means a FAIL; 2 means an ERROR or the run could not start.
+release:
+  extra_files:
+    - glob: dist/krew/audit-tenant.yaml

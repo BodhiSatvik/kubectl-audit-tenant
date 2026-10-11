@@ -44,7 +44,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: e2e job green on GitHub Actions; run 4 shows AT-01 FAIL with the admin header line; runs 1 to 3 show AT-01 PASS.
   - Verify: `make e2e` locally (Docker via colima) and the e2e workflow.
   - Depends on: B7, B8. Files: `test/e2e/kind.yaml`, `test/e2e/versions.env`, `test/e2e/fixtures/*.yaml`, `test/e2e/run.sh`, `.github/workflows/e2e.yml`.
-- [ ] **B10 Release pipeline dry run.** `.goreleaser.yaml` (darwin/linux amd64+arm64, windows/amd64; tar.gz and zip with LICENSE and README; `checksums.txt`; version/commit/date ldflags), `.krew.yaml` template, `release.yml` on `v*` tags: build, upload `audit-tenant.yaml` as an asset, install smoke tests in clean `KREW_ROOT` dirs on ubuntu and macos (`--manifest --archive`, then `--manifest-url`), run `version` from each; a `goreleaser release --snapshot --clean` step in `ci.yml`.
+- [x] **B10 Release pipeline dry run.** `.goreleaser.yaml` (darwin/linux amd64+arm64, windows/amd64; tar.gz and zip with LICENSE and README; `checksums.txt`; version/commit/date ldflags), `.krew.yaml` template, `release.yml` on `v*` tags: build, upload `audit-tenant.yaml` as an asset, install smoke tests in clean `KREW_ROOT` dirs on ubuntu and macos (`--manifest --archive`, then `--manifest-url`), run `version` from each; a `goreleaser release --snapshot --clean` step in `ci.yml`.
   - AC: snapshot build yields five archives and a checksums file in CI; `kubectl krew install --manifest=... --archive=...` works on the maintainer's Mac (krew installed first).
   - Verify: CI snapshot step; local krew install.
   - Depends on: B7. Files: `.goreleaser.yaml`, `.krew.yaml`, `.github/workflows/release.yml`, `.github/workflows/ci.yml`.
