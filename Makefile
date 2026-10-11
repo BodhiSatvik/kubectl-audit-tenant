@@ -1,4 +1,6 @@
 # Stages from CONSTRAINTS.md. fast: every edit. check: task end. check-full: CI.
+SHELL := bash
+.SHELLFLAGS := -o pipefail -ec
 GO ?= go
 PKG := ./...
 

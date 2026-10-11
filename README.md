@@ -32,7 +32,7 @@ If you use audit-tenant, please open an ["I use this" issue](../../issues/new?te
 
 This project implements ideas from:
 
-> {{PAPER_CITATION}}
+> Bhasin, S. (2026). GNLF for Large-Scale Legacy Migration on a GitOps-Driven Kubernetes Platform. https://doi.org/10.56975/ijcrt.v14i4.305793
 
 See [CITATION.cff](CITATION.cff).
 

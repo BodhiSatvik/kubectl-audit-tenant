@@ -8,7 +8,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Phase 1: walking skeleton (one check end to end)
 
-- [ ] **B1 Module, tooling and CI.** Create `go.mod` (`github.com/BodhiSatvik/kubectl-audit-tenant`, `go 1.26`), pin `k8s.io/{client-go,api,apimachinery,cli-runtime}` v0.37.x and `github.com/spf13/cobra`; an empty `cmd/kubectl-audit_tenant/main.go` that prints `version`; `hack/check-public.sh` (fails on unfilled `{{...}}`); `.github/workflows/ci.yml` running `make check` plus `govulncheck`.
+- [x] **B1 Module, tooling and CI.** Create `go.mod` (`github.com/BodhiSatvik/kubectl-audit-tenant`, `go 1.26`), pin `k8s.io/{client-go,api,apimachinery,cli-runtime}` v0.37.x and `github.com/spf13/cobra`; an empty `cmd/kubectl-audit_tenant/main.go` that prints `version`; `hack/check-public.sh` (fails on unfilled `{{...}}`); `.github/workflows/ci.yml` running `make check` plus `govulncheck`.
   - AC: `make check-fast` passes locally; CI is green on push; `hack/check-public.sh` fails on a planted placeholder and passes on the tree.
   - Verify: `make check-fast`; CI run.
   - Depends on: none. Files: `go.mod`, `go.sum`, `cmd/kubectl-audit_tenant/main.go`, `hack/check-public.sh`, `.github/workflows/ci.yml`.

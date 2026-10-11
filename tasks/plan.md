@@ -15,7 +15,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 ## Task list (index; cards in TODOS.md)
 
 ### Phase 1: walking skeleton
-- [ ] B1 Module, tooling and CI
+- [x] B1 Module, tooling and CI
 - [ ] B2 Report types and check registry
 - [ ] B3 Safety transport
 - [ ] B4 Cluster client, startup and cache

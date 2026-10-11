@@ -7,10 +7,10 @@ authors:
 repository-code: "https://github.com/BodhiSatvik/kubectl-audit-tenant"
 license: "Apache-2.0"
 preferred-citation:
-  type: conference-paper
-  title: "{{PAPER_TITLE}}"
+  type: article
+  title: "GNLF for Large-Scale Legacy Migration on a GitOps-Driven Kubernetes Platform"
   authors:
     - family-names: Bhasin
       given-names: Satvik
-  doi: "{{PAPER_DOI}}"
+  doi: "10.56975/ijcrt.v14i4.305793"
   year: 2026

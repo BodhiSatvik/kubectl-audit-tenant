@@ -11,6 +11,9 @@ build/
 *.egg-info/
 # go
 /bin/
+coverage.out
+test.log
+/kubectl-audit_tenant
 # os / editors
 .DS_Store
 .idea/
