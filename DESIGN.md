@@ -33,7 +33,7 @@ First adopters: three platform engineers at other companies (interviewed before 
 
 **Out (goes to `TODOS.md` as "later").** Network behavior tests (need running pods). Writing the PolicyReport into the cluster. Capsule `Tenant` discovery. SARIF. Gatekeeper constraint mapping. Helm chart or operator. Many namespaces or clusters in one run. `--baseline` file (v0.2). Argo Rollouts in the headroom math (v0.2; deferred in the CEO review of 2026-10-10, ADR 0006). DaemonSets, Jobs, CronJobs and bare Pods in the headroom math (ADR 0006). Cloud lookups for service principals (ADR 0009). Checking whether the network plugin enforces NetworkPolicy.
 
-**Fallback.** If v0.1.0 is not tagged by 2026-10-31, tag with whatever passes, minimum AT-01, 02, 04, 06, 09, 10. The README's check table and `list-checks` show only shipped checks, and the acceptance criteria in section 12 apply to the shipped set. Checks never ship half-done: a check is in or out.
+**Fallback.** If v0.1.0 is not tagged by 2026-10-31, tag with whatever passes, minimum AT-01, 02, 03, 04, 05, 06, 09: every behavioral isolation check plus quota and PSA presence. AT-10 is the heaviest and least security-critical check, so it is the first to wait for the next tag (swapped in the eng review, 2026-10-11, D28). The README's check table and `list-checks` show only shipped checks, and the acceptance criteria in section 12 apply to the shipped set. Checks never ship half-done: a check is in or out.
 
 ## 4. Architecture
 
@@ -205,7 +205,7 @@ Rules: counts are per result, not per check family (ten checks produce fourteen 
 
 ### PolicyReport (`-o policyreport`), ADR 0008
 
-`apiVersion: wgpolicyk8s.io/v1alpha2`, `kind: PolicyReport`, `metadata.name: audit-tenant`, `metadata.namespace: <target>`, labels `app.kubernetes.io/managed-by: audit-tenant`. `scope` references the Namespace. One `results[]` entry per result: `policy` = check ID (for example `AT-04.2`), `rule` = MTB ID (omitted when `-`), `result` = `pass|fail|skip|error`, `severity` = `high|medium|low`, `category: multi-tenancy`, `source: audit-tenant`, `message` = reason, `timestamp`, `properties: {layer, hint, name}`. `summary` holds the four counts. Printed to stdout; the user applies it. The tool never writes it.
+`apiVersion: wgpolicyk8s.io/v1alpha2`, `kind: PolicyReport`, `metadata.name: audit-tenant-<identity slug>` (the identity lowercased with every character outside `a-z0-9-` replaced by `-`, truncated to 54 characters plus an 8-character hash of the full identity when truncated), `metadata.namespace: <target>`, labels `app.kubernetes.io/managed-by: audit-tenant`, annotations `audit-tenant.dev/identity`, `audit-tenant.dev/groups`, `audit-tenant.dev/verified` and `audit-tenant.dev/tool-version`. A re-run for the same identity replaces its own report; reports for different identities coexist in the namespace (eng review, D27). `scope` references the Namespace. One `results[]` entry per result: `policy` = check ID (for example `AT-04.2`), `rule` = MTB ID (omitted when `-`), `result` = `pass|fail|skip|error`, `severity` = `high|medium|low`, `category: multi-tenancy`, `source: audit-tenant`, `message` = reason, `timestamp`, `properties: {layer, hint, name, identity}`. `summary` holds the four counts. Printed to stdout; the user applies it. The tool never writes it.
 
 ## 7. Benchmark plan
 
