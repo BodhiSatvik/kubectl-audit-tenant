@@ -92,7 +92,7 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 
 | ID | Name | Kind | MTB | Severity | Method | PASS when |
 |---|---|---|---|---|---|---|
-| AT-01 | No cluster-scoped access | behavioral | MTB-PL1-CC-CPI-1 | high | SSAR: `list nodes`, `create namespaces`, `create clusterrolebindings`, `create persistentvolumes` | all four denied |
+| AT-01 | No cluster-scoped access | behavioral | MTB-PL1-CC-CPI-1 | high | SSAR with no namespace (these resources are cluster-scoped; a namespaced SSAR draws an API warning): `list nodes`, `create namespaces`, `create clusterrolebindings`, `create persistentvolumes` | all four denied |
 | AT-02 | No cross-namespace secret access | behavioral | MTB-PL1-CC-TI-2 | high | SSAR: `get secrets` and `list secrets` in `--other-namespace` (default `kube-system`) | both denied |
 | AT-03 | No privilege escalation | behavioral | MTB-PL2-CC-TI-1 | high | SSAR: `escalate` and `bind` on `roles` scoped to the target namespace and on `clusterroles` with no namespace; `impersonate` on `users`, `groups`, `serviceaccounts` with no namespace; `*` verb on `*` resource in `*` API group with no namespace | all denied. The in-namespace wildcard is **not** tested: a namespace-scoped `*/*` role is a common, legitimate tenant-admin pattern |
 | AT-04.1 | Privileged container blocked | behavioral | MTB-PL1-BC-CPI-5 | high | dry-run pod with `privileged: true` | rejected by admission or RBAC |
