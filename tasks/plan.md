@@ -90,4 +90,7 @@ Do B1 and B2 alone (types and registry are the shared contract). Then four lanes
 | krew index lead time | Low | `--manifest-url` and `go install` paths in the README from day one |
 
 ## Open questions
-- None blocking. `audit-tenant.dev` registration is Satvik's step before the tag (D20); if taken, the keys switch to `audit-tenant.bodhisatvik.github.io`.
+- None. `audit-tenant.dev` was registered on 2026-10-11 (D20).
+
+## How to run the tasks
+Use Addy's `/build` for each task: it reads the next unchecked task here, takes the card (acceptance criteria, verify command, files) from `TODOS.md` section v0.1, writes the failing test first, implements, runs `make check`, commits once, and ticks the task in both files. Do not use `/build auto` in Phase 1: it requires a `SPEC.md` path this repo does not use (the spec is `DESIGN.md`), and the skeleton phase wants a human look at each step.

@@ -153,7 +153,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: CFF validates; SVG shows "PSA, webhook or policy".
   - Verify: `cffconvert --validate` or GitHub's CFF check; visual check of the SVG.
   - Depends on: none. Files: `CITATION.cff`, `CHANGELOG.md`, `docs/diagrams/*`, `GLOSSARY.md`.
-- [ ] **B31 Pre-release gate (Satvik and agent).** Satvik registers `audit-tenant.dev` or the keys switch (D20); `../../scripts/clean-room-check.sh .` passes; CONSTRAINTS.md "Measured" values recorded; `make check-full` green on main; Satvik pushes and tags `v0.1.0`; release job publishes five archives, checksums and the krew manifest; Satvik opens the krew-index PR.
+- [ ] **B31 Pre-release gate (Satvik and agent).** `audit-tenant.dev` is registered (done 2026-10-11, D20); `../../scripts/clean-room-check.sh .` passes; CONSTRAINTS.md "Measured" values recorded; `make check-full` green on main; Satvik pushes and tags `v0.1.0`; release job publishes five archives, checksums and the krew manifest; Satvik opens the krew-index PR.
   - AC: acceptance criteria 1 to 11 in DESIGN.md section 12 all met; the release page shows the assets; `kubectl krew install --manifest-url` works from the release.
   - Verify: release workflow; manual install on macOS and Linux.
   - Depends on: B27, B28, B29, B30. Files: `CONSTRAINTS.md`, `TODOS.md`, release assets.

@@ -201,7 +201,7 @@ Rules: counts are per result, not per check family (ten checks produce fourteen 
 }
 ```
 
-`verdict` is one of `PASS`, `FAIL`, `SKIP`, `ERROR`. `mtb` is `"-"` when none. The `audit-tenant.dev` domain in `apiVersion` and in the probe annotation is registered by Satvik before v0.1.0 (CEO review, D20); if it turns out to be taken, both keys switch to `audit-tenant.bodhisatvik.github.io` before the tag, because the key is one-way after release. A JSON Schema at `docs/report.schema.json` is checked in and the e2e validates against it.
+`verdict` is one of `PASS`, `FAIL`, `SKIP`, `ERROR`. `mtb` is `"-"` when none. The `audit-tenant.dev` domain in `apiVersion` and in the probe annotation is owned by the project: Satvik registered it on 2026-10-11 (CEO review, D20). The key is one-way after release. A JSON Schema at `docs/report.schema.json` is checked in and the e2e validates against it.
 
 ### PolicyReport (`-o policyreport`), ADR 0008
 
