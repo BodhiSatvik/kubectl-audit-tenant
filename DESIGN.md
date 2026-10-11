@@ -1,6 +1,6 @@
 # kubectl audit-tenant: design
 
-Status: **draft v0** (2026-10-10). Written in the spec session; goes to `/plan-ceo-review` and `/plan-eng-review` next. Decisions with a number (ADR 0001 to 0009) live in `docs/adr/`. Terms are defined in `GLOSSARY.md`.
+Status: **v0, approved as the spec on 2026-10-10** in the spec session. The plan reviews (`/plan-ceo-review`, `/plan-eng-review`) may amend it; each amendment is a commit to this file. When this file and an ADR disagree, this file wins and the ADR is updated. ADRs (why): `docs/adr/0001-read-only-by-construction.md`, `0002-checks-run-as-the-tenant.md`, `0003-cite-kubectl-mtb-do-not-fork.md`, `0004-four-verdicts-and-exit-codes.md`, `0005-probes-carry-sizes-and-a-control-probe.md`, `0006-rollout-headroom-counting-rules.md`, `0007-at-09-requires-the-psa-label.md`, `0008-policyreport-v1alpha2.md`, `0009-identity-is-what-the-api-server-says.md`. Terms: `GLOSSARY.md`.
 
 Terms used below. AT: the prefix of every check ID (`AT-01` to `AT-10`); it stands for audit-tenant. SSAR: SelfSubjectAccessReview, an API call that asks the cluster "may this identity do X?" and does nothing. Dry-run: a create request with `dryRun=All`; the server runs every gate and stores nothing. Admission: the gate that inspects a new object before it is saved. PSA: Pod Security Admission, the built-in pod gate switched on by a namespace label. MTB: the archived Kubernetes Multi-Tenancy Benchmarks. PolicyReport: the `wgpolicyk8s.io` report object that policy dashboards read.
 
@@ -33,7 +33,7 @@ First adopters: three platform engineers at other companies (interviewed before 
 
 **Out (goes to `TODOS.md` as "later").** Network behavior tests (need running pods). Writing the PolicyReport into the cluster. Capsule `Tenant` discovery. SARIF. Gatekeeper constraint mapping. Helm chart or operator. Many namespaces or clusters in one run. `--baseline` file (v0.2). DaemonSets, Jobs, CronJobs and bare Pods in the headroom math (ADR 0006). Cloud lookups for service principals (ADR 0009). Checking whether the network plugin enforces NetworkPolicy.
 
-**Fallback.** If v0.1.0 is not tagged by 2026-10-31, tag with whatever passes, minimum AT-01, 02, 04, 06, 09, 10. The README's check table shows only shipped checks.
+**Fallback.** If v0.1.0 is not tagged by 2026-10-31, tag with whatever passes, minimum AT-01, 02, 04, 06, 09, 10. The README's check table and `list-checks` show only shipped checks, and the acceptance criteria in section 12 apply to the shipped set. Checks never ship half-done: a check is in or out.
 
 ## 4. Architecture
 
@@ -81,7 +81,8 @@ Go module: `github.com/BodhiSatvik/kubectl-audit-tenant`. Go 1.26. `k8s.io/clien
 | `internal/probe/` | Probe builders (control pod, 5 dangerous pods, NodePort service), rejection classifier |
 | `internal/headroom/` | Pure functions for AT-10: peak per workload, pod request math, quota comparison |
 | `internal/report/` | `Report` and `Result` types; the five printers |
-| `test/e2e/` | kind config, fixtures, Kyverno policy, expected verdicts, run script |
+| `test/e2e/` | kind config, `versions.env`, fixtures, Kyverno policy, expected verdicts, run script |
+| `hack/check-public.sh` | Fails on unfilled `{{`...`}}` placeholders; runs in CI |
 | `.github/workflows/` | `ci.yml` (vet, lint, unit, envtest), `e2e.yml` (kind), `release.yml` (goreleaser) |
 | `.goreleaser.yaml`, `.krew.yaml` | Release and krew manifest template |
 
@@ -93,7 +94,7 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 |---|---|---|---|---|---|---|
 | AT-01 | No cluster-scoped access | behavioral | MTB-PL1-CC-CPI-1 | high | SSAR: `list nodes`, `create namespaces`, `create clusterrolebindings`, `create persistentvolumes` | all four denied |
 | AT-02 | No cross-namespace secret access | behavioral | MTB-PL1-CC-TI-2 | high | SSAR: `get secrets` and `list secrets` in `--other-namespace` (default `kube-system`) | both denied |
-| AT-03 | No privilege escalation | behavioral | MTB-PL2-CC-TI-1 | high | SSAR: `escalate` and `bind` on `roles` (in the namespace) and `clusterroles`; `impersonate` on `users`, `groups`, `serviceaccounts`; `*` on `*` cluster-wide | all denied. The in-namespace wildcard is **not** tested: a namespace-scoped `*/*` role is a common, legitimate tenant-admin pattern |
+| AT-03 | No privilege escalation | behavioral | MTB-PL2-CC-TI-1 | high | SSAR: `escalate` and `bind` on `roles` scoped to the target namespace and on `clusterroles` with no namespace; `impersonate` on `users`, `groups`, `serviceaccounts` with no namespace; `*` verb on `*` resource in `*` API group with no namespace | all denied. The in-namespace wildcard is **not** tested: a namespace-scoped `*/*` role is a common, legitimate tenant-admin pattern |
 | AT-04.1 | Privileged container blocked | behavioral | MTB-PL1-BC-CPI-5 | high | dry-run pod with `privileged: true` | rejected by admission or RBAC |
 | AT-04.2 | hostPath volume blocked | behavioral | MTB-PL1-BC-HI-1 | high | dry-run pod with a `hostPath` volume | rejected |
 | AT-04.3 | hostPID blocked | behavioral | MTB-PL1-BC-HI-4 | high | dry-run pod with `hostPID: true` | rejected |
@@ -111,9 +112,11 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 ### Probes (AT-04, AT-05), ADR 0005
 
 - Image `registry.k8s.io/pause:3.10` (never pulled: dry-run stores nothing). Container `probe`, requests and limits `1m` CPU and `1Mi` memory. `generateName: audit-tenant-probe-`, label `app.kubernetes.io/managed-by: audit-tenant`, annotation `audit-tenant.dev/probe: "true"`.
-- The **control pod** is PSA-restricted compliant: `runAsNonRoot: true`, `runAsUser: 65532`, `allowPrivilegeEscalation: false`, `capabilities.drop: ["ALL"]`, `seccompProfile: RuntimeDefault`. Each dangerous probe is the control pod plus exactly one dangerous attribute.
-- Order: control pod first. If it is rejected, AT-04.1 to AT-04.5 and AT-05 are SKIP with the control's rejection text and the hint "the namespace rejects even a compliant pod; fix that first (reason above)". If the identity lacks `create pods` (403 with no admission text), AT-04.x PASS with layer RBAC and the note "admission was not exercised".
-- **Classifier** on the rejection: message contains `violates PodSecurity` → admission (PSA); contains `admission webhook` and `denied` → admission (policy engine, webhook name kept); HTTP 403 with no admission text → RBAC; contains `exceeded quota`, `must specify`, `forbidden: maximum`, `forbidden: minimum` (quota or LimitRange text) → inconclusive → SKIP with hint; HTTP 400 or 422 `Invalid` → ERROR (a bug in our probe); webhook refuses dry-run (`does not support dry run` or `sideEffects`) → SKIP with hint naming the webhook.
+- The **control pod** is PSA-restricted compliant: `runAsNonRoot: true`, `runAsUser: 65532`, `allowPrivilegeEscalation: false`, `capabilities.drop: ["ALL"]`, `seccompProfile: RuntimeDefault`. Each dangerous probe is the control pod plus exactly one dangerous capability. AT-04.5 needs three fields to express its one capability (run as root with escalation allowed): `allowPrivilegeEscalation: true`, `runAsUser: 0`, `runAsNonRoot: false`.
+- Order, AT-04: (1) SSAR `create pods` in the target namespace. Denied → AT-04.1 to AT-04.5 PASS, layer RBAC, reason "RBAC denies create pods; admission not exercised"; no probe is sent. (2) Allowed → dry-run the control pod. Rejected → AT-04.1 to AT-04.5 SKIP with the control's rejection text and the hint "the namespace rejects even a compliant pod; fix that first". (3) Control accepted → dry-run the five probes, one result each. The control pod gates only AT-04; it is sent only when at least one AT-04 sub-check is selected.
+- Order, AT-05: (1) SSAR `create services`. Denied → PASS, layer RBAC. (2) Allowed → dry-run the NodePort service. Rejected by admission → PASS with the layer; accepted → FAIL.
+- Because RBAC is settled by SSAR before any probe, a probe rejection is never attributed to RBAC.
+- **Classifier** on a probe rejection, rules applied in this order, first match wins: (1) message contains `violates PodSecurity` → PASS, layer admission (PSA), the violated controls kept in the reason; (2) message contains `admission webhook` and `denied` → PASS, layer admission (webhook), webhook name kept; (3) message contains `does not support dry run` or `sideEffects` → SKIP, hint names the webhook and the `sideEffects: NoneOnDryRun` fix; (4) message contains `exceeded quota`, `must specify`, `forbidden: maximum`, or `forbidden: minimum` → SKIP (inconclusive; quota or LimitRange gate), hint says which; (5) HTTP 400 or 422 → ERROR (the probe itself is malformed; a bug to report); (6) any other rejection → ERROR with the full server text, never a guess. A probe that is accepted (HTTP 200 or 201) → FAIL.
 - AT-05 service: `type: NodePort`, one port 80/TCP, no selector, same generateName and labels.
 
 ### Headroom math (AT-10), ADR 0006
@@ -121,8 +124,9 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 - Counted: Deployments, StatefulSets, Argo Rollouts (if the CRD exists). Not counted: DaemonSets, Jobs, CronJobs, bare Pods. The reason shows each quota's `used` values so the reader sees what else consumes it.
 - Replicas: `spec.replicas` (default 1). If a `HorizontalPodAutoscaler` (autoscaling/v2) targets the workload, use its `maxReplicas` instead.
 - Peak pods: Deployment RollingUpdate = replicas + maxSurge (absolute, or percent of replicas rounded up; default 25%); Deployment Recreate = replicas; StatefulSet = replicas; Rollout blueGreen = replicas + (`previewReplicaCount` if set, else replicas); Rollout canary = replicas + maxSurge (default 25%).
-- Pod request and limit: Kubernetes rule, max(sum of regular containers, largest init container); init containers with `restartPolicy: Always` count as regular. A container with no request or limit takes the LimitRange `defaultRequest` or `default` for type Container if one exists, else 0, and the reason says "N containers had no request; counted as 0".
+- Pod request and limit: Kubernetes rule, max(sum of regular containers, largest init container); init containers with `restartPolicy: Always` (sidecars) count as regular containers; ordered init containers contribute only their largest single request. Pod overhead from a RuntimeClass is not counted in v0.1 and the reason says so when any workload names a RuntimeClass. A container with no request or limit takes the LimitRange `defaultRequest` or `default` for type Container if one exists, else 0, and the reason says "N containers had no request; counted as 0".
 - Compare: for every unscoped ResourceQuota and each of the five keys it defines, peak sum ≤ hard. FAIL reason: `peak needs 6 cpu, hard is 4 cpu, short by 2 (deployments: api 3→4, worker 2→3)`. Assumes all workloads roll out at once; the reason says so.
+- Edge cases, checked in this order: no unscoped ResourceQuota → FAIL, reason "no ResourceQuota to compare against" (scoped quotas named if any), hint points at AT-06; then, no counted workloads → PASS, reason "no Deployments, StatefulSets or Rollouts; nothing to compare"; several LimitRanges → the first by name that has Container defaults is used and named in the reason; a quota that defines only some of the five keys → only those keys are compared; cannot LIST deployments, statefulsets or resourcequotas → SKIP with the missing permission in the hint; cannot LIST horizontalpodautoscalers or rollouts → continue without them and say so in the reason.
 
 ## 6. Interfaces
 
@@ -138,6 +142,12 @@ kubectl audit-tenant version
 ```
 
 Also honored: `--kubeconfig`, `--context`, `--cluster`, `--user`, `--request-timeout` (from cli-runtime), `KUBECONFIG`, `NO_COLOR`. `-h`/`--help` usage text starts with `kubectl audit-tenant`.
+
+Selection rules: `--checks` keeps only the listed IDs (families like `AT-04` or sub-checks like `AT-04.2`), then `--skip` removes IDs from that set; an unknown ID in either flag exits 2; an empty final set exits 2 with "no checks selected". `-n` omitted → the namespace of the current kubeconfig context; none set → exit 2 "namespace required". The run proceeds even when the namespace cannot be read by the identity (behavioral checks need no read); AT-09 then reports SKIP.
+
+Startup: the tool first calls the version endpoint (unreachable → exit 2), then POSTs a SelfSubjectReview (HTTP 403 or 404 → identity falls back to the kubeconfig and `--as` values, marked `unverified`), then runs AT-01's first SSAR; if that SSAR itself is refused with 403, the identity cannot ask "may I?" at all and the run exits 2 with the hint "this identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has".
+
+Failure rules: a read that the API server refuses with HTTP 403 is a fact about the identity, so the check reports SKIP with the missing permission in the hint (AT-06 to AT-10 for their own objects; AT-10 continues without HPAs or Rollouts it cannot list, and without LimitRange defaults it cannot read, and says so). Any other API error makes the check ERROR. The whole run has one deadline (`--timeout`); a check that has not finished when it expires, and every check after it, gets ERROR "not run: timeout after 30s". An API error inside one check makes that check ERROR and the run continues. An SSAR answer with `evaluationError`, or with neither `allowed` nor `denied`, is ERROR with the server text. Every selected check always appears in the output, whatever happened.
 
 ### Exit codes (ADR 0004)
 
@@ -158,11 +168,11 @@ FAIL  AT-05  NodePort services blocked           a NodePort Service was accepted
 SKIP  AT-09  Pod Security Admission enforced     cannot read namespace labels (forbidden)
       fix    grant `get` on namespace team-a to this identity, or run with --as <admin>
 
-8 passed · 1 failed (AT-05) · 1 skipped (AT-09) · 0 errors · exit 1
+12 passed · 1 failed (AT-05) · 1 skipped (AT-09) · 0 errors · exit 1
 MTB IDs and layers: -o wide · machine output: -o json, -o policyreport
 ```
 
-Rules: one line per result in ID order; AT-04 prints its five sub-results; a `fix` line under every FAIL, SKIP and ERROR; header line names namespace, identity (with `(unverified)` when SelfSubjectReview failed, `(self)` without `--as`) and cluster context; the last line is the summary with the exit code; the line after it names the next commands. Color (green, red, yellow, magenta for ERROR) only when stdout is a terminal, `NO_COLOR` is unset and `--no-color` is absent. `--plain` removes color and the `·` separators (ASCII only). In self mode, when AT-03's cluster-wide wildcard is allowed, the header adds: `this identity looks like a cluster admin; add --as to test a tenant`.
+Rules: counts are per result, not per check family (ten checks produce fourteen results, because AT-04 has five); one line per result in ID order; AT-04 prints its five sub-results; a `fix` line under every FAIL, SKIP and ERROR; header line names namespace, identity (with `(unverified)` when SelfSubjectReview failed, `(self)` without `--as`) and cluster context; the summary line lists up to three failed IDs and up to three skipped IDs, then "and N more"; the line after it names the next commands. Color (green, red, yellow, magenta for ERROR) only when stdout is a terminal, `NO_COLOR` is unset and `--no-color` is absent. `--plain` removes color and the `·` separators (ASCII only). In self mode, when AT-03's cluster-wide wildcard is allowed, the header adds: `this identity looks like a cluster admin; add --as to test a tenant`.
 
 `-o wide` adds two columns after the ID: MTB ID and deciding layer (`RBAC`, `admission (PSA)`, `admission (webhook: kyverno-...)`, `config`, `-`).
 
@@ -183,7 +193,7 @@ Rules: one line per result in ID order; AT-04 prints its five sub-results; a `fi
      "reason": "a NodePort Service was accepted in a dry run",
      "hint": "add a policy that rejects type: NodePort, or remove `create services` from the tenant role"}
   ],
-  "summary": {"pass": 8, "fail": 1, "skip": 1, "error": 0, "exitCode": 1}
+  "summary": {"pass": 12, "fail": 1, "skip": 1, "error": 0, "exitCode": 1, "results": 14, "checks": 10}
 }
 ```
 
@@ -197,7 +207,7 @@ Rules: one line per result in ID order; AT-04 prints its five sub-results; a `fi
 
 Numbers in `BENCHMARK.md` come only from runs of this code.
 
-- **What we measure.** Wall time of a full ten-check run on kind (target under 10 s). API requests per run, counted by the safety transport (target at most 40). Write requests per run (must be 0; the safety test fails otherwise). Binary size per platform.
+- **What we measure.** Wall time of a full ten-check run on kind: median and maximum of 5 consecutive runs, target median under 10 s. API requests per run: every HTTP request that passes the safety transport, including discovery, the identity lookup, pagination pages and any client retry (client-go retries are left at their defaults and counted as requests); target at most 40. Write requests per run: a write is any POST, PUT, PATCH or DELETE whose query lacks `dryRun=All`; SSAR and SelfSubjectReview POSTs persist nothing and count as reads; the number must be 0 and the safety test fails otherwise. Binary size per platform.
 - **Baselines.** `kubectl-mtb` run on the same kind cluster where it still builds; otherwise record "does not build against 1.37" as the finding. Popeye and Kubescape are not like-for-like; we list them as "different scope" rather than compare numbers.
 - **Data and environment.** kind with `kindest/node:v1.37.x`, the fixtures in `test/e2e/`, GitHub Actions `ubuntu-latest`. Commands and versions recorded with each row.
 - **Repeat it.** `make e2e` runs the same job locally; the row's `Command` column holds the exact invocation.
@@ -210,7 +220,22 @@ Numbers in `BENCHMARK.md` come only from runs of this code.
 | Integration | AT-01 to AT-03 against a real API server with real RBAC: a Role and RoleBinding fixture per expected verdict; SSAR under impersonation; `--as-group` without `--as` rejected | `envtest` (`setup-envtest use 1.37.x` in CI) |
 | End-to-end | kind + Kyverno + fixtures (below); runs as cluster-admin with `--as`, as the service account's own token (self mode), and as cluster-admin without `--as`; asserts every verdict, the exit code, the admin hint, `-o json` against the schema, and `-o policyreport` with `kubectl apply --dry-run=server` after installing the PolicyReport CRD | GitHub Actions, kind, Helm |
 
-End-to-end fixtures (`test/e2e/fixtures/`): namespace `tenant-a` labeled `enforce=restricted`, a ResourceQuota with the five keys, a LimitRange with defaults, two NetworkPolicies (deny ingress, deny egress), ServiceAccount `tenant-a-dev` with a Role equal to `edit` plus `get` on its own namespace, a Deployment with 3 replicas, 100m/128Mi, maxSurge 25%, and an HPA with maxReplicas 4. Namespace `tenant-b` with ServiceAccount `tenant-b-dev` bound to `admin` and nothing else. Kyverno installed from its Helm chart with the `restrict-nodeport` policy from `kyverno/policies` in `Enforce` mode. Expected: `tenant-a` all PASS, exit 0; `tenant-b` FAIL on AT-06, 07, 08, 09 and AT-10 (no quota), PASS on the rest, exit 1; cluster-admin without `--as` FAIL on AT-01 to AT-05 with the admin hint.
+End-to-end fixtures (`test/e2e/fixtures/`), all values exact so the expected verdicts are reproducible:
+
+- `tenant-a`: Namespace with labels `pod-security.kubernetes.io/enforce=restricted`, `enforce-version=latest`. ResourceQuota `tenant-a-quota` with `hard`: `requests.cpu: "4"`, `requests.memory: 8Gi`, `limits.cpu: "8"`, `limits.memory: 16Gi`, `pods: "20"`. LimitRange `tenant-a-limits`, type Container, `default: cpu 500m, memory 512Mi`, `defaultRequest: cpu 100m, memory 128Mi`. NetworkPolicies `default-deny-ingress` (empty podSelector, policyTypes [Ingress]) and `default-deny-egress` (empty podSelector, policyTypes [Egress]). ServiceAccount `tenant-a-dev` with RoleBinding to ClusterRole `edit` and a Role `namespace-reader` granting `get` on `namespaces` with `resourceNames: [tenant-a]` (RBAC evaluates a request for the namespace object as a request inside that namespace, so a Role can grant it; `edit` and `admin` already include namespace reads, and the e2e proves both paths). Deployment `api`: 3 replicas, container requests 100m/128Mi, limits 500m/512Mi, RollingUpdate maxSurge 25%. HPA `api` targeting it with maxReplicas 4. Expected AT-10 peak: 5 pods, 0.5 cpu / 640Mi requests, 2.5 cpu / 2.5Gi limits; fits.
+- `tenant-b`: Namespace with no labels and no quota, LimitRange, NetworkPolicy or workloads. ServiceAccount `tenant-b-dev` with RoleBinding to ClusterRole `admin`.
+- Cluster-wide: Kyverno from its Helm chart with the `restrict-nodeport` ClusterPolicy from `kyverno/policies`, `validationFailureAction: Enforce`. The PolicyReport CRD (`wgpolicyk8s.io/v1alpha2`) installed for the apply check. Exact versions live in `test/e2e/versions.env` (kind node image tag, Kyverno chart version, `kyverno/policies` commit, CRD commit); CI reads only that file, and the first commit of the file pins the newest 1.37 node image and Kyverno 1.x release available at that time.
+
+Expected verdicts (every row is asserted by the e2e script, with exit code):
+
+| Run | Identity | AT-01..03 | AT-04.1..5 | AT-05 | AT-06..09 | AT-10 | Exit |
+|---|---|---|---|---|---|---|---|
+| 1 | cluster-admin `--as system:serviceaccount:tenant-a:tenant-a-dev`, `-n tenant-a` | PASS (RBAC) | PASS (admission, PSA) | PASS (admission, webhook) | PASS | PASS | 0 |
+| 2 | the `tenant-a-dev` token as its own kubeconfig, no `--as`, `-n tenant-a` | same as run 1 | same | same | same | same | 0 |
+| 3 | cluster-admin `--as system:serviceaccount:tenant-b:tenant-b-dev`, `-n tenant-b` | PASS (RBAC) | FAIL (no PSA label, `admin` may create pods) | PASS (admission, webhook) | FAIL | FAIL (no quota) | 1 |
+| 4 | cluster-admin, no `--as`, `-n tenant-a` | FAIL (cluster rights) with the admin hint in the header | PASS (PSA applies to admins too) | PASS (webhook) | PASS | PASS | 1 |
+
+Run 1 also validates `-o json` against `docs/report.schema.json` and `-o policyreport` with `kubectl apply --dry-run=server`. Run 2 asserts the header shows groups `system:serviceaccounts` and `system:serviceaccounts:tenant-a`, which the API server adds to an impersonated or token-authenticated service account.
 
 ## 9. Release
 
@@ -245,13 +270,13 @@ End-to-end fixtures (`test/e2e/fixtures/`): namespace `tenant-a` labeled `enforc
 1. `go test ./...` passes; `golangci-lint run` reports zero issues.
 2. The safety test records every request each check makes and fails on any request outside the allowlist in section 4, and on any GET or LIST of `secrets`.
 3. envtest: AT-01, AT-02, AT-03 return PASS for a namespace-only Role and FAIL for a cluster-admin binding; `--as-group` without `--as` exits 2 with the documented message.
-4. kind e2e produces exactly the expected verdicts and exit codes in section 8 for `tenant-a`, `tenant-b`, and cluster-admin without `--as`, in both identity modes for `tenant-a`.
+4. kind e2e produces exactly the verdicts and exit codes in the section 8 table for all four runs.
 5. `-o json` validates against `docs/report.schema.json`; `-o policyreport` passes `kubectl apply --dry-run=server` with the v1alpha2 CRD installed.
 6. Every FAIL, SKIP and ERROR in the e2e output has a non-empty `hint`.
-7. A full run on kind completes in under 10 s and makes at most 40 API requests; the numbers are in `BENCHMARK.md` with the command.
+7. The median of 5 full runs on kind is under 10 s, and no run makes more than 40 API requests; median, maximum and request count are in `BENCHMARK.md` with the command.
 8. `kubectl krew install --manifest --archive` installs the release artifact on macOS and Linux; `kubectl audit-tenant version` prints the tag.
 9. README quick start works on a clean machine with Docker, kind and kubectl in five minutes.
-10. `../../scripts/clean-room-check.sh .` prints no hits. No employer names, no lab-internal paths.
+10. `hack/check-public.sh` (in this repo; fails only on unfilled `{{`...`}}` placeholders in tracked files) passes in CI. The maintainer's private pre-release check also passes; it is a maintainer step, not a CI step.
 11. Tag `v0.1.0` exists; release has five archives and `checksums.txt`.
 
 ## 13. Related
