@@ -100,7 +100,7 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 | AT-04.2 | hostPath volume blocked | behavioral | MTB-PL1-BC-HI-1 | high | dry-run pod with a `hostPath` volume | rejected |
 | AT-04.3 | hostPID blocked | behavioral | MTB-PL1-BC-HI-4 | high | dry-run pod with `hostPID: true` | rejected |
 | AT-04.4 | hostNetwork blocked | behavioral | MTB-PL1-BC-HI-3 | high | dry-run pod with `hostNetwork: true` | rejected |
-| AT-04.5 | Privilege escalation to root blocked | behavioral | MTB-PL1-BC-CPI-6 | high | dry-run pod with `allowPrivilegeEscalation: true`, `runAsUser: 0`, `runAsNonRoot: false` | rejected |
+| AT-04.5 | Privilege escalation to root blocked | behavioral | MTB-PL1-BC-CPI-6 | high | dry-run pod with `allowPrivilegeEscalation: true`, `runAsUser: 0`, `runAsNonRoot: false` | rejected. PSA `baseline` does not block this probe; the FAIL hint names both fixes: set `pod-security.kubernetes.io/enforce=restricted`, or add a policy that forbids `runAsUser: 0` and `allowPrivilegeEscalation` (Kyverno `require-run-as-nonroot` + `disallow-privilege-escalation`, or a ValidatingAdmissionPolicy) |
 | AT-05 | NodePort services blocked | behavioral | MTB-PL1-BC-HI-1 (shared upstream ID; mapped by title) | medium | dry-run `Service` with `type: NodePort` | rejected by admission or RBAC |
 | AT-06 | ResourceQuota present and complete | config | MTB-PL1-CC-FNS-1 | medium | LIST resourcequotas | at least one quota with no `scopes`/`scopeSelector` whose `hard` has `requests.cpu` (or `cpu`), `requests.memory` (or `memory`), `limits.cpu`, `limits.memory`, `pods` |
 | AT-07 | LimitRange with defaults | config | - | low | LIST limitranges | an item of type `Container` with `default` and `defaultRequest` for both cpu and memory |
@@ -135,7 +135,7 @@ Severity is static per check and appears in `-o json`, `-o policyreport`, and `l
 
 ```
 kubectl audit-tenant -n NAMESPACE [--as USER] [--as-group GROUP ...]
-                     [-o checklist|wide|json|policyreport] [--plain] [--no-color]
+                     [-o checklist|wide|json|policyreport] [--plain] [--no-color] [--debug]
                      [--checks ID,...] [--skip ID,...]
                      [--other-namespace kube-system] [--timeout 30s]
 kubectl audit-tenant list-checks [-o table|json]
@@ -144,9 +144,11 @@ kubectl audit-tenant version
 
 Also honored: `--kubeconfig`, `--context`, `--cluster`, `--user`, `--request-timeout` (from cli-runtime), `KUBECONFIG`, `NO_COLOR`. `-h`/`--help` usage text starts with `kubectl audit-tenant`.
 
+`--debug` writes to stderr one line per API request (method, path, HTTP status, duration), the identity resolution steps, and the full server body of every SSAR and probe response. It never prints request headers. stdout and the exit code are unchanged, so `-o json | jq` still works. The safety transport's request recorder (section 4) is its source.
+
 Selection rules: `--checks` keeps only the listed IDs (families like `AT-04` or sub-checks like `AT-04.2`), then `--skip` removes IDs from that set; an unknown ID in either flag exits 2; an empty final set exits 2 with "no checks selected". `-n` omitted → the namespace of the current kubeconfig context; none set → exit 2 "namespace required". The run proceeds even when the namespace cannot be read by the identity (behavioral checks need no read); AT-09 then reports SKIP.
 
-Startup: the tool first calls the version endpoint (unreachable → exit 2), then POSTs a SelfSubjectReview (HTTP 403 or 404 → identity falls back to the kubeconfig and `--as` values, marked `unverified`), then runs AT-01's first SSAR; if that SSAR itself is refused with 403, the identity cannot ask "may I?" at all and the run exits 2 with the hint "this identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has".
+Startup: the tool first calls the version endpoint (unreachable → exit 2 "API server unreachable: <error>"; HTTP 401 → exit 2 "unauthorized: the cluster rejected your credentials (expired token?); log in again and retry"), then POSTs a SelfSubjectReview (HTTP 403 or 404 → identity falls back to the kubeconfig and `--as` values, marked `unverified`), then GETs the target namespace once (HTTP 404 → exit 2 "namespace <n> not found in context <ctx>; check -n or --context"; HTTP 403 → the run proceeds and AT-09 reports SKIP from this cached answer), then runs AT-01's first SSAR; if that SSAR itself is refused with 403, the identity cannot ask "may I?" at all and the run exits 2 with the hint "this identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has". Before that hint applies, any startup 403 whose message contains `cannot impersonate` exits 2 with "<user> may not impersonate <--as value>: ask a cluster admin for `impersonate` on users, groups and serviceaccounts, or run without --as".
 
 Failure rules: a read that the API server refuses with HTTP 403 is a fact about the identity, so the check reports SKIP with the missing permission in the hint (AT-06 to AT-10 for their own objects; AT-10 continues without HPAs or Rollouts it cannot list, and without LimitRange defaults it cannot read, and says so). Any other API error makes the check ERROR. The whole run has one deadline (`--timeout`); a check that has not finished when it expires, and every check after it, gets ERROR "not run: timeout after 30s". An API error inside one check makes that check ERROR and the run continues. An SSAR answer is read as the API defines it: `allowed: true` means allowed; `allowed: false` means denied whether or not `denied` is set (RBAC never sets `denied`; an explicit `denied: true` from a webhook authorizer adds "explicit deny" to the reason); a non-empty `evaluationError` makes the check ERROR with the server text. Every selected check always appears in the output, whatever happened.
 
@@ -156,7 +158,7 @@ Failure rules: a read that the API server refuses with HTTP 403 is a fact about 
 |---|---|
 | 0 | No FAIL and no ERROR. SKIPs allowed. |
 | 1 | At least one FAIL. |
-| 2 | At least one ERROR and no FAIL; or the run could not start: bad flags (`--as-group` without `--as`, unknown check ID, unknown `-o`), kubeconfig cannot load, API server unreachable, or the identity may not create SelfSubjectAccessReviews. Each with a one-line reason and hint on stderr. |
+| 2 | At least one ERROR and no FAIL; or the run could not start: bad flags (`--as-group` without `--as`, unknown check ID, unknown `-o`), kubeconfig cannot load, API server unreachable, credentials rejected (401), impersonation refused, namespace not found, or the identity may not create SelfSubjectAccessReviews. Each with a one-line reason and hint on stderr. |
 
 ### Checklist output (default, chosen in the spec session)
 
@@ -173,7 +175,7 @@ SKIP  AT-09  Pod Security Admission enforced     cannot read namespace labels (f
 MTB IDs and layers: -o wide · machine output: -o json, -o policyreport
 ```
 
-Rules: counts are per result, not per check family (ten checks produce fourteen results, because AT-04 has five); one line per result in ID order; AT-04 prints its five sub-results; a `fix` line under every FAIL, SKIP and ERROR; header line names namespace, identity (with `(unverified)` when SelfSubjectReview failed, `(self)` without `--as`) and cluster context; the summary line lists up to three failed IDs and up to three skipped IDs, then "and N more"; the line after it names the next commands. Color (green, red, yellow, magenta for ERROR) only when stdout is a terminal, `NO_COLOR` is unset and `--no-color` is absent; `-o json` and `-o policyreport` never carry color. `--plain` removes color and the `·` separators (ASCII only). In self mode, when AT-03's cluster-wide wildcard is allowed, the header adds: `this identity looks like a cluster admin; add --as to test a tenant`.
+Rules: counts are per result, not per check family (ten checks produce fourteen results, because AT-04 has five); one line per result in ID order; AT-04 prints its five sub-results; a `fix` line under every FAIL, SKIP and ERROR; header line names namespace, identity (with `(unverified)` when SelfSubjectReview failed, `(self)` without `--as`) and cluster context; the summary line lists up to three failed IDs and up to three skipped IDs, then "and N more"; the line after it names the next commands. Color (green, red, yellow, magenta for ERROR) only when stdout is a terminal, `NO_COLOR` is unset and `--no-color` is absent; `-o json` and `-o policyreport` never carry color. `--plain` removes color and the `·` separators (ASCII only). Server text in the terminal printers (checklist, wide, plain) has ASCII control characters and ANSI escapes stripped and newlines folded to `; `. The checklist caps a reason at the terminal width minus the fixed columns (minimum 60 characters; 120 when stdout is not a terminal) with `…` and adds the footer line `full reasons: -o wide or -o json` when any reason was cut; `-o wide`, `-o json` and `-o policyreport` keep the full text. In self mode, when AT-03's cluster-wide wildcard is allowed, the header adds: `this identity looks like a cluster admin; add --as to test a tenant`.
 
 `-o wide` adds two columns after the ID: MTB ID and deciding layer (`RBAC`, `admission (PSA)`, `admission (webhook: kyverno-...)`, `admission (policy: <name>)`, `config`, `-`).
 
@@ -217,7 +219,7 @@ Numbers in `BENCHMARK.md` come only from runs of this code.
 
 | Layer | What | Tool |
 |---|---|---|
-| Unit | Every check against scripted cluster answers: allowed and denied SSARs; PSA, webhook, RBAC, quota and dry-run-refused rejections with real error strings; AT-06 to AT-09 object shapes (two-policy default deny, scoped quotas, missing keys); headroom math table tests (percent surge, HPA, init containers, LimitRange defaults); every printer against golden files; safety transport allowlist | `client-go/kubernetes/fake`, fake dynamic client, golden files |
+| Unit | Every check against scripted cluster answers: startup answers (401, a 403 containing `cannot impersonate`, namespace 404); SSAR answers (allowed, RBAC-denied, explicit deny, evaluationError); the AT-04 controller branch; probe sizing (LimitRange defaults, min only, none, 403); PSA, webhook, ValidatingAdmissionPolicy, RBAC, quota, dry-run-refused and empty-message rejections with real error strings; AT-06 to AT-09 object shapes (two-policy default deny, scoped quotas, missing keys); headroom math table tests (percent surge, HPA, init containers, LimitRange defaults); every printer against golden files, including long, multi-line and ANSI-bearing reasons, `NO_COLOR` and `--plain`; a `--debug` stderr golden; the run deadline (a blocked reactor → ERROR rows, exit 2); safety transport allowlist | `client-go/kubernetes/fake`, fake dynamic client, golden files |
 | Integration | AT-01 to AT-03 against a real API server with real RBAC: a Role and RoleBinding fixture per expected verdict; SSAR under impersonation; `--as-group` without `--as` rejected | `envtest` (`setup-envtest use 1.37.x` in CI) |
 | End-to-end | kind + Kyverno + fixtures (below); the job waits for the Kyverno admission controller to be Available and for a dry-run NodePort Service to be rejected before run 1; runs as cluster-admin with `--as`, as the service account's own token (self mode), and as cluster-admin without `--as`; asserts every verdict, the exit code, the admin hint, `-o json` against the schema, and `-o policyreport` with `kubectl apply --dry-run=server` after installing the PolicyReport CRD | GitHub Actions, kind, Helm |
 
@@ -242,7 +244,7 @@ Run 1 also validates `-o json` against `docs/report.schema.json` and `-o policyr
 
 - `goreleaser` on tag `v*`: darwin/amd64, darwin/arm64, linux/amd64, linux/arm64, windows/amd64; `.tar.gz` (`.zip` on Windows) with `LICENSE` and `README.md` inside; `checksums.txt` (sha256). Version, commit and date injected with `-ldflags`.
 - `.krew.yaml` template rendered at release; `kubectl krew install --manifest=audit-tenant.yaml --archive=<tar>` tested in the release job. First krew-index PR is manual; later versions may use krew-release-bot.
-- README: problem in two sentences; five-line quick start on kind; the check table; "how this differs" paragraph with links (popeye, kubescape, kyverno audit mode, kubectl-mtb, NamespaceHound, kuota-calc, and the `kubectl auth can-i --as` script pattern); safety section, including what a run leaves in the API audit log (SSARs and dry-run creates under the tenant identity, with the impersonating user recorded); prior-art citations; `CITATION.cff`.
+- README: problem in two sentences; five-line quick start on kind; the check table (with a note that AT-04.5 needs `restricted` or a policy, because `baseline` alone does not block it); a troubleshooting section with one entry per SKIP and ERROR hint and the line "run again with --debug and paste the stderr into the issue"; "how this differs" paragraph with links (popeye, kubescape, kyverno audit mode, kubectl-mtb, NamespaceHound, kuota-calc, and the `kubectl auth can-i --as` script pattern); safety section, including what a run leaves in the API audit log (SSARs and dry-run creates under the tenant identity, with the impersonating user recorded); prior-art citations; `CITATION.cff`.
 - `ADOPTERS.md` and the "I use this" issue template already exist from the scaffold.
 
 ## 10. Risks
@@ -271,7 +273,7 @@ Satvik settled these on 2026-10-10, before the engineering plan review. Each too
 ## 12. Acceptance criteria (v0.1.0)
 
 1. `go test ./...` passes; `golangci-lint run` reports zero issues.
-2. The safety test records every request each check makes and fails on any request outside the allowlist in section 4, and on any GET or LIST of `secrets`.
+2. The safety test records every request each check makes and fails on any request outside the allowlist in section 4, and on any GET or LIST of `secrets`; the `--debug` output never contains request headers.
 3. envtest: AT-01, AT-02, AT-03 return PASS for a namespace-only Role and FAIL for a cluster-admin binding; `--as-group` without `--as` exits 2 with the documented message.
 4. kind e2e produces exactly the verdicts and exit codes in the section 8 table for all four runs.
 5. `-o json` validates against `docs/report.schema.json`; `-o policyreport` passes `kubectl apply --dry-run=server` with the v1alpha2 CRD installed.
