@@ -10,7 +10,7 @@ Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pas
 2. **Measured numbers only.** Benchmarks come from this code. Never copy the paper's simulated results.
 3. **Never delete files** without Satvik's say-so. Move old files to `_archive/`.
 4. **Plain writing.** Short sentences, active voice, define terms on first use.
-5. Design lives in `DESIGN.md`. Build list lives in `TODOS.md`. gstack keeps its working docs in `~/.gstack/projects/BodhiSatvik-kubectl-audit-tenant/` (its slug for this repo).
+5. Design lives in `DESIGN.md`. Build list lives in `TODOS.md`; phases, checkpoints and risks in `tasks/plan.md`; quality bar in `CONSTRAINTS.md`. gstack keeps its working docs in `~/.gstack/projects/BodhiSatvik-kubectl-audit-tenant/` (its slug for this repo).
 
 ## Tools
 
