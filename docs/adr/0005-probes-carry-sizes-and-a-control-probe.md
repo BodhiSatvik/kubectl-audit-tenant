@@ -11,3 +11,5 @@ Sizing rule (CEO review, 2026-10-10): a LimitRange `min` above 1m CPU or 1Mi mem
 Controller bypass (CEO review, 2026-10-10): when RBAC denies `create pods` but allows creating a pod controller (Deployment, ReplicaSet, StatefulSet, DaemonSet, Job, CronJob), the controller's pods are not subject to the tenant's RBAC and only admission can stop them. Admission was not exercised, so AT-04 reports SKIP with the allowed kind named, not PASS.
 
 Valid objects (outside review, 2026-10-11): a probe must pass API validation before admission sees it. `privileged: true` with `allowPrivilegeEscalation: false` is rejected at validation, so the AT-04.1 probe also sets `allowPrivilegeEscalation: true`; otherwise a permissive namespace would show ERROR instead of FAIL.
+
+Services too (outside review, 2026-10-11): AT-05 rehearses a compliant ClusterIP Service before the NodePort probe. A policy that rejects Services for an unrelated reason (a required label, a naming rule) would otherwise reject the probe and produce a false PASS; when the control Service is rejected, AT-05 is SKIP with the real reason.
