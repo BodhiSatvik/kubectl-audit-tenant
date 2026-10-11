@@ -24,7 +24,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: httptest cases for 401, `cannot impersonate`, namespace 404, a never-answering server and a sleeping credential helper all exit 2 with the DESIGN.md messages; identity shows `(unverified)` on 403.
   - Verify: `go test ./internal/cluster/...`.
   - Depends on: B3. Files: `internal/cluster/client.go`, `internal/cluster/startup.go`, `internal/cluster/identity.go`, `internal/cluster/cache.go`, tests.
-- [ ] **B5 Runner.** Sequential execution in ID order under one context; ERROR "not run: timeout after <t>" for unfinished checks at the deadline; SIGINT/SIGTERM → ERROR "interrupted" with hint, partial report, second signal exits; a check's API error makes that check ERROR and the run continues; every selected check always yields its results.
+- [x] **B5 Runner.** Sequential execution in ID order under one context; ERROR "not run: timeout after <t>" for unfinished checks at the deadline; SIGINT/SIGTERM → ERROR "interrupted" with hint, partial report, second signal exits; a check's API error makes that check ERROR and the run continues; every selected check always yields its results.
   - AC: cancel-mid-run test (after a FAIL and midway through a multi-result check); deadline test with a blocked httptest handler; ordering test.
   - Verify: `go test ./internal/checks/ -run Runner`.
   - Depends on: B2, B3. Files: `internal/checks/runner.go`, `internal/checks/runner_test.go`.

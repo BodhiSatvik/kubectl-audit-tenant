@@ -1,7 +1,12 @@
 // Package checks holds the check registry, check selection and the ten checks.
 package checks
 
-import "github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
+import (
+	"context"
+
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
+)
 
 // ResultSpec names one result a check produces. Most checks produce one; AT-04 produces five.
 type ResultSpec struct {
@@ -10,7 +15,11 @@ type ResultSpec struct {
 	MTB  string // "-" when none
 }
 
-// Spec is the static description of a check, as list-checks prints it.
+// RunFunc runs one check against the cluster and returns one Result per entry of spec.Results,
+// in order. When ctx ends it returns the results it has; the runner fills in the rest.
+type RunFunc func(ctx context.Context, c *cluster.Client, spec Spec) []report.Result
+
+// Spec is the static description of a check, as list-checks prints it, plus its Run function.
 type Spec struct {
 	ID       string
 	Name     string
@@ -18,6 +27,13 @@ type Spec struct {
 	Severity report.Severity
 	Method   string
 	Results  []ResultSpec
+	Run      RunFunc
+}
+
+// result builds one Result of this check.
+func (s Spec) result(r ResultSpec, verdict report.Verdict, layer, reason, hint string) report.Result {
+	return report.Result{ID: r.ID, Name: r.Name, Kind: s.Kind, MTB: r.MTB, Severity: s.Severity,
+		Verdict: verdict, Layer: layer, Reason: reason, Hint: hint}
 }
 
 func one(id, name, mtb string) []ResultSpec { return []ResultSpec{{ID: id, Name: name, MTB: mtb}} }
