@@ -23,7 +23,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B6 SSAR helper and AT-01
 - [x] B7 CLI command surface
 - [x] B8 Checklist printer
-- [ ] B9 e2e scaffold on kind
+- [x] B9 e2e scaffold on kind
 - [ ] B10 Release pipeline dry run
 
 ### Checkpoint 1: walking skeleton
