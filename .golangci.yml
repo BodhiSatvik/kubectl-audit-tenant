@@ -1,0 +1,38 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nolintlint
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    depguard:
+      rules:
+        headroom-is-pure-math:
+          files: ["**/internal/headroom/**"]
+          deny:
+            - pkg: "k8s.io/client-go"
+              desc: "internal/headroom is pure math over k8s.io/api types; no client"
+        report-knows-no-checks:
+          files: ["**/internal/report/**"]
+          deny:
+            - pkg: "github.com/BodhiSatvik/kubectl-audit-tenant/internal/checks"
+              desc: "printers depend on report types only"
+            - pkg: "github.com/BodhiSatvik/kubectl-audit-tenant/internal/probe"
+              desc: "printers depend on report types only"
+        transport-only-in-safety-and-cluster:
+          files: ["!**/internal/safety/**", "!**/internal/cluster/**"]
+          deny:
+            - pkg: "k8s.io/client-go/transport"
+              desc: "only internal/safety and internal/cluster build transports (ADR 0001)"

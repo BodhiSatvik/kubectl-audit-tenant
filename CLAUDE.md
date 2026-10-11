@@ -4,6 +4,8 @@ This repo is one project in Satvik Bhasin's Adoption Lab (`../../`). It will be 
 
 ## Rules for this repo
 
+Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pass. `make check` must pass before a task is called done.
+
 1. **Clean room.** Use only the published paper, public standards, and new work. Never copy anything from the lab's `../../context/` folder (employer material and unpublished drafts). Run `../../scripts/clean-room-check.sh .` before each release.
 2. **Measured numbers only.** Benchmarks come from this code. Never copy the paper's simulated results.
 3. **Never delete files** without Satvik's say-so. Move old files to `_archive/`.
