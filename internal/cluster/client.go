@@ -10,6 +10,7 @@ import (
 	authzv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -71,6 +72,8 @@ func Connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, error) {
 	cfg = rest.CopyConfig(cfg)
 	cfg.QPS, cfg.Burst = 50, 300 // kubectl's values; client-go's defaults would throttle the run
+	// JSON on the wire, so --debug can print the SSAR and probe answers as text.
+	cfg.ContentType, cfg.AcceptContentTypes = runtime.ContentTypeJSON, runtime.ContentTypeJSON
 	rec := &safety.Recorder{}
 	cfg.Wrap(safety.Wrap(opts.Namespace, rec))
 	cs, err := kubernetes.NewForConfig(cfg)

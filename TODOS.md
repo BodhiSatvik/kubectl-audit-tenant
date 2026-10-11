@@ -28,7 +28,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: cancel-mid-run test (after a FAIL and midway through a multi-result check); deadline test with a blocked httptest handler; ordering test.
   - Verify: `go test ./internal/checks/ -run Runner`.
   - Depends on: B2, B3. Files: `internal/checks/runner.go`, `internal/checks/runner_test.go`.
-- [ ] **B6 SSAR helper and AT-01.** `can(ctx, verb, group, resource, namespace)` reading answers per D10 (allowed; allowed=false denied; explicit deny adds a note; evaluationError → ERROR). AT-01: four cluster-scoped SSARs with no namespace; PASS/FAIL reason and hint.
+- [x] **B6 SSAR helper and AT-01.** `can(ctx, verb, group, resource, namespace)` reading answers per D10 (allowed; allowed=false denied; explicit deny adds a note; evaluationError → ERROR). AT-01: four cluster-scoped SSARs with no namespace; PASS/FAIL reason and hint.
   - AC: SSAR table test with the four response shapes; AT-01 PASS and FAIL cases; reason names the allowed action on FAIL.
   - Verify: `go test ./internal/checks/ -run 'SSAR|AT01'`.
   - Depends on: B5. Files: `internal/checks/ssar.go`, `internal/checks/at01.go`, tests.
