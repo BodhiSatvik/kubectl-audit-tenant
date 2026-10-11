@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check-public.sh: fail when a tracked text file still holds an unfilled
-# template placeholder such as {{PAPER_DOI}} (an upper-case name in double braces).
+# template placeholder: an upper-case name in double braces, like the template's PAPER_DOI.
 # Usage: hack/check-public.sh            scan every git-tracked file
 #        hack/check-public.sh FILE...    scan the given files
 #        hack/check-public.sh --self-test
