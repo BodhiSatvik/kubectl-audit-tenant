@@ -4,7 +4,7 @@ title: "audit-tenant"
 authors:
   - family-names: Bhasin
     given-names: Satvik
-repository-code: "https://github.com/BodhiSatvik/audit-tenant"
+repository-code: "https://github.com/BodhiSatvik/kubectl-audit-tenant"
 license: "Apache-2.0"
 preferred-citation:
   type: conference-paper
