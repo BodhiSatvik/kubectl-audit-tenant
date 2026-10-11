@@ -80,7 +80,7 @@ func TestChecklistSanitizesAndCapsServerText(t *testing.T) {
 	r := sample()
 	long := strings.Repeat("admission webhook \"validate.kyverno.svc\" denied the request: ", 9) // about 600 characters
 	r.Results[1].Reason = "line one\r\nline \x1b[31mtwo\x1b[0m\ttab\x07bell\n" + long
-	r.Results[1].Hint = "first\nsecond \x1b[1mbold\x1b[0m"
+	r.Results[1].Hint = "first\nsecond \x1b[1mbold\x1b[0m\x1b]0;evil title\x07"
 	r.Summary = Summarize(r.Results, false)
 	out := render(t, Checklist{}, r)
 	golden(t, "checklist-long-ansi-reason", out)
@@ -89,7 +89,7 @@ func TestChecklistSanitizesAndCapsServerText(t *testing.T) {
 			t.Errorf("output still contains %q", bad)
 		}
 	}
-	if !strings.Contains(out, "line one; line two tab") || !strings.Contains(out, "first; second bold") {
+	if !strings.Contains(out, "line one; line two tab") || !strings.Contains(out, "first; second bold\n") {
 		t.Error("newlines should fold to '; ' and escapes should be stripped")
 	}
 	if !strings.Contains(out, "…") || !strings.Contains(out, "full reasons: -o wide or -o json") {

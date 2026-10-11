@@ -6,7 +6,8 @@ import (
 	"unicode"
 )
 
-var ansi = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+// CSI sequences (ESC [ ... final byte) and OSC sequences (ESC ] ... BEL or ESC \).
+var ansi = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)`)
 
 // sanitize makes server text safe for a terminal: ANSI escapes and control characters are
 // removed, tabs become spaces, and newlines fold to "; ".

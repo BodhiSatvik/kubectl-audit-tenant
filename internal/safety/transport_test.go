@@ -146,6 +146,18 @@ func TestSafety(t *testing.T) {
 	})
 }
 
+func TestSafetyRefusesEverythingWithoutATargetNamespace(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{"GET /version": testutil.JSON(http.StatusOK, `{}`)})
+	cs := srv.Client(t, "", nil)
+	_, err := cs.Discovery().ServerVersion()
+	if _, ok := errors.AsType[*safety.RefusedError](err); !ok {
+		t.Errorf("error = %v, want a RefusedError: an empty namespace must not widen the allowlist", err)
+	}
+	if hits := srv.Hits(); len(hits) != 0 {
+		t.Errorf("server saw %v", hits)
+	}
+}
+
 func TestSafetyRecordsAFailedRequestWithStatusZero(t *testing.T) {
 	srv := testutil.NewServer(t, nil)
 	rec := &safety.Recorder{}

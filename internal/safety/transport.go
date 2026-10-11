@@ -54,6 +54,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if req.Method == http.MethodPost {
 			body, readErr := io.ReadAll(resp.Body)
 			if err := errors.Join(readErr, resp.Body.Close()); err != nil {
+				t.Recorder.add(r)
 				return nil, err
 			}
 			resp.Body = io.NopCloser(bytes.NewReader(body))
@@ -65,6 +66,9 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func (t *Transport) allowed(req *http.Request) bool {
+	if t.Namespace == "" {
+		return false // no target namespace, no requests: "/api/v1/namespaces/" would list them all
+	}
 	core := "/api/v1/namespaces/" + t.Namespace
 	apis := "/namespaces/" + t.Namespace
 	switch req.Method {
