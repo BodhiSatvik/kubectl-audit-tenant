@@ -15,6 +15,7 @@ This repo is one project in Satvik Bhasin's Adoption Lab (`../../`). It will be 
 - gstack: `/office-hours` → `/plan-ceo-review` → `/plan-eng-review` → build → `/review` + `/codex` → `/qa` → `/ship`.
 - Matt Pocock's skills: run `/mattpocock-skills:setup-matt-pocock-skills` once in this repo. Then use `grill-with-docs` before design work and `tdd` while you build.
 - Go style: load `/modern-go-guidelines:use-modern-go` (JetBrains' modern Go guidelines, installed as a user-scope plugin) before writing or reviewing any Go code in this repo.
+- Ponytail (`/ponytail`, the "lazy senior dev" plugin, installed at user scope): a hook loads it into every session at level `full`. Keep `full` while coding here and never use `ultra`: `DESIGN.md` is the ask, do not re-argue it. Its reuse ladder (does it need to exist, already in the repo, standard library, installed dependency, one line, else the minimum) is the same ladder gstack's reviews use. Never cut validation, error handling, security, tests that `DESIGN.md` or `CONSTRAINTS.md` require, or anything Satvik asked for. Mark a deliberate shortcut in code as `// shortcut: <limit>, <when to upgrade>`; this is the repo's only shortcut-comment format (add the gstack decision id in the text when one exists). Run `/ponytail-review` on a task's diff before you commit it. gstack `/review` + `/codex` stay the pre-merge gate. Run `/ponytail-debt` before each release.
 - Workflow: `../../docs/workflow/agent-tooling.md`.
 
 ## Idea and paper
