@@ -17,7 +17,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 ### Phase 1: walking skeleton
 - [x] B1 Module, tooling and CI
 - [x] B2 Report types and check registry
-- [ ] B3 Safety transport
+- [x] B3 Safety transport
 - [ ] B4 Cluster client, startup and cache
 - [ ] B5 Runner
 - [ ] B6 SSAR helper and AT-01

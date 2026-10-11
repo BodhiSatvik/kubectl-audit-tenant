@@ -16,7 +16,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: exit-code table test incl. `--fail-on-skip`; selection tests; registry test asserts ten checks and fourteen result IDs in order.
   - Verify: `go test ./internal/report/... ./internal/checks/...`.
   - Depends on: B1. Files: `internal/report/types.go`, `internal/report/exit.go`, `internal/checks/registry.go`, `internal/checks/select.go`, tests.
-- [ ] **B3 Safety transport.** `internal/safety.Transport`: exact-path allowlist (DESIGN.md section 4), refusal error for everything else, request recorder (method, path, status, duration, body for SSAR and dry-run responses). Test harness `internal/testutil`: `httptest.Server` with canned responses and a real clientset built through the transport.
+- [x] **B3 Safety transport.** `internal/safety.Transport`: exact-path allowlist (DESIGN.md section 4), refusal error for everything else, request recorder (method, path, status, duration, body for SSAR and dry-run responses). Test harness `internal/testutil`: `httptest.Server` with canned responses and a real clientset built through the transport.
   - AC: `TestSafety` replays a scripted request set and asserts only allowlisted requests pass; the deny-list (pod `exec` GET, secrets GET and LIST, PATCH, DELETE, POST without `dryRun=All`, another namespace) is refused before any HTTP call; coverage of `internal/safety` is at least 90%.
   - Verify: `make safety`; `hack/coverage-gate.sh`.
   - Depends on: B1. Files: `internal/safety/transport.go`, `internal/safety/recorder.go`, `internal/safety/transport_test.go`, `internal/testutil/server.go`.
