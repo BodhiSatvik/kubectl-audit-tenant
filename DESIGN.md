@@ -257,13 +257,15 @@ Run 1 also validates `-o json` against `docs/report.schema.json` and `-o policyr
 | HPA or Rollout math wrong in an edge case | False AT-10 verdict | Table tests; reason prints the per-workload numbers so a reader can check by hand |
 | Time: three weeks for v0.1 | Late tag | Six-check fallback on 2026-10-31 |
 
-## 11. Open questions for the reviews
+## 11. Questions settled before the plan reviews
 
-1. AT-01 tests four cluster-scoped actions. Enough, or add `list persistentvolumes` and `get clusterroles`?
-2. `--other-namespace` defaults to `kube-system`. Keep, or require an explicit value?
-3. AT-10 uses HPA `maxReplicas` when an HPA targets the workload. Confirm.
-4. Should the summary line list skipped IDs as well as failed IDs when there are more than three? (Current rule: list up to three, then "and N more".)
-5. Does the kind job pin `kindest/node:v1.37.x` only, or also run the oldest supported server (1.28) weekly?
+Satvik settled these on 2026-10-10, before the engineering plan review. Each took the recommended answer.
+
+1. AT-01 tests four cluster-scoped actions in v0.1: `list nodes`, `create namespaces`, `create clusterrolebindings`, `create persistentvolumes`. More actions arrive with the `--baseline` file in v0.2.
+2. `--other-namespace` keeps `kube-system` as its default, because every cluster has it.
+3. AT-10 uses the HPA's `maxReplicas` as the replica count when an HPA targets the workload. That is the real peak the quota must hold.
+4. The summary line lists up to three failed IDs and up to three skipped IDs, then "and N more" for each group. This keeps the last line short.
+5. CI runs kind on one server version (1.37) in v0.1. A weekly run on the oldest supported server (1.28) stays in `TODOS.md` "Later".
 
 ## 12. Acceptance criteria (v0.1.0)
 
