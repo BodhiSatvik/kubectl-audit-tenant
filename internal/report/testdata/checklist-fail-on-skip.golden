@@ -1,0 +1,23 @@
+namespace team-a · as team-a-dev (groups: team-a, system:authenticated) · cluster kind-dev
+
+FAIL   AT-01    AT-01    no
+       fix      fix
+FAIL   AT-02    AT-02    no
+       fix      fix
+FAIL   AT-03    AT-03    no
+       fix      fix
+FAIL   AT-04.1  AT-04.1  no
+       fix      fix
+SKIP   AT-06    AT-06    no
+       fix      fix
+SKIP   AT-07    AT-07    no
+       fix      fix
+SKIP   AT-08    AT-08    no
+       fix      fix
+SKIP   AT-09    AT-09    no
+       fix      fix
+ERROR  AT-10    AT-10    boom
+       fix      retry
+
+0 passed · 4 failed (AT-01, AT-02, AT-03 and 1 more) · 4 skipped (AT-06, AT-07, AT-08 and 1 more), counted as failures (--fail-on-skip) · 1 error · exit 1
+MTB IDs and layers: -o wide · machine output: -o json, -o policyreport

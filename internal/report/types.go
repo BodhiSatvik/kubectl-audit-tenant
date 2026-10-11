@@ -78,4 +78,8 @@ type Report struct {
 	Timestamp      time.Time `json:"timestamp"`
 	Results        []Result  `json:"results"`
 	Summary        Summary   `json:"summary"`
+	// AdminHint is set in self mode when AT-03 finds the cluster-wide wildcard allowed.
+	AdminHint bool `json:"-"`
+	// FailOnSkip records the --fail-on-skip flag for the summary wording.
+	FailOnSkip bool `json:"-"`
 }
