@@ -14,6 +14,7 @@ This repo is one project in Satvik Bhasin's Adoption Lab (`../../`). It will be 
 
 - gstack: `/office-hours` → `/plan-ceo-review` → `/plan-eng-review` → build → `/review` + `/codex` → `/qa` → `/ship`.
 - Matt Pocock's skills: run `/mattpocock-skills:setup-matt-pocock-skills` once in this repo. Then use `grill-with-docs` before design work and `tdd` while you build.
+- Go style: load `/modern-go-guidelines:use-modern-go` (JetBrains' modern Go guidelines, installed as a user-scope plugin) before writing or reviewing any Go code in this repo.
 - Workflow: `../../docs/workflow/agent-tooling.md`.
 
 ## Idea and paper

@@ -1,0 +1,15 @@
+graph LR
+  U["kubectl audit-tenant<br/>-n team-a --as team-a-dev"] --> CLI["CLI<br/>flags, check selection,<br/>exit code 0 / 1 / 2"]
+  CLI --> RUN["Check runner<br/>10 checks, fixed order"]
+  RUN --> BEH["Behavioral checks<br/>AT-01..03: SSAR 'may I?'<br/>AT-04.x, AT-05: dry-run probes"]
+  RUN --> CFG["Configuration checks<br/>AT-06..09: read objects<br/>AT-10: rollout headroom"]
+  BEH --> SAFE["Read-only transport<br/>GET, LIST, SSAR, dry-run only<br/>blocks writes and Secret bodies"]
+  CFG --> SAFE
+  SAFE --> API["Kubernetes API server<br/>(the cluster)"]
+  API --> RBAC["RBAC<br/>permission list"]
+  API --> ADM["Admission<br/>PSA or policy webhook"]
+  API --> STORE["Stored objects<br/>quota, limits, netpol,<br/>labels, workloads"]
+  RUN --> REP["Report<br/>PASS / FAIL / SKIP / ERROR<br/>reason + hint per result"]
+  REP --> OUT["Printers<br/>checklist (default), wide, plain,<br/>json, policyreport"]
+  classDef cluster fill:#E6F1FB,stroke:#185FA5,color:#042C53
+  class API,RBAC,ADM,STORE cluster

@@ -33,7 +33,11 @@ The set of checks a namespace must pass to count as governed. v0.1 ships one fix
 _Avoid_: Policy, profile, standard, ruleset
 
 **Check**:
-One named test with a stable ID (`AT-nn`) that yields exactly one verdict for the target namespace.
+One named test with a stable ID that yields exactly one verdict for the target namespace.
+
+**Check ID**:
+The stable name of a check, `AT-01` to `AT-10`. AT stands for audit-tenant. Sub-checks add a dot and a number (`AT-04.2`).
+_Avoid_: Check number, test ID, rule ID
 _Avoid_: Rule, test, benchmark, control
 
 **Sub-check**:
