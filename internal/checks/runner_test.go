@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
@@ -121,10 +120,7 @@ func TestRunnerDeadlineMarksUnfinishedChecksNotRun(t *testing.T) {
 		return nil // the check ran out of time before it could decide
 	})
 	after := fake("AT-07", 1, func(context.Context, Spec) []report.Result {
-		_, err := c.Clientset.CoreV1().LimitRanges("tenant-a").List(ctx, metav1.ListOptions{})
-		if err == nil {
-			t.Error("a request after the deadline must fail")
-		}
+		t.Fatal("AT-07 must not run after the deadline")
 		return nil
 	})
 

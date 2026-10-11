@@ -3,10 +3,12 @@ on:
   push:
     tags: ["v*"]
 permissions:
-  contents: write
+  contents: read
 jobs:
   goreleaser:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # publishes the release
     steps:
       - uses: actions/checkout@v5
         with:
@@ -26,8 +28,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read # downloads public release assets only
     env:
       GH_TOKEN: ${{ github.token }}
+      KREW_VERSION: v0.5.0
     steps:
       - uses: azure/setup-kubectl@v4
       - name: Install krew
@@ -36,7 +41,7 @@ jobs:
           os=$(uname | tr '[:upper:]' '[:lower:]')
           arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
           cd "$(mktemp -d)"
-          curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/latest/download/krew-${os}_${arch}.tar.gz"
+          curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/download/${KREW_VERSION}/krew-${os}_${arch}.tar.gz"
           tar zxf "krew-${os}_${arch}.tar.gz"
           "./krew-${os}_${arch}" install krew
           echo "$HOME/.krew/bin" >> "$GITHUB_PATH"
@@ -49,7 +54,8 @@ jobs:
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern audit-tenant.yaml --pattern "*_${os}_${arch}.tar.gz"
           export KREW_ROOT
           KREW_ROOT=$(mktemp -d)
-          kubectl krew install --manifest=audit-tenant.yaml --archive=./*_"${os}_${arch}".tar.gz
+          archive=$(ls ./*_"${os}_${arch}".tar.gz) # a glob inside --archive=... never expands
+          kubectl krew install --manifest=audit-tenant.yaml --archive="$archive"
           PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "${tag#v}"
           KREW_ROOT=$(mktemp -d)
           kubectl krew install --manifest-url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/audit-tenant.yaml"

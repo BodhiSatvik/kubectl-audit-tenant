@@ -36,11 +36,11 @@ func (p Checklist) Print(r Report) error {
 	limit := p.reasonWidth(vw + 2 + iw + 2 + nw + 2)
 	cut := false
 	for _, res := range r.Results {
-		reason, c := clip(sanitize(res.Reason), limit, ellipsis)
+		reason, c := clip(Sanitize(res.Reason), limit, ellipsis)
 		cut = cut || c
 		fmt.Fprintf(&b, "%s  %-*s  %-*s  %s\n", p.verdict(res.Verdict, vw), iw, res.ID, nw, res.Name, reason)
 		if res.Verdict != Pass {
-			fmt.Fprintf(&b, "%*s  %-*s  %s\n", vw, "", iw, "fix", sanitize(res.Hint))
+			fmt.Fprintf(&b, "%*s  %-*s  %s\n", vw, "", iw, "fix", Sanitize(res.Hint))
 		}
 	}
 	b.WriteString("\n" + summaryLine(r, dot) + "\n")
@@ -72,7 +72,7 @@ func (p Checklist) verdict(v Verdict, width int) string {
 
 func identity(id Identity) string {
 	s := "as " + id.Username
-	if id.Mode == "self" {
+	if id.Mode == ModeSelf {
 		s += " (self)"
 	}
 	if !id.Verified {

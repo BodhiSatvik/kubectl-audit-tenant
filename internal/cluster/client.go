@@ -3,6 +3,7 @@
 package cluster
 
 import (
+	"cmp"
 	"context"
 	"sync"
 	"time"
@@ -24,11 +25,12 @@ type Attributes = authzv1.ResourceAttributes
 // Options is what the CLI knows before the first request.
 type Options struct {
 	Namespace string
-	Context   string        // kubeconfig context name, for messages and the header
-	User      string        // kubeconfig user name, shown when the identity cannot be verified
-	As        string        // --as; empty in self mode
-	AsGroups  []string      // --as-group
-	Timeout   time.Duration // the run deadline, for the timeout message
+	Context   string           // kubeconfig context name, for messages and the header
+	User      string           // kubeconfig user name, shown when the identity cannot be verified
+	As        string           // --as; empty in self mode
+	AsGroups  []string         // --as-group
+	Timeout   time.Duration    // the run deadline, for the timeout message
+	Recorder  *safety.Recorder // the caller's recorder, so --debug keeps the trace when startup fails; nil makes one
 }
 
 // Client is one run's connection. Every request goes through the safety transport.
@@ -74,7 +76,7 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 	cfg.QPS, cfg.Burst = 50, 300 // kubectl's values; client-go's defaults would throttle the run
 	// JSON on the wire, so --debug can print the SSAR and probe answers as text.
 	cfg.ContentType, cfg.AcceptContentTypes = runtime.ContentTypeJSON, runtime.ContentTypeJSON
-	rec := &safety.Recorder{}
+	rec := cmp.Or(opts.Recorder, &safety.Recorder{})
 	cfg.Wrap(safety.Wrap(opts.Namespace, rec))
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {

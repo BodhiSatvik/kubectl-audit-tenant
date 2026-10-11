@@ -24,6 +24,7 @@ func TestSelect(t *testing.T) {
 		{"--skip alone removes one result", nil, []string{"AT-04.2"}, without("AT-04.2")},
 		{"--skip a family removes all its results", nil, []string{"AT-04"}, without("AT-04.1", "AT-04.2", "AT-04.3", "AT-04.4", "AT-04.5")},
 		{"order follows the registry, not the flag", []string{"AT-05", "AT-01"}, nil, []string{"AT-01", "AT-05"}},
+		{"a space after the comma is fine", []string{"AT-01", " AT-05"}, nil, []string{"AT-01", "AT-05"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

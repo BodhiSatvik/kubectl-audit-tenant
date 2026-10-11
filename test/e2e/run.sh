@@ -45,7 +45,7 @@ say "waiting until the webhook rejects a dry-run NodePort Service"
 rejected=""
 for _ in $(seq 1 60); do
   if out=$(kubectl create -f test/e2e/fixtures/nodeport-service.yaml -n tenant-a --dry-run=server 2>&1); then sleep 2; continue; fi
-  if grep -q 'admission webhook' <<<"$out"; then rejected=1; break; fi
+  if grep -q 'restrict-nodeport' <<<"$out"; then rejected=1; break; fi # the policy itself, not any webhook error
   sleep 2
 done
 [ -n "$rejected" ] || fail "Kyverno did not reject the NodePort dry-run: ${out:-no output}"

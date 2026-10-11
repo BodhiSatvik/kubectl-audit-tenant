@@ -3,6 +3,7 @@ package checks
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrNoChecks is returned when --checks and --skip leave nothing to run.
@@ -43,6 +44,7 @@ func Select(include, skip []string) ([]Spec, error) {
 func resolve(ids []string) (map[string]bool, error) {
 	set := map[string]bool{}
 	for _, id := range ids {
+		id = strings.TrimSpace(id) // "AT-01, AT-05" splits with a leading space
 		found := false
 		for _, s := range Registry {
 			for _, r := range s.Results {

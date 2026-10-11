@@ -9,9 +9,9 @@ import (
 // CSI sequences (ESC [ ... final byte) and OSC sequences (ESC ] ... BEL or ESC \).
 var ansi = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(\x07|\x1b\\)`)
 
-// sanitize makes server text safe for a terminal: ANSI escapes and control characters are
+// Sanitize makes server text safe for a terminal: ANSI escapes and control characters are
 // removed, tabs become spaces, and newlines fold to "; ".
-func sanitize(s string) string {
+func Sanitize(s string) string {
 	s = ansi.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "")

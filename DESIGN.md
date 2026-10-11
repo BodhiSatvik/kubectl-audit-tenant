@@ -85,7 +85,7 @@ Go module: `github.com/BodhiSatvik/kubectl-audit-tenant`. Go 1.26. `k8s.io/clien
 | `test/e2e/` | kind config, `versions.env`, fixtures, Kyverno policy, expected verdicts, run script |
 | `hack/check-public.sh` | Fails on unfilled `{{`...`}}` placeholders; runs in CI |
 | `.github/workflows/` | `ci.yml` (vet, lint, unit, envtest), `e2e.yml` (kind), `release.yml` (goreleaser) |
-| `.goreleaser.yaml`, `.krew.yaml` | Release and krew manifest template |
+| `.goreleaser.yaml` | Release; its `krews` block renders the krew manifest (`dist/krew/audit-tenant.yaml`) |
 
 ## 5. The checks
 

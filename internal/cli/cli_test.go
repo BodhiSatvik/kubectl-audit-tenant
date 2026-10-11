@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cli"
@@ -156,5 +157,26 @@ func TestHelpStartsWithThePluginName(t *testing.T) {
 	code, stdout, _ := run(t, "--help")
 	if code != 0 || !strings.HasPrefix(stdout, "kubectl audit-tenant") || !strings.Contains(stdout, "--request-timeout") {
 		t.Errorf("--help: exit %d, stdout:\n%s", code, stdout)
+	}
+}
+
+func TestDebugTraceIsPrintedWhenStartupFails(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"GET /version": testutil.Status(http.StatusUnauthorized, metav1.StatusReasonUnauthorized, "Unauthorized"),
+	})
+	code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--debug")
+	if code != 2 || !strings.Contains(stderr, "GET /version") || !strings.Contains(stderr, " 401 ") {
+		t.Errorf("exit %d; --debug must still list the startup requests on a startup failure; stderr:\n%s", code, stderr)
+	}
+}
+
+func TestDebugPrintsPostAnswerBodiesWithoutHeaders(t *testing.T) {
+	srv := cluster(t)
+	_, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--debug")
+	if !strings.Contains(stderr, `"allowed":false`) {
+		t.Errorf("--debug should print the SSAR answer bodies:\n%s", stderr)
+	}
+	if strings.Contains(stderr, "test-token") || strings.Contains(stderr, "Authorization") {
+		t.Errorf("--debug must not print request headers:\n%s", stderr)
 	}
 }

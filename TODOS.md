@@ -41,13 +41,13 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - Verify: `go test ./internal/report/ -run Checklist`.
   - Depends on: B2. Files: `internal/report/checklist.go`, `internal/report/text.go`, `internal/report/color.go`, `internal/report/color_windows.go`, `internal/report/testdata/`.
 - [x] **B9 e2e scaffold on kind.** `test/e2e/kind.yaml`, `versions.env` (kindest/node v1.37.0 digest, Kyverno chart 3.9.1 / app v1.19.1, `kyverno/policies` commit for `restrict-nodeport` with `Enforce`, PolicyReport CRD commit), fixtures `tenant-a` and `tenant-b` exactly as DESIGN.md section 8, Kyverno install with the readiness wait (Available plus a rejected dry-run NodePort Service), `run.sh` that runs the four identities and asserts AT-01 only for now plus exit codes, `.github/workflows/e2e.yml`.
-  - AC: e2e job green on GitHub Actions; run 4 shows AT-01 FAIL with the admin header line; runs 1 to 3 show AT-01 PASS.
+  - AC: e2e job green on GitHub Actions; run 4 shows AT-01 FAIL (the admin header line is asserted from B16, when AT-03 exists); runs 1 to 3 show AT-01 PASS.
   - Verify: `make e2e` locally (Docker via colima) and the e2e workflow.
   - Depends on: B7, B8. Files: `test/e2e/kind.yaml`, `test/e2e/versions.env`, `test/e2e/fixtures/*.yaml`, `test/e2e/run.sh`, `.github/workflows/e2e.yml`.
-- [x] **B10 Release pipeline dry run.** `.goreleaser.yaml` (darwin/linux amd64+arm64, windows/amd64; tar.gz and zip with LICENSE and README; `checksums.txt`; version/commit/date ldflags), `.krew.yaml` template, `release.yml` on `v*` tags: build, upload `audit-tenant.yaml` as an asset, install smoke tests in clean `KREW_ROOT` dirs on ubuntu and macos (`--manifest --archive`, then `--manifest-url`), run `version` from each; a `goreleaser release --snapshot --clean` step in `ci.yml`.
+- [x] **B10 Release pipeline dry run.** `.goreleaser.yaml` (darwin/linux amd64+arm64, windows/amd64; tar.gz and zip with LICENSE and README; `checksums.txt`; version/commit/date ldflags), the krew manifest rendered by goreleaser's `krews` block (no `.krew.yaml` template), `release.yml` on `v*` tags: build, upload `audit-tenant.yaml` as an asset, install smoke tests in clean `KREW_ROOT` dirs on ubuntu and macos (`--manifest --archive`, then `--manifest-url`), run `version` from each; a `goreleaser release --snapshot --clean` step in `ci.yml`.
   - AC: snapshot build yields five archives and a checksums file in CI; `kubectl krew install --manifest=... --archive=...` works on the maintainer's Mac (krew installed first).
   - Verify: CI snapshot step; local krew install.
-  - Depends on: B7. Files: `.goreleaser.yaml`, `.krew.yaml`, `.github/workflows/release.yml`, `.github/workflows/ci.yml`.
+  - Depends on: B7. Files: `.goreleaser.yaml`, `.github/workflows/release.yml`, `.github/workflows/ci.yml`.
 
 **Checkpoint 1 (walking skeleton):** `make check` green; e2e asserts AT-01 across the four runs; snapshot release builds; the first `BENCHMARK.md` timing of the one-check run recorded. Review with Satvik before Phase 2.
 
@@ -74,7 +74,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - Verify: `go test ./internal/checks/ -run AT05`.
   - Depends on: B13. Files: `internal/checks/at05.go`, tests.
 - [ ] **B16 e2e: AT-01 to AT-05.** Extend `run.sh` assertions to AT-01..05 for runs 1 to 4 (AT-04 FAIL on tenant-b, AT-05 PASS via the Kyverno webhook, AT-04 PASS via PSA on tenant-a); assert every FAIL and SKIP has a hint.
-  - AC: e2e job green with the extended expectations.
+  - AC: e2e job green with the extended expectations; run 4 shows the admin header line.
   - Verify: e2e workflow.
   - Depends on: B14, B15. Files: `test/e2e/run.sh`, `test/e2e/expected/`.
 
@@ -119,7 +119,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: slug tests (service account, long identity); apply succeeds in e2e run 1.
   - Verify: `go test ./internal/report/ -run PolicyReport`; e2e workflow.
   - Depends on: B8. Files: `internal/report/policyreport.go`, tests, `test/e2e/run.sh`, `test/e2e/versions.env`.
-- [ ] **B25 `--debug` and `--fail-on-skip`.** `--debug` writes the recorder trace, identity steps and SSAR/probe bodies to stderr, never headers; `--fail-on-skip` summary wording and exit code; `-o json` reports the resulting exitCode.
+- [ ] **B25 `--debug` and `--fail-on-skip`.** `--debug` writes the recorder trace, identity steps and SSAR/probe bodies to stderr, never headers (redact `userInfo.extra` from the SelfSubjectReview body: it can hold identity-provider claims); `--fail-on-skip` summary wording and exit code; `-o json` reports the resulting exitCode.
   - AC: stderr golden for a fake run; a test asserts no `Authorization` or `Impersonate-` header text in `--debug` output (acceptance criterion 2); exit-code case with a SKIP.
   - Verify: `go test ./internal/cli/ -run 'Debug|FailOnSkip'`.
   - Depends on: B7, B3. Files: `internal/cli/debug.go`, `internal/report/exit.go`, tests.
@@ -145,7 +145,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Phase 6: docs and release
 
-- [ ] **B29 README.** Problem in two sentences; quick start on kind with the three install paths; the check table with the AT-04.5 note; "how this differs" (popeye, kubescape, kyverno audit mode, kubectl-mtb, NamespaceHound, kuota-calc, the can-i script); safety section with the audit-log note and "what a PASS does not prove"; troubleshooting (one entry per SKIP/ERROR hint, `--debug` line); pipeline example with `--fail-on-skip`; prior art and citation.
+- [ ] **B29 README.** Problem in two sentences; quick start on kind with the three install paths; the check table with the AT-04.5 note; "how this differs" (popeye, kubescape, kyverno audit mode, kubectl-mtb, NamespaceHound, kuota-calc, the can-i script); safety section with the audit-log note and "what a PASS does not prove"; troubleshooting (one entry per SKIP/ERROR hint, `--debug` line; the "timed out during startup" entry says a hung credential helper may keep running after the tool exits); pipeline example with `--fail-on-skip`; prior art and citation.
   - AC: quick start works on a clean machine with Docker, kind and kubectl in five minutes (acceptance criterion 9); `hack/check-public.sh` passes.
   - Verify: fresh-machine run (Satvik or a clean VM); `make check-fast`.
   - Depends on: B21, B25. Files: `README.md`.

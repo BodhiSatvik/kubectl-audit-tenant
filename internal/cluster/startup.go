@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +24,13 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 	// Error() decodes the server's Status body; Raw() alone would report "unknown" on a 401 or 403.
 	res := c.Clientset.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx)
 	if err := res.Error(); err != nil {
-		return cmp.Or(opts.fatal(ctx, err), fmt.Errorf("API server unreachable: %w", err))
+		if fatal := opts.fatal(ctx, err); fatal != nil {
+			return fatal
+		}
+		if apierrors.IsForbidden(err) {
+			return fmt.Errorf("the API server refused /version for this identity: %w", err)
+		}
+		return fmt.Errorf("API server unreachable: %w", err)
 	}
 	raw, _ := res.Raw()
 	var info version.Info
@@ -34,9 +39,9 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 	}
 	c.Version = info.GitVersion
 
-	c.Identity = report.Identity{Mode: "self", Username: opts.User}
+	c.Identity = report.Identity{Mode: report.ModeSelf, Username: opts.User}
 	if opts.As != "" {
-		c.Identity = report.Identity{Mode: "impersonation", Username: opts.As, Groups: opts.AsGroups}
+		c.Identity = report.Identity{Mode: report.ModeImpersonation, Username: opts.As, Groups: opts.AsGroups}
 	}
 	review, err := c.Clientset.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authnv1.SelfSubjectReview{}, metav1.CreateOptions{})
 	switch {

@@ -47,6 +47,12 @@ type Result struct {
 	Hint     string   `json:"hint"`
 }
 
+// The two identity modes.
+const (
+	ModeSelf          = "self"
+	ModeImpersonation = "impersonation"
+)
+
 // Identity is what the API server said the caller is (ADR 0009).
 type Identity struct {
 	Mode     string   `json:"mode"` // self or impersonation

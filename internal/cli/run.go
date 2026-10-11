@@ -16,6 +16,7 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/checks"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/safety"
 )
 
 type runOptions struct {
@@ -80,6 +81,20 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		return exit2("cannot load the kubeconfig: %v", err)
 	}
 
+	cfg.UserAgent = "audit-tenant/" + info.Version // what the API audit log shows
+	rec := &safety.Recorder{}
+	trace := func() { // --debug: one line per request, never headers; bodies of the POST answers indented
+		if !o.debug {
+			return
+		}
+		for _, r := range rec.Requests() {
+			cmd.PrintErrf("%s %s %d %s\n", r.Method, r.Path, r.Status, r.Duration.Round(time.Millisecond))
+			if r.Body != "" {
+				cmd.PrintErrf("  %s\n", report.Sanitize(r.Body))
+			}
+		}
+	}
+	defer trace()
 	ctx, cancel := context.WithTimeout(cmd.Context(), o.timeout)
 	defer cancel()
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -88,7 +103,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 
 	c, err := cluster.Connect(ctx, cfg, cluster.Options{
 		Namespace: namespace, Context: contextName, User: user,
-		As: *o.flags.Impersonate, AsGroups: *o.flags.ImpersonateGroup, Timeout: o.timeout,
+		As: *o.flags.Impersonate, AsGroups: *o.flags.ImpersonateGroup, Timeout: o.timeout, Recorder: rec,
 	})
 	if err != nil {
 		return exit2("%v", err)
@@ -106,11 +121,6 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	rep.Summary = report.Summarize(results, o.failOnSkip)
 	if errors.Is(ctx.Err(), context.Canceled) {
 		rep.Summary.ExitCode = 2 // interrupted: the report is partial
-	}
-	if o.debug {
-		for _, r := range c.Recorder.Requests() {
-			cmd.PrintErrf("%s %s %d %s\n", r.Method, r.Path, r.Status, r.Duration.Round(time.Millisecond))
-		}
 	}
 	printer := report.Checklist{Out: streams.Out, Color: report.WantColor(streams.Out, o.noColor), Plain: o.plain, Width: report.Width(streams.Out)}
 	if err := printer.Print(rep); err != nil {
