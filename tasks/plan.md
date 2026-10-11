@@ -21,7 +21,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B4 Cluster client, startup and cache
 - [x] B5 Runner
 - [x] B6 SSAR helper and AT-01
-- [ ] B7 CLI command surface
+- [x] B7 CLI command surface
 - [x] B8 Checklist printer
 - [ ] B9 e2e scaffold on kind
 - [ ] B10 Release pipeline dry run

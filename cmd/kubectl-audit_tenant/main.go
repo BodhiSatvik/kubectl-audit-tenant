@@ -3,10 +3,13 @@
 package main
 
 import (
-	"fmt"
+	"os"
 
+	"k8s.io/cli-runtime/pkg/genericiooptions"
 	// Cloud login plugins (exec, oidc) so kubeconfigs from managed clusters work.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cli"
 )
 
 // Set by goreleaser through -ldflags; "dev" when built with plain go build.
@@ -17,5 +20,6 @@ var (
 )
 
 func main() {
-	fmt.Printf("audit-tenant %s (commit %s, built %s)\n", version, commit, date)
+	streams := genericiooptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
+	os.Exit(cli.Main(os.Args[1:], cli.BuildInfo{Version: version, Commit: commit, Date: date}, streams))
 }

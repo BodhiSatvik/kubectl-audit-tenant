@@ -32,7 +32,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: SSAR table test with the four response shapes; AT-01 PASS and FAIL cases; reason names the allowed action on FAIL.
   - Verify: `go test ./internal/checks/ -run 'SSAR|AT01'`.
   - Depends on: B5. Files: `internal/checks/ssar.go`, `internal/checks/at01.go`, tests.
-- [ ] **B7 CLI command surface.** cobra root `kubectl audit-tenant`: `-n` (default from context, else exit 2), `--as`/`--as-group` (group without user → exit 2), `-o`, `--plain`, `--no-color`, `--checks`, `--skip`, `--other-namespace`, `--timeout`, `--fail-on-skip`, `--debug`; cli-runtime kubeconfig flags; `list-checks [-o table|json]`; `version`; help text starts with `kubectl audit-tenant`; `--request-timeout` note.
+- [x] **B7 CLI command surface.** cobra root `kubectl audit-tenant`: `-n` (default from context, else exit 2), `--as`/`--as-group` (group without user → exit 2), `-o`, `--plain`, `--no-color`, `--checks`, `--skip`, `--other-namespace`, `--timeout`, `--fail-on-skip`, `--debug`; cli-runtime kubeconfig flags; `list-checks [-o table|json]`; `version`; help text starts with `kubectl audit-tenant`; `--request-timeout` note.
   - AC: flag-validation table test (every exit-2 case in DESIGN.md section 6); `list-checks` prints ten lines; `version` prints the ldflags values.
   - Verify: `go test ./internal/cli/...`; `go run ./cmd/kubectl-audit_tenant --help`.
   - Depends on: B2, B4. Files: `internal/cli/root.go`, `internal/cli/run.go`, `internal/cli/listchecks.go`, `internal/cli/version.go`, tests.
