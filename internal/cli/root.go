@@ -12,7 +12,8 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
-// BuildInfo is set by goreleaser through -ldflags.
+// BuildInfo names the build: goreleaser sets it through -ldflags; otherwise main fills it from
+// the Go build info (module version, vcs.revision, vcs.time).
 type BuildInfo struct {
 	Version string
 	Commit  string

@@ -28,7 +28,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: cancel-mid-run test (after a FAIL and midway through a multi-result check); deadline test with a blocked httptest handler; ordering test.
   - Verify: `go test ./internal/checks/ -run Runner`.
   - Depends on: B2, B3. Files: `internal/checks/runner.go`, `internal/checks/runner_test.go`.
-- [x] **B6 SSAR helper and AT-01.** `can(ctx, verb, group, resource, namespace)` reading answers per D10 (allowed; allowed=false denied; explicit deny adds a note; evaluationError → ERROR). AT-01: four cluster-scoped SSARs with no namespace; PASS/FAIL reason and hint.
+- [x] **B6 SSAR helper and AT-01.** `can(ctx, verb, group, resource, namespace)` reading answers per D10 as amended by D52 (allowed; allowed=false denied; explicit deny adds a note; evaluationError on a not-allowed answer → ERROR, allowed wins; an answer that does not echo the question → ERROR) and a positive control question (D55). AT-01: four cluster-scoped SSARs with no namespace; PASS/FAIL reason and hint.
   - AC: SSAR table test with the four response shapes; AT-01 PASS and FAIL cases; reason names the allowed action on FAIL.
   - Verify: `go test ./internal/checks/ -run 'SSAR|AT01'`.
   - Depends on: B5. Files: `internal/checks/ssar.go`, `internal/checks/at01.go`, tests.
@@ -73,7 +73,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: unit cases: webhook rejects NodePort (PASS, layer webhook); control rejected (SKIP); accepted (FAIL); update allowed (SKIP).
   - Verify: `go test ./internal/checks/ -run AT05`.
   - Depends on: B13. Files: `internal/checks/at05.go`, tests.
-- [ ] **B16 e2e: AT-01 to AT-05.** Extend `run.sh` assertions to AT-01..05 for runs 1 to 4 (AT-04 FAIL on tenant-b, AT-05 PASS via the Kyverno webhook, AT-04 PASS via PSA on tenant-a); assert every FAIL and SKIP has a hint.
+- [ ] **B16 e2e: AT-01 to AT-05.** Extend `run.sh` assertions to AT-01..05 for runs 1 to 4 (AT-04 FAIL on tenant-b, AT-05 PASS via the Kyverno webhook, AT-04 PASS via PSA on tenant-a); `hints()` in run.sh already asserts a fix line under every FAIL, SKIP and ERROR.
   - AC: e2e job green with the extended expectations; run 4 shows the admin header line.
   - Verify: e2e workflow.
   - Depends on: B14, B15. Files: `test/e2e/run.sh`, `test/e2e/expected/`.
@@ -119,7 +119,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: slug tests (service account, long identity); apply succeeds in e2e run 1.
   - Verify: `go test ./internal/report/ -run PolicyReport`; e2e workflow.
   - Depends on: B8. Files: `internal/report/policyreport.go`, tests, `test/e2e/run.sh`, `test/e2e/versions.env`.
-- [ ] **B25 `--debug` and `--fail-on-skip`.** `--debug` writes the recorder trace, identity steps and SSAR/probe bodies to stderr, never headers (redact `userInfo.extra` from the SelfSubjectReview body: it can hold identity-provider claims); `--fail-on-skip` summary wording and exit code; `-o json` reports the resulting exitCode.
+- [ ] **B25 `--debug` and `--fail-on-skip`.** `--debug` writes the recorder trace, identity steps and SSAR/probe bodies to stderr, never headers (the `userInfo.extra` redaction landed with D51 in `internal/safety`; keep it under the stderr golden); `--fail-on-skip` summary wording and exit code; `-o json` reports the resulting exitCode.
   - AC: stderr golden for a fake run; a test asserts no `Authorization` or `Impersonate-` header text in `--debug` output (acceptance criterion 2); exit-code case with a SKIP.
   - Verify: `go test ./internal/cli/ -run 'Debug|FailOnSkip'`.
   - Depends on: B7, B3. Files: `internal/cli/debug.go`, `internal/report/exit.go`, tests.

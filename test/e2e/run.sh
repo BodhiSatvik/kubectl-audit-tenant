@@ -67,7 +67,7 @@ run() {
 }
 expect() { grep -qE "$2" "bin/e2e-$1.out" || fail "run $1: expected /$2/ in the output above"; }
 # Acceptance criterion 6: every FAIL, SKIP and ERROR line is followed by a non-empty fix line.
-hints() { awk '/^(FAIL|SKIP|ERROR) /{want=1; next} want{if ($1 != "fix" || NF < 2) bad=1; want=0} END{exit bad || want}' "bin/e2e-$1.out" || fail "run $1: a FAIL, SKIP or ERROR line has no fix line"; }
+hints() { awk '/^(FAIL|SKIP|ERROR) /{if (want) bad=1; want=1; next} want{if ($1 != "fix" || NF < 2) bad=1; want=0} END{exit bad || want}' "bin/e2e-$1.out" || fail "run $1: a FAIL, SKIP or ERROR line has no fix line"; }
 
 run 1 0 -n tenant-a --as system:serviceaccount:tenant-a:tenant-a-dev
 expect 1 '^PASS  AT-01 '

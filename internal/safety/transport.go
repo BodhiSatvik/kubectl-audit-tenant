@@ -79,10 +79,12 @@ const selfSubjectReviews = "/apis/authentication.k8s.io/v1/selfsubjectreviews"
 
 // withoutExtra drops status.userInfo.extra from a SelfSubjectReview answer before --debug can
 // print it: identity providers put claims there (a cloud role ARN and session, a token ID).
+// An answer it cannot read is not shown at all.
 func withoutExtra(body []byte) string {
+	const hidden = "(SelfSubjectReview answer not shown: not a JSON object)"
 	var review map[string]any
 	if json.Unmarshal(body, &review) != nil {
-		return string(body)
+		return hidden
 	}
 	if status, ok := review["status"].(map[string]any); ok {
 		if user, ok := status["userInfo"].(map[string]any); ok {
@@ -91,7 +93,7 @@ func withoutExtra(body []byte) string {
 	}
 	out, err := json.Marshal(review)
 	if err != nil {
-		return ""
+		return hidden
 	}
 	return string(out)
 }

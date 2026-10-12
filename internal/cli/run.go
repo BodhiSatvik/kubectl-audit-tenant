@@ -73,7 +73,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		asUser = cmp.Or(asUser, ai.Impersonate)
 	}
 	if asUser == "" && (len(*o.flags.ImpersonateGroup) > 0 || *o.flags.ImpersonateUID != "") {
-		return exit2("--as-group and --as-uid need --as: the API requires a user with the groups; use `--as audit-probe --as-group <group>` to test a group alone")
+		return exit2("--as-group and --as-uid need a user to impersonate (--as, or as: in the kubeconfig user): the API requires a user with the groups; use `--as audit-probe --as-group <group>` to test a group alone")
 	}
 	if namespace == "" {
 		return exit2("namespace required: pass -n, or set a namespace in context %q", contextName)

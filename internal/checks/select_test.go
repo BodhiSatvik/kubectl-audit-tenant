@@ -57,8 +57,10 @@ func TestSelect(t *testing.T) {
 }
 
 func TestSelectRejectsChecksNotInThisBuild(t *testing.T) {
-	if _, err := Select([]string{"AT-02"}, nil); err == nil || !strings.Contains(err.Error(), "AT-02 is not in this build yet") {
-		t.Errorf("Select(AT-02) error = %v, want 'not in this build yet'", err)
+	for _, include := range [][]string{{"AT-02"}, {"AT-01", "AT-02"}, {"AT-01", "AT-04.2"}} {
+		if _, err := Select(include, nil); err == nil || !strings.Contains(err.Error(), "is not in this build yet") {
+			t.Errorf("Select(%v) error = %v, want 'not in this build yet', never an AT-01-only report", include, err)
+		}
 	}
 	if _, err := Select(nil, []string{"AT-01"}); !errors.Is(err, ErrNoChecks) {
 		t.Errorf("Select(skip AT-01) error = %v, want ErrNoChecks (nothing else is built)", err)

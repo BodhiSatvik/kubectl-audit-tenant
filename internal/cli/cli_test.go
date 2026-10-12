@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -64,7 +65,7 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"--as-group without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-group", "team-a"}, "--as-group and --as-uid need --as"},
+		{"--as-group without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-group", "team-a"}, "--as-group and --as-uid need a user to impersonate"},
 		{"unknown check in --checks", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-99"}, `unknown check ID "AT-99"`},
 		{"unknown check in --skip", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--skip", "at-01"}, `unknown check ID "at-01"`},
 		{"empty selection", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-01", "--skip", "AT-01"}, "no checks selected"},
@@ -74,7 +75,7 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"namespace required", []string{"--kubeconfig", noNS}, "namespace required"},
 		{"namespace is not one DNS label", []string{"-n", "kube-system/secrets", "--kubeconfig", withNS}, "invalid namespace"},
 		{"other namespace is not one DNS label", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--other-namespace", ""}, "invalid --other-namespace"},
-		{"--as-uid without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-uid", "1234"}, "--as-group and --as-uid need --as"},
+		{"--as-uid without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-uid", "1234"}, "--as-group and --as-uid need a user to impersonate"},
 		{"check not in this build", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-02"}, "not in this build yet"},
 		{"kubeconfig cannot load", []string{"-n", "tenant-a", "--kubeconfig", filepath.Join(t.TempDir(), "missing")}, "kubeconfig"},
 		{"unknown flag", []string{"-n", "tenant-a", "--bogus"}, "unknown flag"},
@@ -222,18 +223,30 @@ func TestDebugTraceIsPrintedWhenStartupFails(t *testing.T) {
 // seam=none; no_claim=sanitizing of request paths, which the client builds
 func TestServerTextOnStderrIsSanitized(t *testing.T) {
 	const evil = "\x1b]0;owned\x07\x1b[2K\rPASS"
-	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
-		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
-		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"u`+evil+`"}}}`),
-		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
-		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcd down"+evil),
-	})
-	code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--debug")
-	if code != 2 || !strings.Contains(stderr, "error: the first SelfSubjectAccessReview failed: etcd down") || !strings.Contains(stderr, `"username":"u`) {
-		t.Fatalf("exit %d; want exit 2 with the startup error and the --debug answer bodies on stderr:\n%q", code, stderr)
+	proxyText := func(w http.ResponseWriter, _ *http.Request) { // a text answer: --debug records it byte for byte
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, "etcd down"+evil)
 	}
-	if strings.ContainsAny(stderr, "\x1b\x07\r") {
-		t.Errorf("stderr carries raw control characters from the server:\n%q", stderr)
+	for name, ssar := range map[string]http.HandlerFunc{
+		"the startup error line": testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcd down"+evil),
+		"a --debug answer body":  proxyText,
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+				"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+				"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"u"}}}`),
+				"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+				"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": ssar,
+			})
+			code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--debug")
+			if code != 2 || !strings.Contains(stderr, "error: the first SelfSubjectAccessReview failed") || !strings.Contains(stderr, "etcd down") || !strings.Contains(stderr, `"username":"u"`) {
+				t.Fatalf("exit %d; want exit 2 with the startup error and the --debug answer bodies on stderr:\n%q", code, stderr)
+			}
+			if strings.ContainsAny(stderr, "\x1b\x07\r") {
+				t.Errorf("stderr carries raw control characters from the server:\n%q", stderr)
+			}
+		})
 	}
 }
 

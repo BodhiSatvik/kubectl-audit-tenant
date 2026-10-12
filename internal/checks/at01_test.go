@@ -1,10 +1,13 @@
 package checks
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
@@ -44,13 +47,18 @@ func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
 			}
 		})
 	}
-	t.Run("an answer that does not repeat the question is an error", func(t *testing.T) {
-		// A 2xx without the echoed spec (a proxy, an empty object) decodes to allowed=false.
-		c := connect(t, testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`))
-		if _, err := can(t.Context(), c, "get", "", "pods", "tenant-a"); err == nil || !strings.Contains(err.Error(), "does not repeat the question") {
-			t.Errorf("can() error = %v, want an error: a non-echo answer must never read as a denial", err)
-		}
-	})
+	for name, body := range map[string]string{
+		"no echoed question":      `{"status":{"allowed":false}}`, // a proxy or an empty object decodes to allowed=false
+		"another question echoed": `{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}},"status":{"allowed":false}}`,
+	} {
+		t.Run(name+" is an error", func(t *testing.T) {
+			c := connect(t, testutil.JSON(http.StatusCreated, body))
+			_, err := can(t.Context(), c, "get", "", "pods", "tenant-a")
+			if err == nil || !strings.Contains(err.Error(), "does not repeat the question") || hintFor(err) != hintNotAPIServer {
+				t.Errorf("can() error = %v, want a not-the-API-server error: such an answer must never read as a denial", err)
+			}
+		})
+	}
 	t.Run("a failed request is an error", func(t *testing.T) {
 		c := connect(t, &ssarServer{answers: map[string]string{"list nodes": denied}})
 		if _, err := can(t.Context(), c, "get", "", "pods", "tenant-a"); err == nil {
@@ -74,12 +82,13 @@ func TestAT01PassWhenAllFourActionsAreDenied(t *testing.T) {
 	}
 	wantAsked := []cluster.Attributes{
 		{Verb: "list", Resource: "nodes"},
+		{Verb: "create", Group: "authorization.k8s.io", Resource: "selfsubjectaccessreviews"},
 		{Verb: "create", Resource: "namespaces"},
 		{Verb: "create", Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings"},
 		{Verb: "create", Resource: "persistentvolumes"},
 	}
 	if !slices.Equal(srv.asked, wantAsked) {
-		t.Errorf("asked %+v, want the four cluster-scoped questions once each (startup's answer reused)", srv.asked)
+		t.Errorf("asked %+v, want the control and the four cluster-scoped questions once each (startup's answer reused)", srv.asked)
 	}
 }
 
@@ -127,10 +136,71 @@ func TestAT01ErrorsCarryTheServerTextAndAHint(t *testing.T) {
 	}
 }
 
-func TestAT01FailsWhenAnAllowedActionPrecedesAFailedQuestion(t *testing.T) {
-	// list nodes is allowed; the other three questions get HTTP 500. The proven grant is the verdict.
-	got := at01(t.Context(), connect(t, &ssarServer{answers: map[string]string{"list nodes": allowed}}), at01Spec())[0]
-	if got.Verdict != report.Fail || !strings.Contains(got.Reason, "list nodes") {
-		t.Errorf("at01() = %+v, want FAIL naming list nodes: a later error must not hide a proven grant", got)
+func TestAT01AProvenGrantIsAFailWhateverElseGoesWrong(t *testing.T) {
+	evalErr := `{"allowed":false,"evaluationError":"webhook timed out"}`
+	tests := []struct {
+		name      string
+		answers   map[string]string
+		wantGrant string
+		wantAsked int // startup's question, the control, then AT-01's questions not reused
+	}{
+		{"a failed request after the grant", map[string]string{"list nodes": allowed}, "list nodes", 3},
+		{"an evaluationError before the grant", map[string]string{"list nodes": denied, "create namespaces": evalErr, "create clusterrolebindings": allowed, "create persistentvolumes": denied},
+			"create clusterrolebindings", 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := &ssarServer{answers: tt.answers}
+			got := at01(t.Context(), connect(t, srv), at01Spec())[0]
+			if got.Verdict != report.Fail || !strings.Contains(got.Reason, tt.wantGrant) || len(srv.asked) != tt.wantAsked {
+				t.Errorf("at01() = %+v after %d questions; want FAIL naming %s after %d", got, len(srv.asked), tt.wantGrant, tt.wantAsked)
+			}
+		})
+	}
+	t.Run("the deadline after the grant", func(t *testing.T) {
+		srv := &ssarServer{answers: map[string]string{"list nodes": allowed}}
+		hang := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body) // read the body, or the server never notices the client leaving
+			if strings.Contains(string(body), "namespaces") {
+				<-r.Context().Done() // the second question hangs past the deadline
+				return
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(body)))
+			srv.ServeHTTP(w, r)
+		})
+		c := connect(t, hang)
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		defer cancel()
+		if got := at01(ctx, c, at01Spec()); len(got) != 1 || got[0].Verdict != report.Fail || !strings.Contains(got[0].Reason, "list nodes") {
+			t.Errorf("at01() = %+v; want FAIL naming list nodes: the deadline must not hide a proven grant", got)
+		}
+	})
+}
+
+func TestAT01StopsAskingAfterAFailedRequest(t *testing.T) {
+	// create namespaces gets HTTP 500; a 429 or 5xx would repeat, and client-go retries each one.
+	srv := &ssarServer{answers: map[string]string{"list nodes": denied}}
+	got := at01(t.Context(), connect(t, srv), at01Spec())[0]
+	if got.Verdict != report.Error || got.Hint != hintRequestFailed || len(srv.asked) != 3 {
+		t.Errorf("at01() = %+v after %d questions; want ERROR with the re-run hint after 3 (startup, control, create namespaces)", got, len(srv.asked))
+	}
+}
+
+func TestAT01PositiveControlCatchesAnAnswerNotFromTheAPIServer(t *testing.T) {
+	// A proxy that reflects the request body: the echo check passes and every answer reads denied.
+	reflect := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		testutil.JSON(http.StatusCreated, string(body))(w, r)
+	})
+	for name, h := range map[string]http.Handler{
+		"a reflecting proxy":    reflect,
+		"a server that says no": &ssarServer{answers: map[string]string{"list nodes": denied, "create selfsubjectaccessreviews": denied}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := at01(t.Context(), connect(t, h), at01Spec())[0]
+			if got.Verdict != report.Error || got.Hint != hintNotAPIServer {
+				t.Errorf("at01() = %+v; want ERROR with the not-the-API-server hint, never PASS", got)
+			}
+		})
 	}
 }

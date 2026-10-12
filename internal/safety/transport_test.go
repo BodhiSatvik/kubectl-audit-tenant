@@ -332,3 +332,27 @@ func TestSafetyRecordsTheSelfSubjectReviewWithoutExtra(t *testing.T) {
 		t.Errorf("recorded = %+v; want the username kept and userInfo.extra dropped (identity-provider claims must not reach --debug)", reqs)
 	}
 }
+
+func TestSafetyKeepsUserInfoExtraOutOfTheTraceUnderAPrefixAndOnBadBodies(t *testing.T) {
+	const prefix = "/k8s/clusters/c-demo" // a Rancher-style server URL
+	for name, body := range map[string]string{
+		"behind a server path prefix": `{"status":{"userInfo":{"username":"u","extra":{"arn":["SENTINEL-EXTRA"]}}}}`,
+		"an answer that is not JSON":  `{"status":{"userInfo":{"extra":{"arn":["SENTINEL-EXTRA"]}}}}garbage`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+				"POST " + prefix + "/apis/authentication.k8s.io/v1/selfsubjectreviews": testutil.JSON(http.StatusCreated, body),
+			})
+			base, _ := url.Parse(srv.URL + prefix)
+			rec := &safety.Recorder{}
+			cs, err := kubernetes.NewForConfig(&rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, rec)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = cs.AuthenticationV1().SelfSubjectReviews().Create(t.Context(), &authnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+			if reqs := rec.Requests(); len(reqs) != 1 || reqs[0].Body == "" || strings.Contains(reqs[0].Body, "SENTINEL-EXTRA") {
+				t.Errorf("recorded = %+v; userInfo.extra must never reach --debug", reqs)
+			}
+		})
+	}
+}

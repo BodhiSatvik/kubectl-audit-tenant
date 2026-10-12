@@ -20,8 +20,9 @@ func TestFromBuildInfo(t *testing.T) {
 			cli.BuildInfo{Version: "0.1.0", Commit: "abc1234", Date: "d"}},
 		{"go install names the module version", dev, debug.BuildInfo{Main: debug.Module{Version: "v0.1.0"}},
 			cli.BuildInfo{Version: "0.1.0", Commit: "none", Date: "unknown"}},
-		{"go build in a checkout names the commit", dev, debug.BuildInfo{Main: debug.Module{Version: "(devel)"}, Settings: vcs},
-			cli.BuildInfo{Version: "dev", Commit: "305fd69", Date: "2026-10-12T01:52:23Z"}},
+		{"go build in a checkout names the pseudo-version and commit", dev, debug.BuildInfo{Main: debug.Module{Version: "v0.0.0-20261012015223-305fd695e539+dirty"}, Settings: vcs},
+			cli.BuildInfo{Version: "0.0.0-20261012015223-305fd695e539+dirty", Commit: "305fd69", Date: "2026-10-12T01:52:23Z"}},
+		{"-buildvcs=false keeps dev", dev, debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, dev},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

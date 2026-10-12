@@ -41,7 +41,7 @@ func one(id, name, mtb string) []ResultSpec { return []ResultSpec{{ID: id, Name:
 // Registry lists the ten checks in run order (DESIGN.md section 5).
 var Registry = []Spec{
 	{ID: "AT-01", Name: "No cluster-scoped access", Kind: report.Behavioral, Severity: report.High,
-		Method:  "SSAR with no namespace: list nodes, create namespaces, create clusterrolebindings, create persistentvolumes",
+		Method:  "SSAR with no namespace: list nodes, create namespaces, create clusterrolebindings, create persistentvolumes; control: create selfsubjectaccessreviews must be allowed",
 		Results: one("AT-01", "No cluster-scoped access", "MTB-PL1-CC-CPI-1"), Run: at01},
 	{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, Severity: report.High,
 		Method:  "SSAR: get secrets and list secrets in --other-namespace",

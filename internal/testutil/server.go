@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	authzv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -78,17 +79,21 @@ func JSON(status int, body string) http.HandlerFunc {
 }
 
 // SSAR answers a SelfSubjectAccessReview like the API server: the question it received echoed
-// back as spec, with status (for example `{"allowed":false}`).
+// back as spec, with status (for example `{"allowed":false}`). "May I create
+// selfsubjectaccessreviews?" is always allowed, as on a real server that just served one.
 func SSAR(status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var review struct {
-			Spec json.RawMessage `json:"spec"`
-		}
+		var review authzv1.SelfSubjectAccessReview
 		if err := json.NewDecoder(r.Body).Decode(&review); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		JSON(http.StatusCreated, `{"spec":`+string(review.Spec)+`,"status":`+status+`}`)(w, r)
+		answer := status
+		if a := review.Spec.ResourceAttributes; a != nil && a.Verb == "create" && a.Resource == "selfsubjectaccessreviews" {
+			answer = `{"allowed":true}`
+		}
+		spec, _ := json.Marshal(review.Spec)
+		JSON(http.StatusCreated, `{"spec":`+string(spec)+`,"status":`+answer+`}`)(w, r)
 	}
 }
 

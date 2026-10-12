@@ -21,7 +21,7 @@ const (
 
 // ssarServer answers SelfSubjectAccessReviews from canned status bodies keyed by "verb resource",
 // echoing the question as the API server does, and remembers every question. A question
-// without an answer gets HTTP 500.
+// without an answer gets HTTP 500, except AT-01's positive control, which is allowed.
 type ssarServer struct {
 	mu      sync.Mutex
 	answers map[string]string
@@ -39,6 +39,9 @@ func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.asked = append(s.asked, a)
 	s.mu.Unlock()
 	body, ok := s.answers[a.Verb+" "+a.Resource]
+	if !ok && a.Verb+" "+a.Resource == "create selfsubjectaccessreviews" {
+		body, ok = allowed, true // AT-01's positive control: a real API server always says yes
+	}
 	if !ok {
 		http.Error(w, "no canned answer for "+a.Verb+" "+a.Resource, http.StatusInternalServerError)
 		return

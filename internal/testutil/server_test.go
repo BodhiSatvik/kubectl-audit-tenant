@@ -41,6 +41,8 @@ func TestStatusAnswersAForbiddenTheClientRecognizes(t *testing.T) {
 	}
 }
 
+// The fake's fidelity to a real API server is proven by make e2e (PASS on kind); this test pins
+// the fake's own contract, which every SSAR-answering unit test relies on.
 func TestSSAREchoesTheQuestionLikeTheAPIServer(t *testing.T) {
 	srv := NewServer(t, map[string]http.HandlerFunc{
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": SSAR(`{"allowed":true}`),
@@ -60,6 +62,10 @@ func TestSSAREchoesTheQuestionLikeTheAPIServer(t *testing.T) {
 	}
 	if a := got.Spec.ResourceAttributes; a == nil || *a != (authzv1.ResourceAttributes{Verb: "list", Resource: "nodes"}) || !got.Status.Allowed {
 		t.Errorf("answer = %+v; want the question echoed with allowed=true", got)
+	}
+	var control authzv1.SelfSubjectAccessReview
+	if err := json.NewDecoder(post(`{"spec":{"resourceAttributes":{"verb":"create","group":"authorization.k8s.io","resource":"selfsubjectaccessreviews"}}}`).Body).Decode(&control); err != nil || !control.Status.Allowed {
+		t.Errorf("control answer = %+v, %v; want allowed=true like a real API server", control, err)
 	}
 	if code := post("not json").StatusCode; code != http.StatusBadRequest {
 		t.Errorf("a body that is not an SSAR got %d, want 400", code)

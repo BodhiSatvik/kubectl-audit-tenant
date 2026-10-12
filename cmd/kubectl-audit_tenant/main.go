@@ -30,8 +30,9 @@ func main() {
 	os.Exit(cli.Main(os.Args[1:], b, streams))
 }
 
-// fromBuildInfo fills a "dev" build (go install, go build) from what the Go toolchain embeds,
-// so `version` and the User-Agent name a module version and commit instead of "dev".
+// fromBuildInfo fills a "dev" build from what the Go toolchain embeds, so `version` and the
+// User-Agent name a release: go install @tag gives the module version; go build in a checkout
+// gives a pseudo-version, the commit and its time.
 func fromBuildInfo(b cli.BuildInfo, bi *debug.BuildInfo) cli.BuildInfo {
 	if b.Version != "dev" {
 		return b // goreleaser set the ldflags
