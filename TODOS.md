@@ -164,9 +164,9 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 Found by the /ship adversarial reviews and left for the phase that owns them. Each one names its card.
 - [ ] Verify every Registry MTB ID against kubectl-mtb before `-o wide` and `-o json` show them (B22): AT-04.2 and AT-05 both carry `MTB-PL1-BC-HI-1`.
-- [ ] An SSAR answer without `status.allowed` reads as a denial; require the field when AT-02 and AT-03 reuse `can()` (B11).
+- [x] An SSAR answer without `status.allowed` reads as a denial; require the field when AT-02 and AT-03 reuse `can()` (B11). Done: an answer with no `allowed` field is ERROR with the not-the-API-server hint.
 - [ ] A namespace GET that fails with a 5xx lets the run continue; only a 403 should (B18, with AT-09).
-- [ ] The runner abandons a check 100 ms after the deadline, so a grant held by a check stuck in a credential helper is lost; consider reporting grants as they are proven (B11).
+- [x] The runner abandons a check 100 ms after the deadline, so a grant held by a check stuck in a credential helper is lost; consider reporting grants as they are proven (B11). Done (D61): checks hand each proven FAIL to the runner, which keeps it when a check never returns or crashes.
 - [ ] An interrupted run turns a proven FAIL (exit 1) into exit 2 (DESIGN.md section 8 already lists "interruption after a FAIL" for B16).
 - [ ] `--as <user>` without `--as-group` tests the user without its identity-provider groups; warn in the header (B25).
 - [ ] `--debug` will print whole dry-run Pod answers once AT-04 lands; decide what to redact (webhook-injected env) with the stderr golden (B25).

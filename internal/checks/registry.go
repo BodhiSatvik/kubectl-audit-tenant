@@ -16,8 +16,10 @@ type ResultSpec struct {
 }
 
 // RunFunc runs one check against the cluster and returns one Result per entry of spec.Results,
-// in order. When ctx ends it returns the results it has; the runner fills in the rest.
-type RunFunc func(ctx context.Context, c *cluster.Client, spec Spec) []report.Result
+// in order. When ctx ends it returns the results it has; the runner fills in the rest. A check
+// passes each FAIL to prove the moment it is proven, so the runner can still report it when the
+// check never returns or crashes (D61); a later call for the same result ID replaces it.
+type RunFunc func(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result)) []report.Result
 
 // Spec is the static description of a check, as list-checks prints it, plus its Run function.
 type Spec struct {

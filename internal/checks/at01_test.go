@@ -59,6 +59,14 @@ func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
 			}
 		})
 	}
+	t.Run("an answer without a verdict is an error", func(t *testing.T) {
+		// A proxy that reflects the request echoes the question but carries no status.allowed.
+		c := connect(t, testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"get","resource":"pods","namespace":"tenant-a"}}}`))
+		_, err := can(t.Context(), c, "get", "", "pods", "tenant-a")
+		if err == nil || !strings.Contains(err.Error(), "has no verdict") || hintFor(err) != hintNotAPIServer {
+			t.Errorf("can() error = %v, want a not-the-API-server error: a missing verdict must never read as a denial", err)
+		}
+	})
 	t.Run("a failed request is an error", func(t *testing.T) {
 		c := connect(t, &ssarServer{answers: map[string]string{"list nodes": denied}})
 		if _, err := can(t.Context(), c, "get", "", "pods", "tenant-a"); err == nil {
@@ -73,7 +81,7 @@ func TestAT01PassWhenAllFourActionsAreDenied(t *testing.T) {
 	srv := &ssarServer{answers: map[string]string{"list nodes": denied, "create namespaces": denied, "create clusterrolebindings": denied, "create persistentvolumes": denied}}
 	c := connect(t, srv)
 
-	got := at01(t.Context(), c, at01Spec())
+	got := at01(t.Context(), c, at01Spec(), ignore)
 
 	want := report.Result{ID: "AT-01", Name: "No cluster-scoped access", Kind: report.Behavioral, MTB: "MTB-PL1-CC-CPI-1", Severity: report.High,
 		Verdict: report.Pass, Layer: "RBAC", Reason: "RBAC denied all 4 actions"}
@@ -94,7 +102,7 @@ func TestAT01PassWhenAllFourActionsAreDenied(t *testing.T) {
 
 func TestAT01FailNamesTheAllowedActions(t *testing.T) {
 	srv := &ssarServer{answers: map[string]string{"list nodes": denied, "create namespaces": allowed, "create clusterrolebindings": allowed, "create persistentvolumes": denied}}
-	got := at01(t.Context(), connect(t, srv), at01Spec())[0]
+	got := at01(t.Context(), connect(t, srv), at01Spec(), ignore)[0]
 	if got.Verdict != report.Fail || got.Layer != "RBAC" || got.Hint == "" {
 		t.Errorf("at01() = %+v, want FAIL on layer RBAC with a hint", got)
 	}
@@ -110,7 +118,7 @@ func TestAT01FailNamesTheAllowedActions(t *testing.T) {
 
 func TestAT01NotesAnExplicitDeny(t *testing.T) {
 	srv := &ssarServer{answers: map[string]string{"list nodes": `{"allowed":false,"denied":true}`, "create namespaces": denied, "create clusterrolebindings": denied, "create persistentvolumes": denied}}
-	got := at01(t.Context(), connect(t, srv), at01Spec())[0]
+	got := at01(t.Context(), connect(t, srv), at01Spec(), ignore)[0]
 	if got.Verdict != report.Pass || !strings.Contains(got.Reason, "explicit deny") || !strings.Contains(got.Reason, "list nodes") {
 		t.Errorf("at01() = %+v, want PASS whose reason notes the explicit deny of list nodes", got)
 	}
@@ -125,7 +133,7 @@ func TestAT01ErrorsCarryTheServerTextAndAHint(t *testing.T) {
 		"request failure": {map[string]string{"list nodes": denied, "create namespaces": denied}, hintRequestFailed},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := at01(t.Context(), connect(t, &ssarServer{answers: tt.answers}), at01Spec())[0]
+			got := at01(t.Context(), connect(t, &ssarServer{answers: tt.answers}), at01Spec(), ignore)[0]
 			if got.Verdict != report.Error || got.Hint != tt.hint || !strings.Contains(got.Reason, "clusterrolebindings") {
 				t.Errorf("at01() = %+v, want ERROR naming the failed question with hint %q", got, tt.hint)
 			}
@@ -153,7 +161,7 @@ func TestAT01AProvenGrantIsAFailWhateverElseGoesWrong(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := &ssarServer{answers: tt.answers}
-			got := at01(t.Context(), connect(t, srv), at01Spec())[0]
+			got := at01(t.Context(), connect(t, srv), at01Spec(), ignore)[0]
 			if got.Verdict != report.Fail || !strings.Contains(got.Reason, tt.wantGrant) || len(srv.asked) != tt.wantAsked {
 				t.Errorf("at01() = %+v after %d questions; want FAIL naming %s after %d", got, len(srv.asked), tt.wantGrant, tt.wantAsked)
 			}
@@ -174,7 +182,7 @@ func TestAT01AProvenGrantIsAFailWhateverElseGoesWrong(t *testing.T) {
 		c := connect(t, hang)
 		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 		defer cancel()
-		if got := at01(ctx, c, at01Spec()); len(got) != 0 {
+		if got := at01(ctx, c, at01Spec(), ignore); len(got) != 0 {
 			t.Errorf("at01() = %+v; want no result, so the runner reports the timeout", got)
 		}
 	})
@@ -192,7 +200,7 @@ func TestAT01AProvenGrantIsAFailWhateverElseGoesWrong(t *testing.T) {
 		c := connect(t, hang)
 		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 		defer cancel()
-		if got := at01(ctx, c, at01Spec()); len(got) != 1 || got[0].Verdict != report.Fail || !strings.Contains(got[0].Reason, "list nodes") {
+		if got := at01(ctx, c, at01Spec(), ignore); len(got) != 1 || got[0].Verdict != report.Fail || !strings.Contains(got[0].Reason, "list nodes") {
 			t.Errorf("at01() = %+v; want FAIL naming list nodes: the deadline must not hide a proven grant", got)
 		}
 	})
@@ -201,7 +209,7 @@ func TestAT01AProvenGrantIsAFailWhateverElseGoesWrong(t *testing.T) {
 func TestAT01StopsAskingAfterAFailedRequest(t *testing.T) {
 	// create namespaces gets HTTP 500; a 429 or 5xx would repeat, and client-go retries each one.
 	srv := &ssarServer{answers: map[string]string{"list nodes": denied}}
-	got := at01(t.Context(), connect(t, srv), at01Spec())[0]
+	got := at01(t.Context(), connect(t, srv), at01Spec(), ignore)[0]
 	if got.Verdict != report.Error || got.Hint != hintRequestFailed || len(srv.asked) != 2 {
 		t.Errorf("at01() = %+v after %d questions; want ERROR with the re-run hint after 2 (startup, create namespaces)", got, len(srv.asked))
 	}
@@ -212,7 +220,7 @@ func TestAT01PositiveControlAcceptsAnAuthorizerThatDenies(t *testing.T) {
 	// the control included. A reflected request cannot carry denied, so this is a real answer (D57).
 	deny := `{"allowed":false,"denied":true,"reason":"access denied by role"}`
 	srv := &ssarServer{answers: map[string]string{"list nodes": deny, "create selfsubjectaccessreviews": deny, "create namespaces": deny, "create clusterrolebindings": deny, "create persistentvolumes": deny}}
-	if got := at01(t.Context(), connect(t, srv), at01Spec())[0]; got.Verdict != report.Pass || !strings.Contains(got.Reason, "explicit deny") || !strings.Contains(got.Reason, "also denied create selfsubjectaccessreviews") {
+	if got := at01(t.Context(), connect(t, srv), at01Spec(), ignore)[0]; got.Verdict != report.Pass || !strings.Contains(got.Reason, "explicit deny") || !strings.Contains(got.Reason, "also denied create selfsubjectaccessreviews") {
 		t.Errorf("at01() = %+v; want PASS noting the explicit denies and the denied control", got)
 	}
 }
@@ -228,10 +236,29 @@ func TestAT01PositiveControlCatchesAnAnswerNotFromTheAPIServer(t *testing.T) {
 		"a server that says no": &ssarServer{answers: map[string]string{"list nodes": denied, "create namespaces": denied, "create clusterrolebindings": denied, "create persistentvolumes": denied, "create selfsubjectaccessreviews": denied}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := at01(t.Context(), connect(t, h), at01Spec())[0]
+			got := at01(t.Context(), connect(t, h), at01Spec(), ignore)[0]
 			if got.Verdict != report.Error || got.Hint != hintNotAPIServer {
 				t.Errorf("at01() = %+v; want ERROR with the not-the-API-server hint, never PASS", got)
 			}
 		})
+	}
+}
+
+func TestAT01ProvesEachGrantAsSoonAsItIsKnown(t *testing.T) {
+	// D61: the runner keeps the last proven FAIL when a later question hangs past the deadline.
+	srv := &ssarServer{answers: map[string]string{"list nodes": allowed, "create namespaces": denied, "create clusterrolebindings": allowed, "create persistentvolumes": denied}}
+	var proven []string
+	got := at01(t.Context(), connect(t, srv), at01Spec(), func(r report.Result) {
+		if r.Verdict != report.Fail || r.Hint == "" {
+			t.Errorf("proved %+v, want a FAIL with a hint", r)
+		}
+		proven = append(proven, r.Reason)
+	})
+	want := []string{"RBAC allows list nodes", "RBAC allows list nodes, create clusterrolebindings"}
+	if !slices.Equal(proven, want) {
+		t.Errorf("proved %q, want %q", proven, want)
+	}
+	if len(got) != 1 || got[0].Reason != want[1] {
+		t.Errorf("at01() = %+v, want the last proven FAIL", got)
 	}
 }

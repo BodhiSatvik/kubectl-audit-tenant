@@ -25,7 +25,7 @@ func fake(id string, n int, produce func(ctx context.Context, s Spec) []report.R
 		}
 		s.Results = append(s.Results, ResultSpec{ID: rid, Name: rid, MTB: "-"})
 	}
-	s.Run = func(ctx context.Context, _ *cluster.Client, s Spec) []report.Result { return produce(ctx, s) }
+	s.Run = func(ctx context.Context, _ *cluster.Client, s Spec, _ func(report.Result)) []report.Result { return produce(ctx, s) }
 	return s
 }
 
@@ -74,6 +74,34 @@ func TestRunnerAbandonsACheckThatIgnoresTheDeadline(t *testing.T) {
 	}
 	if len(got) != 2 || got[0].Reason != "not run: timeout after 200ms" || got[1].Reason != "not run: timeout after 200ms" {
 		t.Errorf("results = %+v, want both marked not run at the deadline", got)
+	}
+}
+
+func TestRunnerKeepsAFailProvenBeforeACheckIsLost(t *testing.T) {
+	// D61: a grant the check proved stays FAIL when the check never returns or crashes.
+	const timeout = 200 * time.Millisecond
+	provesThen := func(then func()) Spec {
+		s := fake("AT-03", 1, nil)
+		s.Run = func(_ context.Context, _ *cluster.Client, s Spec, prove func(report.Result)) []report.Result {
+			prove(s.result(s.Results[0], report.Fail, "RBAC", "RBAC allows impersonate users", "remove the grant"))
+			prove(s.result(s.Results[0], report.Fail, "RBAC", "RBAC allows impersonate users, impersonate groups", "remove the grant"))
+			then()
+			return nil
+		}
+		return s
+	}
+	for name, s := range map[string]Spec{
+		"a check stuck in a credential helper": provesThen(func() { time.Sleep(5 * time.Second) }),
+		"a check that crashes":                 provesThen(func() { panic("nil map") }),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), timeout)
+			defer cancel()
+			got := Run(ctx, nil, []Spec{s}, timeout)
+			if len(got) != 1 || got[0].Verdict != report.Fail || got[0].Reason != "RBAC allows impersonate users, impersonate groups" {
+				t.Errorf("results = %+v, want the last proven FAIL", got)
+			}
+		})
 	}
 }
 

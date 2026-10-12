@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
@@ -45,8 +48,21 @@ func Run(ctx context.Context, c *cluster.Client, specs []Spec, timeout time.Dura
 }
 
 // runOne runs a check on its own goroutine, so a request the context cannot cancel (a hung
-// credential helper) still ends at the deadline, and a panic becomes an ERROR, not a crash.
+// credential helper) still ends at the deadline, and a panic becomes an ERROR, not a crash. A
+// check that does not return keeps the FAILs it proved before (D61).
 func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Result, crashed any) {
+	var mu sync.Mutex
+	proven := map[string]report.Result{} // the latest FAIL per result ID
+	prove := func(r report.Result) {
+		mu.Lock()
+		defer mu.Unlock()
+		proven[r.ID] = r
+	}
+	keep := func() []report.Result {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Collect(maps.Values(proven))
+	}
 	type outcome struct {
 		results []report.Result
 		crashed any
@@ -55,21 +71,21 @@ func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Re
 	go func() {
 		defer func() {
 			if p := recover(); p != nil {
-				done <- outcome{crashed: p}
+				done <- outcome{results: keep(), crashed: p}
 			}
 		}()
-		done <- outcome{results: s.Run(ctx, c, s)}
+		done <- outcome{results: s.Run(ctx, c, s, prove)}
 	}()
 	select {
 	case o := <-done:
 		return o.results, o.crashed
 	case <-ctx.Done():
-		// shortcut: 100ms grace for a check handing back its partial results; a check that ignores ctx is abandoned, upgrade if a check ever needs longer to unwind
+		// shortcut: 100ms grace for a check handing back its partial results; a check that ignores ctx is abandoned with only the FAILs it proved, upgrade if a check ever needs longer to unwind
 		select {
 		case o := <-done:
 			return o.results, o.crashed
 		case <-time.After(100 * time.Millisecond):
-			return nil, nil
+			return keep(), nil
 		}
 	}
 }

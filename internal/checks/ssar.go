@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
 // answer is one SelfSubjectAccessReview read as the API defines it (D10): allowed is the
@@ -38,12 +40,15 @@ func (e *notAPIServerError) Error() string { return e.msg }
 func can(ctx context.Context, c *cluster.Client, verb, group, resource, namespace string) (answer, error) {
 	attrs := cluster.Attributes{Verb: verb, Group: group, Resource: resource, Namespace: namespace}
 	ssar, err := c.SelfSubjectAccessReview(ctx, attrs)
+	if errors.Is(err, cluster.ErrNoVerdict) {
+		return answer{}, &notAPIServerError{fmt.Sprintf("the answer to \"may I %s %s?\" has no verdict (status.allowed); something other than the API server answered", verb, resource)}
+	}
 	if err != nil {
 		return answer{}, fmt.Errorf("could not ask \"may I %s %s?\": %w", verb, resource, err)
 	}
 	// The API server echoes the question. A 2xx body without that echo (a proxy, an empty object)
 	// decodes to allowed=false and would read as a denial, so it is an error (D52). A proxy that
-	// reflects the request body passes this check; AT-01's positive control catches it (D55).
+	// reflects the request body passes this check and fails the verdict check above.
 	if a := ssar.Spec.ResourceAttributes; a == nil || *a != attrs {
 		return answer{}, &notAPIServerError{fmt.Sprintf("the answer to \"may I %s %s?\" does not repeat the question; something other than the API server answered", verb, resource)}
 	}
@@ -63,4 +68,72 @@ func hintFor(err error) string {
 		return hintNotAPIServer
 	}
 	return hintRequestFailed
+}
+
+// question is one "may I?" a check asks; an empty namespace asks at cluster scope. label names
+// the action in reasons when verb and resource alone would not read well.
+type question struct{ verb, group, resource, namespace, label string }
+
+func (q question) action() string {
+	switch {
+	case q.label != "":
+		return q.label
+	case q.namespace != "":
+		return q.verb + " " + q.resource + " in " + q.namespace
+	}
+	return q.verb + " " + q.resource
+}
+
+// denials asks questions that must all be denied, in order. Each allowed answer makes a FAIL that
+// names every grant so far, handed to prove at once, so the runner keeps it even if a later
+// question never returns (D61). stop reports that the check is decided: res is then the FAIL
+// (a proven grant beats a later failed question or the deadline), an ERROR for an answer it
+// could not read, or nil when ctx ended first (the runner says so). Otherwise every answer was
+// a denial and explicit lists the explicit ones.
+func denials(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result), questions []question, failHint string) (explicit []string, res []report.Result, stop bool) {
+	r := spec.Results[0]
+	var allowed []string
+	var fail report.Result
+	var failed error // the first question whose answer could not be read; an allowed answer still wins (D52)
+	ended := false
+	for _, q := range questions {
+		ans, err := can(ctx, c, q.verb, q.group, q.resource, q.namespace)
+		if err != nil {
+			if ctx.Err() != nil {
+				ended = true // a grant already proven is still reported below
+				break
+			}
+			if failed == nil {
+				failed = err
+			}
+			if _, ok := errors.AsType[*evaluationError](err); !ok {
+				break // a failed request would repeat for every question, and client-go's retries could spend the whole --timeout
+			}
+			continue
+		}
+		if ans.allowed {
+			allowed = append(allowed, q.action())
+			fail = spec.result(r, report.Fail, "RBAC", "RBAC allows "+strings.Join(allowed, ", "), failHint)
+			prove(fail)
+		} else if ans.denied {
+			explicit = append(explicit, q.action())
+		}
+	}
+	switch {
+	case len(allowed) > 0:
+		return nil, []report.Result{fail}, true
+	case ended:
+		return nil, nil, true
+	case failed != nil:
+		return nil, []report.Result{spec.result(r, report.Error, "-", failed.Error(), hintFor(failed))}, true
+	}
+	return explicit, nil, false
+}
+
+// explicitNote is the PASS-reason suffix naming the actions an authorizer denied explicitly.
+func explicitNote(explicit []string) string {
+	if len(explicit) == 0 {
+		return ""
+	}
+	return " (explicit deny: " + strings.Join(explicit, ", ") + ")"
 }

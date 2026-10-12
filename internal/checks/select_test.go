@@ -18,7 +18,7 @@ func implemented(t *testing.T) {
 	saved := Registry
 	Registry = slices.Clone(Registry)
 	for i := range Registry {
-		Registry[i].Run = func(context.Context, *cluster.Client, Spec) []report.Result { return nil }
+		Registry[i].Run = func(context.Context, *cluster.Client, Spec, func(report.Result)) []report.Result { return nil }
 	}
 	t.Cleanup(func() { Registry = saved })
 }

@@ -5,6 +5,8 @@ package cluster
 import (
 	"cmp"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -48,6 +50,7 @@ type Client struct {
 	NamespaceErr    error
 
 	firstSSAR   *authzv1.SelfSubjectAccessReview // startup answer, reused once by AT-01
+	firstErr    error                            // ErrNoVerdict from startup's question, handed to AT-01 the same way
 	quotas      func() ([]corev1.ResourceQuota, error)
 	limitRanges func() ([]corev1.LimitRange, error)
 }
@@ -114,13 +117,33 @@ func (c *Client) Quotas() ([]corev1.ResourceQuota, error) { return c.quotas() }
 // LimitRanges lists the namespace's LimitRanges once per run.
 func (c *Client) LimitRanges() ([]corev1.LimitRange, error) { return c.limitRanges() }
 
+// ErrNoVerdict means an SSAR answer has no status.allowed. The API server always sends that field,
+// so something else answered, such as a proxy that reflects the request.
+var ErrNoVerdict = errors.New("the answer has no verdict (status.allowed)")
+
 // SelfSubjectAccessReview asks the cluster "may I?". The answer startup already fetched for
 // FirstQuestion is handed out once instead of being asked again.
 func (c *Client) SelfSubjectAccessReview(ctx context.Context, attrs Attributes) (*authzv1.SelfSubjectAccessReview, error) {
-	if first := c.firstSSAR; first != nil && attrs == FirstQuestion {
-		c.firstSSAR = nil
-		return first, nil
+	if attrs == FirstQuestion && (c.firstSSAR != nil || c.firstErr != nil) {
+		first, err := c.firstSSAR, c.firstErr
+		c.firstSSAR, c.firstErr = nil, nil
+		return first, err
 	}
 	ssar := &authzv1.SelfSubjectAccessReview{Spec: authzv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &attrs}}
-	return c.Clientset.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, ssar, metav1.CreateOptions{})
+	// Not the typed Create: a decoded bool cannot tell "allowed": false from a missing field.
+	res := c.Clientset.AuthorizationV1().RESTClient().Post().Resource("selfsubjectaccessreviews").Body(ssar).Do(ctx)
+	answer := &authzv1.SelfSubjectAccessReview{} // a fresh object, so a missing echo stays missing
+	if err := res.Into(answer); err != nil {
+		return nil, err
+	}
+	raw, _ := res.Raw()
+	var verdict struct {
+		Status struct {
+			Allowed *bool `json:"allowed"`
+		} `json:"status"`
+	}
+	if json.Unmarshal(raw, &verdict) != nil || verdict.Status.Allowed == nil {
+		return nil, ErrNoVerdict
+	}
+	return answer, nil
 }

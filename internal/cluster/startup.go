@@ -70,6 +70,9 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 	switch {
 	case err == nil:
 		return nil
+	case errors.Is(err, ErrNoVerdict):
+		c.firstErr = err // AT-01 reports it, as it reports an answer that does not repeat the question
+		return nil
 	case opts.fatal(ctx, err) != nil:
 		return opts.fatal(ctx, err)
 	case apierrors.IsForbidden(err):

@@ -11,8 +11,12 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
 )
+
+// ignore is the prove callback of a test that reads only the returned results.
+func ignore(report.Result) {}
 
 const (
 	denied  = `{"allowed":false}`

@@ -2,6 +2,7 @@ package cluster_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -219,5 +220,20 @@ func TestConnectInterruptedDuringStartup(t *testing.T) {
 	_, err := cluster.Connect(ctx, &rest.Config{Host: srv.URL}, opts)
 	if err == nil || !strings.Contains(err.Error(), "interrupted") {
 		t.Errorf("Connect() error = %v, want 'interrupted'", err)
+	}
+}
+
+func TestSSARWithoutAVerdictIsNotADenial(t *testing.T) {
+	// A proxy that reflects the request: the question comes back, status.allowed does not.
+	routes := happy()
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}},"status":{}}`)
+	_, c, err := connect(t, routes, opts)
+	if err != nil {
+		t.Fatalf("Connect() error = %v; an answer without a verdict is AT-01's ERROR, not a startup failure", err)
+	}
+	for _, source := range []string{"the kept startup answer", "a fresh answer"} {
+		if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.FirstQuestion); !errors.Is(err, cluster.ErrNoVerdict) {
+			t.Errorf("%s: SSAR = %v, %v; want ErrNoVerdict, never a denial", source, r, err)
+		}
 	}
 }
