@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6 # v6 builds with go.mod's toolchain directive
         with:
           go-version-file: go.mod
       - uses: helm/kind-action@v1
