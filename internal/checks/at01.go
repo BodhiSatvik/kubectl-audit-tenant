@@ -20,10 +20,12 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec) []report.Result {
 		{"create", "", "persistentvolumes"},
 	}
 	r := spec.Results[0]
-	// Positive control (D55): any API server allows creating the SSAR it just served. A "no" means
-	// something else answered; a proxy that reflects the request would otherwise read as all-denied.
+	// Positive control (D55): any API server allows creating the SSAR it just served. A bare "no"
+	// means something else answered; a proxy that reflects the request would otherwise read as
+	// all-denied. A "no" with denied set came from an authorizer (an access proxy with its own
+	// roles, D57); a reflected request cannot carry it, so the questions go ahead.
 	control, err := can(ctx, c, "create", "authorization.k8s.io", "selfsubjectaccessreviews", "")
-	if err == nil && !control.allowed {
+	if err == nil && !control.allowed && !control.denied {
 		err = &notAPIServerError{"the answer to \"may I create selfsubjectaccessreviews?\" was no, although the request was just served; something other than the API server answered"}
 	}
 	if err != nil {

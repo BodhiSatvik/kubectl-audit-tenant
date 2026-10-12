@@ -115,7 +115,7 @@ func (c *Client) Quotas() ([]corev1.ResourceQuota, error) { return c.quotas() }
 func (c *Client) LimitRanges() ([]corev1.LimitRange, error) { return c.limitRanges() }
 
 // SelfSubjectAccessReview asks the cluster "may I?". The answer startup already fetched for
-// AT-01's first question is handed out once instead of being asked again.
+// FirstQuestion is handed out once instead of being asked again.
 func (c *Client) SelfSubjectAccessReview(ctx context.Context, attrs Attributes) (*authzv1.SelfSubjectAccessReview, error) {
 	if first := c.firstSSAR; first != nil && attrs == FirstQuestion {
 		c.firstSSAR = nil

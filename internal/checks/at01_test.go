@@ -157,6 +157,25 @@ func TestAT01AProvenGrantIsAFailWhateverElseGoesWrong(t *testing.T) {
 			}
 		})
 	}
+	t.Run("the deadline before any grant", func(t *testing.T) {
+		// Without a proven grant, an unfinished AT-01 is the runner's ERROR (exit 2), never PASS.
+		srv := &ssarServer{answers: map[string]string{"list nodes": denied}}
+		hang := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body) // read the body, or the server never notices the client leaving
+			if strings.Contains(string(body), "namespaces") {
+				<-r.Context().Done()
+				return
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(body)))
+			srv.ServeHTTP(w, r)
+		})
+		c := connect(t, hang)
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		defer cancel()
+		if got := at01(ctx, c, at01Spec()); len(got) != 0 {
+			t.Errorf("at01() = %+v; want no result, so the runner reports the timeout", got)
+		}
+	})
 	t.Run("the deadline after the grant", func(t *testing.T) {
 		srv := &ssarServer{answers: map[string]string{"list nodes": allowed}}
 		hang := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -183,6 +202,16 @@ func TestAT01StopsAskingAfterAFailedRequest(t *testing.T) {
 	got := at01(t.Context(), connect(t, srv), at01Spec())[0]
 	if got.Verdict != report.Error || got.Hint != hintRequestFailed || len(srv.asked) != 3 {
 		t.Errorf("at01() = %+v after %d questions; want ERROR with the re-run hint after 3 (startup, control, create namespaces)", got, len(srv.asked))
+	}
+}
+
+func TestAT01PositiveControlAcceptsAnAuthorizerThatDenies(t *testing.T) {
+	// An access proxy with its own roles (Teleport-style) answers every question "no, denied",
+	// the control included. A reflected request cannot carry denied, so this is a real answer (D57).
+	deny := `{"allowed":false,"denied":true,"reason":"access denied by role"}`
+	srv := &ssarServer{answers: map[string]string{"list nodes": deny, "create selfsubjectaccessreviews": deny, "create namespaces": deny, "create clusterrolebindings": deny, "create persistentvolumes": deny}}
+	if got := at01(t.Context(), connect(t, srv), at01Spec())[0]; got.Verdict != report.Pass || !strings.Contains(got.Reason, "explicit deny") {
+		t.Errorf("at01() = %+v; want PASS with the explicit denies noted", got)
 	}
 }
 

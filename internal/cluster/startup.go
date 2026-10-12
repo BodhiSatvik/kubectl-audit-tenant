@@ -15,8 +15,8 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
-// FirstQuestion is AT-01's first SelfSubjectAccessReview; startup sends it to learn whether the
-// identity may ask "may I?" at all.
+// FirstQuestion is an AT-01 question (list nodes) that startup sends to learn whether the identity
+// may ask "may I?" at all; AT-01 reuses the answer.
 var FirstQuestion = Attributes{Verb: "list", Resource: "nodes"}
 
 // startup runs the four startup requests of DESIGN.md section 6 and fills the client.

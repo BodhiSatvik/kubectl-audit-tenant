@@ -6,7 +6,7 @@ set -euo pipefail
 log="${1:?usage: coverage-gate.sh <go test output file>}"
 fail=0
 if grep -qE '^(FAIL|--- FAIL)' "$log"; then
-  echo "coverage-gate: a test failed (see the FAIL lines in $log)"; fail=1
+  echo "coverage-gate: FAIL. A test failed: fix it first (see the FAIL lines in $log)."; exit 1
 fi
 while IFS= read -r line; do
   pkg=$(awk '{print $2}' <<<"$line")
