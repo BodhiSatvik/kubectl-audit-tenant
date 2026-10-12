@@ -70,7 +70,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 ### Phase 6: docs and release
 - [ ] B29 README
 - [ ] B30 Citation, changelog, diagrams
-- [ ] B31 Pre-release gate and v0.1.0 tag (Satvik pushes, tags, opens the krew-index PR, registers the domain)
+- [ ] B31 Pre-release gate and v0.1.0 tag (Satvik pushes, tags and opens the krew-index PR)
 
 ### Checkpoint 6: complete
 - [ ] DESIGN.md acceptance criteria 1–11 met; ready for outreach

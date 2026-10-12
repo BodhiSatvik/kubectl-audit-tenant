@@ -82,6 +82,7 @@ Go module: `github.com/BodhiSatvik/kubectl-audit-tenant`. Go 1.26. `k8s.io/clien
 | `internal/probe/` | Probe builders (control pod, 5 dangerous pods, NodePort service), rejection classifier |
 | `internal/headroom/` | Pure functions for AT-10: peak per workload, pod request math, quota comparison |
 | `internal/report/` | `Report` and `Result` types; the five printers |
+| `internal/testutil/` | Test harness: a real clientset against an `httptest` server with canned answers (section 8) |
 | `test/e2e/` | kind config, `versions.env`, fixtures, Kyverno policy, expected verdicts, run script |
 | `hack/check-public.sh` | Fails on unfilled `{{`...`}}` placeholders; runs in CI |
 | `.github/workflows/` | `ci.yml` (vet, lint, unit, envtest), `e2e.yml` (kind), `release.yml` (goreleaser) |
