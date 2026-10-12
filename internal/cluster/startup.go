@@ -45,14 +45,15 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 	}
 	review, err := c.Clientset.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authnv1.SelfSubjectReview{}, metav1.CreateOptions{})
 	switch {
-	case err == nil:
+	case err == nil && review.Status.UserInfo.Username != "":
 		c.Identity.Username = review.Status.UserInfo.Username
 		c.Identity.Groups = review.Status.UserInfo.Groups
 		c.Identity.Verified = true
-	case opts.fatal(ctx, err) != nil:
+	case err != nil && opts.fatal(ctx, err) != nil:
 		return opts.fatal(ctx, err)
 	}
-	// Any other failure (403, 404 on old servers) leaves the identity unverified.
+	// Any other outcome (403, 404 on old servers, an answer without a username) leaves the
+	// identity unverified.
 
 	c.NamespaceObject, c.NamespaceErr = c.Clientset.CoreV1().Namespaces().Get(ctx, opts.Namespace, metav1.GetOptions{})
 	switch {

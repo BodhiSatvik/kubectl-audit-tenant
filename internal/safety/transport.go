@@ -59,7 +59,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		r.Status = resp.StatusCode
 		// Every allowed POST is an SSAR, a SelfSubjectReview or a dry-run; --debug prints their answers.
 		if req.Method == http.MethodPost {
-			body, readErr := io.ReadAll(resp.Body)
+			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxAnswer+1))
+			if readErr == nil && len(body) > maxAnswer {
+				readErr = fmt.Errorf("the answer to POST %s is larger than %d bytes; an API server answer is a few KiB", req.URL.Path, maxAnswer)
+			}
 			if err := errors.Join(readErr, resp.Body.Close()); err != nil {
 				t.Recorder.add(r)
 				return nil, err
@@ -75,7 +78,10 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-const selfSubjectReviews = "/apis/authentication.k8s.io/v1/selfsubjectreviews"
+const (
+	selfSubjectReviews = "/apis/authentication.k8s.io/v1/selfsubjectreviews"
+	maxAnswer          = 1 << 20 // bytes; an SSAR or dry-run answer is a few KiB, a stream that never ends is not an answer
+)
 
 // withoutExtra drops status.userInfo.extra from a SelfSubjectReview answer before --debug can
 // print it: identity providers put claims there (a cloud role ARN and session, a token ID).

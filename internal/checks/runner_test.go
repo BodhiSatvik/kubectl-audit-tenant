@@ -164,3 +164,14 @@ func TestRunnerFillsAMissingResultAsAToolBug(t *testing.T) {
 		t.Errorf("results = %+v, want AT-04.2 filled as an ERROR with a hint", got)
 	}
 }
+
+func TestRunnerMatchesResultsByIDNotCount(t *testing.T) {
+	repeat := fake("AT-04", 2, func(_ context.Context, s Spec) []report.Result {
+		pass := s.result(s.Results[0], report.Pass, "-", "ok", "")
+		return []report.Result{pass, pass} // the right count, the wrong IDs
+	})
+	got := Run(t.Context(), nil, []Spec{repeat}, time.Minute)
+	if !slices.Equal(ids(got), []string{"AT-04.1", "AT-04.2"}) || got[1].Verdict != report.Error || got[1].Hint != hintBug {
+		t.Errorf("results = %+v; want AT-04.2 as a tool-bug ERROR, never hidden behind a repeated AT-04.1", got)
+	}
+}

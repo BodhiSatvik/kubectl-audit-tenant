@@ -23,8 +23,17 @@ func Run(ctx context.Context, c *cluster.Client, specs []Spec, timeout time.Dura
 		if ctx.Err() == nil {
 			got, crashed = runOne(ctx, c, s)
 		}
-		out = append(out, got...)
-		for _, r := range s.Results[min(len(got), len(s.Results)):] {
+		byID := map[string]report.Result{} // by ID, not count: a wrong or repeated ID must not hide a result
+		for _, g := range got {
+			if _, seen := byID[g.ID]; !seen {
+				byID[g.ID] = g
+			}
+		}
+		for _, r := range s.Results {
+			if g, ok := byID[r.ID]; ok {
+				out = append(out, g)
+				continue
+			}
 			reason, hint := notRun(ctx, timeout)
 			if crashed != nil {
 				reason, hint = fmt.Sprintf("the check crashed: %v", crashed), hintBug

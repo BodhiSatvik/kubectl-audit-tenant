@@ -160,6 +160,22 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 **Checkpoint 6 (v0.1.0):** every acceptance criterion met; `evidence/` row in the lab for the first outside install when it happens.
 
+### Review follow-ups from the Phase 1 ship (2026-10-12, D59)
+
+Found by the /ship adversarial reviews and left for the phase that owns them. Each one names its card.
+- [ ] Verify every Registry MTB ID against kubectl-mtb before `-o wide` and `-o json` show them (B22): AT-04.2 and AT-05 both carry `MTB-PL1-BC-HI-1`.
+- [ ] An SSAR answer without `status.allowed` reads as a denial; require the field when AT-02 and AT-03 reuse `can()` (B11).
+- [ ] A namespace GET that fails with a 5xx lets the run continue; only a 403 should (B18, with AT-09).
+- [ ] The runner abandons a check 100 ms after the deadline, so a grant held by a check stuck in a credential helper is lost; consider reporting grants as they are proven (B11).
+- [ ] An interrupted run turns a proven FAIL (exit 1) into exit 2 (DESIGN.md section 8 already lists "interruption after a FAIL" for B16).
+- [ ] `--as <user>` without `--as-group` tests the user without its identity-provider groups; warn in the header (B25).
+- [ ] `--debug` will print whole dry-run Pod answers once AT-04 lands; decide what to redact (webhook-injected env) with the stderr golden (B25).
+- [ ] Release: goreleaser `release.draft: true`, publish only after the krew-install job passes; check the krew download checksum; release only tags on main (B31). GitHub Actions SHA pinning (D43) before the public release.
+- [ ] `hack/check-public.sh` passes when `git ls-files` fails (not a checkout); make it fail closed (B29).
+- [ ] CONSTRAINTS.md lists an envtest gate (AT-01 to AT-03 under real RBAC); `test/envtest/` does not exist yet (B26).
+- [ ] A default run drops unbuilt checks without a line saying so; D28 trims the Registry at v0.1.0, or print "not in this build" until then (B31).
+- [ ] Teleport-style access proxies (D57) are covered by unit tests only; try one live before the release (B31).
+
 ## Later (not v0.1; locked in the spec session, 2026-10-10)
 - [ ] Network behavior tests (need running pods)
 - [ ] Write the PolicyReport into the cluster (`--apply`)

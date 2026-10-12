@@ -103,16 +103,23 @@ func TestConnectReusesTheStartupSSARForAT01(t *testing.T) {
 }
 
 func TestConnectInSelfModeWithUnverifiedIdentity(t *testing.T) {
-	routes := happy()
-	routes["POST /apis/authentication.k8s.io/v1/selfsubjectreviews"] = testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "selfsubjectreviews is forbidden")
-	self := opts
-	self.As, self.AsGroups = "", nil
-	_, c, err := connect(t, routes, self)
-	if err != nil {
-		t.Fatalf("Connect() error = %v; a 403 on SelfSubjectReview must not stop the run", err)
-	}
-	if c.Identity.Mode != "self" || c.Identity.Username != "kind-dev" || c.Identity.Verified {
-		t.Errorf("Identity = %+v, want unverified self identity from the kubeconfig user", c.Identity)
+	for name, h := range map[string]http.HandlerFunc{
+		"a 403":                      testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "selfsubjectreviews is forbidden"),
+		"an answer with no username": testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{}}}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			routes := happy()
+			routes["POST /apis/authentication.k8s.io/v1/selfsubjectreviews"] = h
+			self := opts
+			self.As, self.AsGroups = "", nil
+			_, c, err := connect(t, routes, self)
+			if err != nil {
+				t.Fatalf("Connect() error = %v; SelfSubjectReview must not stop the run", err)
+			}
+			if c.Identity.Mode != "self" || c.Identity.Username != "kind-dev" || c.Identity.Verified {
+				t.Errorf("Identity = %+v, want unverified self identity from the kubeconfig user", c.Identity)
+			}
+		})
 	}
 }
 

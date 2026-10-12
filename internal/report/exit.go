@@ -26,7 +26,7 @@ func Summarize(results []Result, failOnSkip bool) Summary {
 			s.Fail++
 		case Skip:
 			s.Skip++
-		case Error:
+		default: // Error, or a verdict a check bug left empty: never let it read as exit 0
 			s.Error++
 		}
 		family, _, _ := strings.Cut(r.ID, ".")

@@ -82,10 +82,10 @@ func TestAT01PassWhenAllFourActionsAreDenied(t *testing.T) {
 	}
 	wantAsked := []cluster.Attributes{
 		{Verb: "list", Resource: "nodes"},
-		{Verb: "create", Group: "authorization.k8s.io", Resource: "selfsubjectaccessreviews"},
 		{Verb: "create", Resource: "namespaces"},
 		{Verb: "create", Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings"},
 		{Verb: "create", Resource: "persistentvolumes"},
+		{Verb: "create", Group: "authorization.k8s.io", Resource: "selfsubjectaccessreviews"},
 	}
 	if !slices.Equal(srv.asked, wantAsked) {
 		t.Errorf("asked %+v, want the control and the four cluster-scoped questions once each (startup's answer reused)", srv.asked)
@@ -142,11 +142,13 @@ func TestAT01AProvenGrantIsAFailWhateverElseGoesWrong(t *testing.T) {
 		name      string
 		answers   map[string]string
 		wantGrant string
-		wantAsked int // startup's question, the control, then AT-01's questions not reused
+		wantAsked int // startup's question, then AT-01's questions not reused; no control after a grant
 	}{
-		{"a failed request after the grant", map[string]string{"list nodes": allowed}, "list nodes", 3},
+		{"a failed request after the grant", map[string]string{"list nodes": allowed}, "list nodes", 2},
 		{"an evaluationError before the grant", map[string]string{"list nodes": denied, "create namespaces": evalErr, "create clusterrolebindings": allowed, "create persistentvolumes": denied},
-			"create clusterrolebindings", 5},
+			"create clusterrolebindings", 4},
+		{"a failing control after the grant", map[string]string{"list nodes": allowed, "create namespaces": denied, "create clusterrolebindings": denied, "create persistentvolumes": denied, "create selfsubjectaccessreviews": denied},
+			"list nodes", 4},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -200,8 +202,8 @@ func TestAT01StopsAskingAfterAFailedRequest(t *testing.T) {
 	// create namespaces gets HTTP 500; a 429 or 5xx would repeat, and client-go retries each one.
 	srv := &ssarServer{answers: map[string]string{"list nodes": denied}}
 	got := at01(t.Context(), connect(t, srv), at01Spec())[0]
-	if got.Verdict != report.Error || got.Hint != hintRequestFailed || len(srv.asked) != 3 {
-		t.Errorf("at01() = %+v after %d questions; want ERROR with the re-run hint after 3 (startup, control, create namespaces)", got, len(srv.asked))
+	if got.Verdict != report.Error || got.Hint != hintRequestFailed || len(srv.asked) != 2 {
+		t.Errorf("at01() = %+v after %d questions; want ERROR with the re-run hint after 2 (startup, create namespaces)", got, len(srv.asked))
 	}
 }
 
@@ -210,8 +212,8 @@ func TestAT01PositiveControlAcceptsAnAuthorizerThatDenies(t *testing.T) {
 	// the control included. A reflected request cannot carry denied, so this is a real answer (D57).
 	deny := `{"allowed":false,"denied":true,"reason":"access denied by role"}`
 	srv := &ssarServer{answers: map[string]string{"list nodes": deny, "create selfsubjectaccessreviews": deny, "create namespaces": deny, "create clusterrolebindings": deny, "create persistentvolumes": deny}}
-	if got := at01(t.Context(), connect(t, srv), at01Spec())[0]; got.Verdict != report.Pass || !strings.Contains(got.Reason, "explicit deny") {
-		t.Errorf("at01() = %+v; want PASS with the explicit denies noted", got)
+	if got := at01(t.Context(), connect(t, srv), at01Spec())[0]; got.Verdict != report.Pass || !strings.Contains(got.Reason, "explicit deny") || !strings.Contains(got.Reason, "also denied create selfsubjectaccessreviews") {
+		t.Errorf("at01() = %+v; want PASS noting the explicit denies and the denied control", got)
 	}
 }
 
@@ -223,7 +225,7 @@ func TestAT01PositiveControlCatchesAnAnswerNotFromTheAPIServer(t *testing.T) {
 	})
 	for name, h := range map[string]http.Handler{
 		"a reflecting proxy":    reflect,
-		"a server that says no": &ssarServer{answers: map[string]string{"list nodes": denied, "create selfsubjectaccessreviews": denied}},
+		"a server that says no": &ssarServer{answers: map[string]string{"list nodes": denied, "create namespaces": denied, "create clusterrolebindings": denied, "create persistentvolumes": denied, "create selfsubjectaccessreviews": denied}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got := at01(t.Context(), connect(t, h), at01Spec())[0]

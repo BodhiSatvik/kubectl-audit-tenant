@@ -18,6 +18,7 @@ func TestSummarizeExitCode(t *testing.T) {
 		{"fail wins over error", []Verdict{Error, Fail}, false, 1},
 		{"skip and error without the flag", []Verdict{Skip, Error}, false, 2},
 		{"skip wins over error with --fail-on-skip", []Verdict{Skip, Error}, true, 1},
+		{"a verdict a check bug left empty is an error, never exit 0", []Verdict{Pass, ""}, false, 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

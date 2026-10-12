@@ -356,3 +356,23 @@ func TestSafetyKeepsUserInfoExtraOutOfTheTraceUnderAPrefixAndOnBadBodies(t *test
 		})
 	}
 }
+
+func TestSafetyRefusesAnAnswerTooLargeToBeFromAnAPIServer(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.JSON(http.StatusCreated, `{"status":{"reason":"`+strings.Repeat("x", 1<<20)+`"}}`),
+	})
+	base, _ := url.Parse(srv.URL)
+	rec := &safety.Recorder{}
+	client := &http.Client{Transport: &safety.Transport{Namespace: ns, Base: base, Next: http.DefaultTransport, Recorder: rec}}
+	resp, err := client.Post(srv.URL+"/apis/authorization.k8s.io/v1/selfsubjectaccessreviews", "application/json", strings.NewReader("{}"))
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("an answer over 1 MiB must be an error, not buffered whole")
+	}
+	if !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("error = %v, want the size limit named", err)
+	}
+	if reqs := rec.Requests(); len(reqs) != 1 || reqs[0].Body != "" {
+		t.Errorf("Requests() = %d recorded, body %d bytes; want the POST recorded with no body", len(reqs), len(reqs[0].Body))
+	}
+}
