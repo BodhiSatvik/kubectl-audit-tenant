@@ -4,6 +4,7 @@ package safety
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -65,10 +66,34 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 			resp.Body = io.NopCloser(bytes.NewReader(body))
 			r.Body = string(body)
+			if strings.HasSuffix(req.URL.Path, selfSubjectReviews) {
+				r.Body = withoutExtra(body)
+			}
 		}
 	}
 	t.Recorder.add(r)
 	return resp, err
+}
+
+const selfSubjectReviews = "/apis/authentication.k8s.io/v1/selfsubjectreviews"
+
+// withoutExtra drops status.userInfo.extra from a SelfSubjectReview answer before --debug can
+// print it: identity providers put claims there (a cloud role ARN and session, a token ID).
+func withoutExtra(body []byte) string {
+	var review map[string]any
+	if json.Unmarshal(body, &review) != nil {
+		return string(body)
+	}
+	if status, ok := review["status"].(map[string]any); ok {
+		if user, ok := status["userInfo"].(map[string]any); ok {
+			delete(user, "extra")
+		}
+	}
+	out, err := json.Marshal(review)
+	if err != nil {
+		return ""
+	}
+	return string(out)
 }
 
 func (t *Transport) allowed(req *http.Request) bool {
@@ -98,7 +123,7 @@ func (t *Transport) allowed(req *http.Request) bool {
 	case http.MethodPost:
 		switch path {
 		case "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
-			"/apis/authentication.k8s.io/v1/selfsubjectreviews":
+			selfSubjectReviews:
 			return true
 		case core + "/pods", core + "/services":
 			return slices.Contains(u.Query()["dryRun"], "All")

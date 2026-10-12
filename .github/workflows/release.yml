@@ -16,9 +16,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - run: go test ./... && make safety # never publish a binary whose read-only guarantee was not tested
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: "~> v2"
+          version: v2.18.3 # pinned like every other tool; bump on purpose
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

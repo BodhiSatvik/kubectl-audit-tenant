@@ -19,13 +19,17 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec) []report.Result {
 	}
 	r := spec.Results[0]
 	var allowed, explicit []string
+	var failed error // the first question that got no answer; an allowed answer still wins (D52)
 	for _, q := range questions {
 		ans, err := can(ctx, c, q.verb, q.group, q.resource, "")
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil // interrupted or out of time: the runner says so
 			}
-			return []report.Result{spec.result(r, report.Error, "-", err.Error(), hintFor(err))}
+			if failed == nil {
+				failed = err
+			}
+			continue
 		}
 		action := q.verb + " " + q.resource
 		if ans.allowed {
@@ -37,6 +41,9 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec) []report.Result {
 	if len(allowed) > 0 {
 		return []report.Result{spec.result(r, report.Fail, "RBAC", "RBAC allows "+strings.Join(allowed, ", "),
 			"remove the cluster-scoped grants from this identity's ClusterRoleBindings; tenant permissions belong in Roles bound inside the namespace")}
+	}
+	if failed != nil {
+		return []report.Result{spec.result(r, report.Error, "-", failed.Error(), hintFor(failed))}
 	}
 	reason := fmt.Sprintf("RBAC denied all %d actions", len(questions))
 	if len(explicit) > 0 {

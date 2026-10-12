@@ -19,8 +19,9 @@ const (
 	allowed = `{"allowed":true}`
 )
 
-// ssarServer answers SelfSubjectAccessReviews from canned status bodies keyed by "verb resource"
-// and remembers every question. A question without an answer gets HTTP 500.
+// ssarServer answers SelfSubjectAccessReviews from canned status bodies keyed by "verb resource",
+// echoing the question as the API server does, and remembers every question. A question
+// without an answer gets HTTP 500.
 type ssarServer struct {
 	mu      sync.Mutex
 	answers map[string]string
@@ -42,7 +43,8 @@ func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no canned answer for "+a.Verb+" "+a.Resource, http.StatusInternalServerError)
 		return
 	}
-	testutil.JSON(http.StatusCreated, `{"status":`+body+`}`)(w, r)
+	spec, _ := json.Marshal(ssar.Spec)
+	testutil.JSON(http.StatusCreated, `{"spec":`+string(spec)+`,"status":`+body+`}`)(w, r)
 }
 
 // connect builds a cluster.Client for tenant-a whose SSARs are answered by ssar.

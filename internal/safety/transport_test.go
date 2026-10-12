@@ -313,3 +313,22 @@ func TestRefusedErrorNamesTheRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestSafetyRecordsTheSelfSubjectReviewWithoutExtra(t *testing.T) {
+	answer := `{"status":{"userInfo":{"username":"tenant-a-dev","extra":{"arn":["SENTINEL-EXTRA"]}}}}`
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews": testutil.JSON(http.StatusCreated, answer),
+	})
+	rec := &safety.Recorder{}
+	review, err := srv.Client(t, ns, rec).AuthenticationV1().SelfSubjectReviews().Create(t.Context(), &authnv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := review.Status.UserInfo.Extra["arn"]; len(got) != 1 {
+		t.Errorf("the caller must still get extra, got %v", review.Status.UserInfo.Extra)
+	}
+	reqs := rec.Requests()
+	if len(reqs) != 1 || strings.Contains(reqs[0].Body, "SENTINEL-EXTRA") || !strings.Contains(reqs[0].Body, "tenant-a-dev") {
+		t.Errorf("recorded = %+v; want the username kept and userInfo.extra dropped (identity-provider claims must not reach --debug)", reqs)
+	}
+}

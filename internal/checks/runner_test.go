@@ -121,7 +121,7 @@ func TestRunnerDeadlineMarksUnfinishedChecksNotRun(t *testing.T) {
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"u"}}}`),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
-		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
 		"GET /api/v1/namespaces/tenant-a/resourcequotas":              func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() },
 	}
 	srv := testutil.NewServer(t, routes)

@@ -52,9 +52,6 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if o.output != "checklist" {
 		return exit2("unknown output format %q (choose checklist)", o.output)
 	}
-	if *o.flags.Impersonate == "" && (len(*o.flags.ImpersonateGroup) > 0 || *o.flags.ImpersonateUID != "") {
-		return exit2("--as-group and --as-uid need --as: the API requires a user with the groups; use `--as audit-probe --as-group <group>` to test a group alone")
-	}
 	if o.timeout <= 0 {
 		return exit2("--timeout must be longer than 0")
 	}
@@ -70,6 +67,13 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	namespace, user := *o.flags.Namespace, *o.flags.AuthInfoName // --user overrides the context's user
 	if kctx := raw.Contexts[contextName]; kctx != nil {
 		namespace, user = cmp.Or(namespace, kctx.Namespace), cmp.Or(user, kctx.AuthInfo)
+	}
+	asUser := *o.flags.Impersonate // or the kubeconfig user's as:, which --as-group adds groups to
+	if ai := raw.AuthInfos[user]; ai != nil {
+		asUser = cmp.Or(asUser, ai.Impersonate)
+	}
+	if asUser == "" && (len(*o.flags.ImpersonateGroup) > 0 || *o.flags.ImpersonateUID != "") {
+		return exit2("--as-group and --as-uid need --as: the API requires a user with the groups; use `--as audit-probe --as-group <group>` to test a group alone")
 	}
 	if namespace == "" {
 		return exit2("namespace required: pass -n, or set a namespace in context %q", contextName)

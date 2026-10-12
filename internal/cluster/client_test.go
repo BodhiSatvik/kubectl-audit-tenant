@@ -152,6 +152,10 @@ func TestConnectExitReasons(t *testing.T) {
 			"the first SelfSubjectAccessReview failed"},
 		{"401 late in startup", "GET /api/v1/namespaces/tenant-a", testutil.Status(http.StatusUnauthorized, metav1.StatusReasonUnauthorized, "Unauthorized"),
 			"unauthorized: the cluster rejected your credentials"},
+		{"401 on SelfSubjectReview", "POST /apis/authentication.k8s.io/v1/selfsubjectreviews", testutil.Status(http.StatusUnauthorized, metav1.StatusReasonUnauthorized, "Unauthorized"),
+			"unauthorized: the cluster rejected your credentials"},
+		{"401 on the first SSAR", "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews", testutil.Status(http.StatusUnauthorized, metav1.StatusReasonUnauthorized, "Unauthorized"),
+			"unauthorized: the cluster rejected your credentials"},
 		{"cannot impersonate without a user name", "GET /version", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "cannot impersonate"),
 			"your identity may not impersonate team-a-dev"},
 	}

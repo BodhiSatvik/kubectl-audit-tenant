@@ -1,12 +1,14 @@
 package checks
 
 import (
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
 )
 
 func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
@@ -21,6 +23,7 @@ func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
 		{"allowed false is denied", denied, false, false, ""},
 		{"explicit deny", `{"allowed":false,"denied":true}`, false, true, ""},
 		{"evaluationError is an error with the server text", `{"allowed":false,"evaluationError":"webhook timed out"}`, false, false, "webhook timed out"},
+		{"allowed wins over an evaluationError", `{"allowed":true,"evaluationError":"webhook timed out"}`, true, false, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -41,6 +44,13 @@ func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
 			}
 		})
 	}
+	t.Run("an answer that does not repeat the question is an error", func(t *testing.T) {
+		// A 2xx without the echoed spec (a proxy, an empty object) decodes to allowed=false.
+		c := connect(t, testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`))
+		if _, err := can(t.Context(), c, "get", "", "pods", "tenant-a"); err == nil || !strings.Contains(err.Error(), "does not repeat the question") {
+			t.Errorf("can() error = %v, want an error: a non-echo answer must never read as a denial", err)
+		}
+	})
 	t.Run("a failed request is an error", func(t *testing.T) {
 		c := connect(t, &ssarServer{answers: map[string]string{"list nodes": denied}})
 		if _, err := can(t.Context(), c, "get", "", "pods", "tenant-a"); err == nil {
@@ -98,18 +108,29 @@ func TestAT01NotesAnExplicitDeny(t *testing.T) {
 }
 
 func TestAT01ErrorsCarryTheServerTextAndAHint(t *testing.T) {
-	for name, answers := range map[string]map[string]string{
-		"evaluationError": {"list nodes": denied, "create namespaces": denied, "create clusterrolebindings": `{"allowed":false,"evaluationError":"authorizer webhook unavailable"}`},
-		"request failure": {"list nodes": denied, "create namespaces": denied},
+	for name, tt := range map[string]struct {
+		answers map[string]string
+		hint    string // a broken authorizer and a failed request need different advice
+	}{
+		"evaluationError": {map[string]string{"list nodes": denied, "create namespaces": denied, "create clusterrolebindings": `{"allowed":false,"evaluationError":"authorizer webhook unavailable"}`}, hintEvaluation},
+		"request failure": {map[string]string{"list nodes": denied, "create namespaces": denied}, hintRequestFailed},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got := at01(t.Context(), connect(t, &ssarServer{answers: answers}), at01Spec())[0]
-			if got.Verdict != report.Error || got.Hint == "" || !strings.Contains(got.Reason, "clusterrolebindings") {
-				t.Errorf("at01() = %+v, want ERROR naming the failed question with a hint", got)
+			got := at01(t.Context(), connect(t, &ssarServer{answers: tt.answers}), at01Spec())[0]
+			if got.Verdict != report.Error || got.Hint != tt.hint || !strings.Contains(got.Reason, "clusterrolebindings") {
+				t.Errorf("at01() = %+v, want ERROR naming the failed question with hint %q", got, tt.hint)
 			}
 			if name == "evaluationError" && !strings.Contains(got.Reason, "authorizer webhook unavailable") {
 				t.Errorf("reason %q should carry the server text", got.Reason)
 			}
 		})
+	}
+}
+
+func TestAT01FailsWhenAnAllowedActionPrecedesAFailedQuestion(t *testing.T) {
+	// list nodes is allowed; the other three questions get HTTP 500. The proven grant is the verdict.
+	got := at01(t.Context(), connect(t, &ssarServer{answers: map[string]string{"list nodes": allowed}}), at01Spec())[0]
+	if got.Verdict != report.Fail || !strings.Contains(got.Reason, "list nodes") {
+		t.Errorf("at01() = %+v, want FAIL naming list nodes: a later error must not hide a proven grant", got)
 	}
 }

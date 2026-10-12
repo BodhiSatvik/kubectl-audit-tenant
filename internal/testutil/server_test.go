@@ -1,10 +1,13 @@
 package testutil
 
 import (
+	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
+	authzv1 "k8s.io/api/authorization/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -35,5 +38,30 @@ func TestStatusAnswersAForbiddenTheClientRecognizes(t *testing.T) {
 	_, err := srv.Client(t, "tenant-a", nil).CoreV1().Namespaces().Get(t.Context(), "tenant-a", metav1.GetOptions{})
 	if !apierrors.IsForbidden(err) {
 		t.Errorf("error = %v, want a Forbidden status error", err)
+	}
+}
+
+func TestSSAREchoesTheQuestionLikeTheAPIServer(t *testing.T) {
+	srv := NewServer(t, map[string]http.HandlerFunc{
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": SSAR(`{"allowed":true}`),
+	})
+	post := func(body string) *http.Response {
+		t.Helper()
+		resp, err := http.Post(srv.URL+"/apis/authorization.k8s.io/v1/selfsubjectaccessreviews", "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		return resp
+	}
+	var got authzv1.SelfSubjectAccessReview // the cluster client sends JSON (cluster.connect sets it)
+	if err := json.NewDecoder(post(`{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}}}`).Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if a := got.Spec.ResourceAttributes; a == nil || *a != (authzv1.ResourceAttributes{Verb: "list", Resource: "nodes"}) || !got.Status.Allowed {
+		t.Errorf("answer = %+v; want the question echoed with allowed=true", got)
+	}
+	if code := post("not json").StatusCode; code != http.StatusBadRequest {
+		t.Errorf("a body that is not an SSAR got %d, want 400", code)
 	}
 }

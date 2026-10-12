@@ -28,7 +28,7 @@ jobs:
       - run: make vuln
       - uses: goreleaser/goreleaser-action@v6
         with:
-          version: "~> v2"
+          version: v2.18.3 # pinned like every other tool; bump on purpose
           args: release --snapshot --clean
       - name: Snapshot has five archives, checksums.txt and the krew manifest
         run: |

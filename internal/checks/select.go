@@ -23,14 +23,12 @@ func Select(include, skip []string) ([]Spec, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, id := range include {
-		if !available(strings.TrimSpace(id)) {
-			return nil, fmt.Errorf("check %s is not in this build yet; run list-checks", strings.TrimSpace(id))
-		}
-	}
 	var selected []Spec
 	for _, s := range Registry {
 		if s.Run == nil {
+			if slices.ContainsFunc(s.Results, func(r ResultSpec) bool { return in[r.ID] }) {
+				return nil, fmt.Errorf("check %s is not in this build yet; it lands in a later release", s.ID)
+			}
 			continue // shortcut: catalog-only until its task lands; at v0.1.0 drop unshipped checks from Registry instead (D28)
 		}
 		var results []ResultSpec
@@ -48,16 +46,6 @@ func Select(include, skip []string) ([]Spec, error) {
 		return nil, ErrNoChecks
 	}
 	return selected, nil
-}
-
-// available reports whether id names a check, or a result of a check, that has a Run function.
-func available(id string) bool {
-	for _, s := range Registry {
-		if s.Run != nil && (s.ID == id || slices.ContainsFunc(s.Results, func(r ResultSpec) bool { return r.ID == id })) {
-			return true
-		}
-	}
-	return false
 }
 
 // resolve expands check and result IDs into the set of result IDs they name.

@@ -77,6 +77,21 @@ func JSON(status int, body string) http.HandlerFunc {
 	}
 }
 
+// SSAR answers a SelfSubjectAccessReview like the API server: the question it received echoed
+// back as spec, with status (for example `{"allowed":false}`).
+func SSAR(status string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var review struct {
+			Spec json.RawMessage `json:"spec"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&review); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		JSON(http.StatusCreated, `{"spec":`+string(review.Spec)+`,"status":`+status+`}`)(w, r)
+	}
+}
+
 // Status answers like the API server does when it refuses a request: a Status object with the
 // reason client-go's apierrors helpers read.
 func Status(code int32, reason metav1.StatusReason, message string) http.HandlerFunc {

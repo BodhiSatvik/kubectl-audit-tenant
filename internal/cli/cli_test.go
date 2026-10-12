@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -43,7 +44,7 @@ func cluster(t *testing.T) *testutil.Server {
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"team-a-dev","groups":["team-a"]}}}`),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
-		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
 	})
 }
 
@@ -78,6 +79,10 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"kubeconfig cannot load", []string{"-n", "tenant-a", "--kubeconfig", filepath.Join(t.TempDir(), "missing")}, "kubeconfig"},
 		{"unknown flag", []string{"-n", "tenant-a", "--bogus"}, "unknown flag"},
 		{"stray argument", []string{"-n", "tenant-a", "--kubeconfig", withNS, "extra"}, "unknown command"},
+		// Added by the /ship test coverage audit, pass 1.
+		// Value: protects=a mistyped --context exits 2 naming it, before any request; fails_when=a missing context falls back to current-context and audits another cluster;
+		// why_new=no row reached the ToRESTConfig error branch; seam=none; no_claim=the wording after the context name (cli-runtime owns it)
+		{"--context names no context", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--context", "typo"}, `cannot load the kubeconfig: context "typo"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -125,7 +130,7 @@ func TestIdentityComesFromTheEffectiveConfig(t *testing.T) {
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "forbidden"),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
-		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
 	})
 	path := filepath.Join(t.TempDir(), "kubeconfig")
 	cfg := fmt.Sprintf(`apiVersion: v1
@@ -149,6 +154,11 @@ users:
 	_, stdout, _ = run(t, "--kubeconfig", path, "--user", "proxy")
 	if !strings.Contains(stdout, "as team-a-dev (unverified) (groups: team-a)") {
 		t.Errorf("kubeconfig impersonation must show as impersonation:\n%s", stdout)
+	}
+	// The kubeconfig user's as: is the user that --as-group adds groups to.
+	code, stdout, stderr := run(t, "--kubeconfig", path, "--user", "proxy", "--as-group", "team-b")
+	if code != 0 || !strings.Contains(stdout, "as team-a-dev (unverified) (groups: team-b)") {
+		t.Errorf("exit %d, stderr %q; a kubeconfig as: user must take --as-group:\n%s", code, stderr, stdout)
 	}
 }
 
@@ -203,6 +213,56 @@ func TestDebugTraceIsPrintedWhenStartupFails(t *testing.T) {
 	code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--debug")
 	if code != 2 || !strings.Contains(stderr, "GET /version") || !strings.Contains(stderr, " 401 ") {
 		t.Errorf("exit %d; --debug must still list the startup requests on a startup failure; stderr:\n%s", code, stderr)
+	}
+}
+
+// Added by the /ship test coverage audit, pass 1.
+// Value: protects=server text on stderr (the startup error line, --debug answer bodies) carries no ESC, BEL or CR;
+// fails_when=report.Sanitize is dropped from Main's error line or from the --debug body print; why_new=sanitize tests cover only the stdout checklist;
+// seam=none; no_claim=sanitizing of request paths, which the client builds
+func TestServerTextOnStderrIsSanitized(t *testing.T) {
+	const evil = "\x1b]0;owned\x07\x1b[2K\rPASS"
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"u`+evil+`"}}}`),
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcd down"+evil),
+	})
+	code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--debug")
+	if code != 2 || !strings.Contains(stderr, "error: the first SelfSubjectAccessReview failed: etcd down") || !strings.Contains(stderr, `"username":"u`) {
+		t.Fatalf("exit %d; want exit 2 with the startup error and the --debug answer bodies on stderr:\n%q", code, stderr)
+	}
+	if strings.ContainsAny(stderr, "\x1b\x07\r") {
+		t.Errorf("stderr carries raw control characters from the server:\n%q", stderr)
+	}
+}
+
+// brokenWriter is a stdout that cannot be written, like a full disk or a closed pipe.
+type brokenWriter struct{}
+
+func (brokenWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+// Added by the /ship test coverage audit, pass 1.
+// Value: protects=a report that cannot be written exits 2, never 0 (CI reads 0 as a proven namespace); fails_when=the printer's write error is ignored;
+// why_new=no test gave the run an unwritable stdout; seam=none; no_claim=partial writes or a later stdout close
+func TestAReportThatCannotBeWrittenExitsTwo(t *testing.T) {
+	srv := cluster(t) // every answer is a denial, so a written report would be exit 0
+	var errOut bytes.Buffer
+	streams := genericiooptions.IOStreams{In: strings.NewReader(""), Out: brokenWriter{}, ErrOut: &errOut}
+	code := cli.Main([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, "")}, info, streams)
+	if code != 2 || !strings.Contains(errOut.String(), "cannot write the report: no space left on device") {
+		t.Errorf("exit %d, stderr %q; want exit 2 naming the write error", code, errOut.String())
+	}
+}
+
+// Added by the /ship test coverage audit, pass 1.
+// Value: protects=--plain reaches the printer: ASCII separators, no middle dot; fails_when=the flag is not wired into the checklist printer (e.g. when -o wide lands);
+// why_new=goldens call Checklist{Plain: true} directly, never through the flag; seam=none; no_claim=color, which a non-terminal never gets
+func TestPlainFlagReachesThePrinter(t *testing.T) {
+	srv := cluster(t)
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--plain")
+	if code != 0 || !strings.Contains(stdout, "namespace tenant-a | as ") || strings.Contains(stdout, "·") {
+		t.Errorf("exit %d, stderr %q; want ASCII separators only:\n%s", code, stderr, stdout)
 	}
 }
 

@@ -48,7 +48,7 @@ func nthSSAR(n int, first, then http.HandlerFunc) http.HandlerFunc {
 }
 
 func TestFailExitsOneWithNoErrorLine(t *testing.T) {
-	srv := clusterWithSSAR(t, testutil.JSON(http.StatusCreated, `{"status":{"allowed":true}}`))
+	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":true}`))
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""))
 	if code != 1 || !strings.Contains(stdout, "FAIL  AT-01") || !strings.Contains(stdout, "exit 1") || stderr != "" {
 		t.Errorf("exit %d, stderr %q; want exit 1, a FAIL line and nothing on stderr:\n%s", code, stderr, stdout)
@@ -56,10 +56,29 @@ func TestFailExitsOneWithNoErrorLine(t *testing.T) {
 }
 
 func TestErrorExitsTwoWithNoErrorLine(t *testing.T) {
-	srv := clusterWithSSAR(t, nthSSAR(1, testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`), testutil.JSON(http.StatusInternalServerError, `{}`)))
+	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(`{"allowed":false}`), testutil.JSON(http.StatusInternalServerError, `{}`)))
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""))
 	if code != 2 || !strings.Contains(stdout, "ERROR  AT-01") || !strings.Contains(stdout, "exit 2") || stderr != "" {
 		t.Errorf("exit %d, stderr %q; want exit 2, an ERROR line and nothing on stderr:\n%s", code, stderr, stdout)
+	}
+}
+
+// Added by the /ship test coverage audit, pass 1.
+// Value: protects=--timeout bounds a run whose API server stops answering: partial report, ERROR "not run: timeout after 1s", exit 2;
+// fails_when=the CLI stops applying --timeout to the run context or passes another value to the runner; why_new=deadline tests build their own context, not the flag's;
+// seam=none; no_claim=--request-timeout, or a hang inside a credential plugin (cluster tests own that)
+func TestTimeoutEndsARunWhoseServerStopsAnswering(t *testing.T) {
+	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(`{"allowed":false}`), func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // read the body, or the server never notices the client leaving
+		select {
+		case <-r.Context().Done(): // the run's deadline cut the request
+		case <-time.After(5 * time.Second): // a run that ignores --timeout gets an error here instead of hanging the test
+			http.Error(w, "the test server gave up", http.StatusInternalServerError)
+		}
+	}))
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s")
+	if code != 2 || !strings.Contains(stdout, "ERROR  AT-01") || !strings.Contains(stdout, "not run: timeout after 1s") || !strings.Contains(stdout, "raise --timeout") {
+		t.Errorf("exit %d, stderr %q; want exit 2 with AT-01 not run at the deadline:\n%s", code, stderr, stdout)
 	}
 }
 
@@ -76,7 +95,7 @@ func TestHelperProcess(_ *testing.T) {
 func TestInterruptPrintsAPartialReportAndExitsTwo(t *testing.T) {
 	reached := make(chan struct{})
 	var once sync.Once
-	srv := clusterWithSSAR(t, nthSSAR(1, testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`), func(_ http.ResponseWriter, r *http.Request) {
+	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(`{"allowed":false}`), func(_ http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body) // read the body, or the server never notices the client leaving
 		once.Do(func() { close(reached) })
 		<-r.Context().Done() // hold the second question until the client gives up

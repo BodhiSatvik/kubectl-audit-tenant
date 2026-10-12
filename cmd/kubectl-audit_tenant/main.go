@@ -4,6 +4,8 @@ package main
 
 import (
 	"os"
+	"runtime/debug"
+	"strings"
 
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 	// Cloud login plugins (exec, oidc) so kubeconfigs from managed clusters work.
@@ -12,7 +14,7 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cli"
 )
 
-// Set by goreleaser through -ldflags; "dev" when built with plain go build.
+// Set by goreleaser through -ldflags; "dev" otherwise, then filled from the Go build info.
 var (
 	version = "dev"
 	commit  = "none"
@@ -21,5 +23,29 @@ var (
 
 func main() {
 	streams := genericiooptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}
-	os.Exit(cli.Main(os.Args[1:], cli.BuildInfo{Version: version, Commit: commit, Date: date}, streams))
+	b := cli.BuildInfo{Version: version, Commit: commit, Date: date}
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		b = fromBuildInfo(b, bi)
+	}
+	os.Exit(cli.Main(os.Args[1:], b, streams))
+}
+
+// fromBuildInfo fills a "dev" build (go install, go build) from what the Go toolchain embeds,
+// so `version` and the User-Agent name a module version and commit instead of "dev".
+func fromBuildInfo(b cli.BuildInfo, bi *debug.BuildInfo) cli.BuildInfo {
+	if b.Version != "dev" {
+		return b // goreleaser set the ldflags
+	}
+	if v := bi.Main.Version; v != "" && v != "(devel)" {
+		b.Version = strings.TrimPrefix(v, "v") // goreleaser's versions carry no "v" either
+	}
+	for _, s := range bi.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			b.Commit = s.Value[:min(7, len(s.Value))]
+		case "vcs.time":
+			b.Date = s.Value
+		}
+	}
+	return b
 }

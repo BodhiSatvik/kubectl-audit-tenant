@@ -12,7 +12,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: `make check-fast` passes locally; CI is green on push; `hack/check-public.sh` fails on a planted placeholder and passes on the tree.
   - Verify: `make check-fast`; CI run.
   - Depends on: none. Files: `go.mod`, `go.sum`, `cmd/kubectl-audit_tenant/main.go`, `hack/check-public.sh`, `.github/workflows/ci.yml`.
-- [x] **B2 Report types and check registry.** `internal/report`: `Verdict`, `Result` (id, name, kind, mtb, severity, verdict, layer, reason, hint), `Report`, `Summary`, exit-code function (0/1/2 and `--fail-on-skip`). `internal/checks`: `Check` interface, fixed registry of the ten checks (IDs, names, kinds, MTB IDs, severities, 14 result IDs), selection by `--checks`/`--skip` (families and sub-checks; unknown ID and empty set are errors).
+- [x] **B2 Report types and check registry.** `internal/report`: `Verdict`, `Result` (id, name, kind, mtb, severity, verdict, layer, reason, hint), `Report`, `Summary`, exit-code function (0/1/2 and `--fail-on-skip`). `internal/checks`: `Spec` with a `Run` function field (the check interface), fixed registry of the ten checks (IDs, names, kinds, MTB IDs, severities, 14 result IDs), selection by `--checks`/`--skip` (families and sub-checks; unknown ID and empty set are errors).
   - AC: exit-code table test incl. `--fail-on-skip`; selection tests; registry test asserts ten checks and fourteen result IDs in order.
   - Verify: `go test ./internal/report/... ./internal/checks/...`.
   - Depends on: B1. Files: `internal/report/types.go`, `internal/report/exit.go`, `internal/checks/registry.go`, `internal/checks/select.go`, tests.
@@ -23,7 +23,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 - [x] **B4 Cluster client, startup and cache.** `internal/cluster`: client from cli-runtime flags with `WrapTransport`, QPS 50 / burst 300; startup on a goroutine under the run deadline: `/version` (unreachable, 401), SelfSubjectReview (403/404 → unverified), namespace GET (404 exit 2; 403 cached), `cannot impersonate` 403 message, first-SSAR 403 hint; identity struct for the header; per-run cache for resourcequotas, limitranges and the namespace.
   - AC: httptest cases for 401, `cannot impersonate`, namespace 404, a never-answering server and a sleeping credential helper all exit 2 with the DESIGN.md messages; identity shows `(unverified)` on 403.
   - Verify: `go test ./internal/cluster/...`.
-  - Depends on: B3. Files: `internal/cluster/client.go`, `internal/cluster/startup.go`, `internal/cluster/identity.go`, `internal/cluster/cache.go`, tests.
+  - Depends on: B3. Files: `internal/cluster/client.go`, `internal/cluster/startup.go`, tests (identity and the per-run cache live in these two files, D45).
 - [x] **B5 Runner.** Sequential execution in ID order under one context; ERROR "not run: timeout after <t>" for unfinished checks at the deadline; SIGINT/SIGTERM → ERROR "interrupted" with hint, partial report, second signal exits; a check's API error makes that check ERROR and the run continues; every selected check always yields its results.
   - AC: cancel-mid-run test (after a FAIL and midway through a multi-result check); deadline test with a blocked httptest handler; ordering test.
   - Verify: `go test ./internal/checks/ -run Runner`.
