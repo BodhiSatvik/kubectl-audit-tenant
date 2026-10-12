@@ -80,6 +80,9 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if o.otherNamespace == namespace {
 		return exit2("--other-namespace must differ from -n (%s)", namespace)
 	}
+	if errs := validation.IsDNS1123Label(o.otherNamespace); len(errs) > 0 {
+		return exit2("invalid --other-namespace %q: a namespace is one DNS label (lowercase letters, digits and dashes)", o.otherNamespace)
+	}
 	cfg, err := o.flags.ToRESTConfig()
 	if err != nil {
 		return exit2("cannot load the kubeconfig: %v", err)
@@ -95,7 +98,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 			return
 		}
 		for _, r := range rec.Requests() {
-			cmd.PrintErrf("%s %s %d %s\n", r.Method, r.Path, r.Status, r.Duration.Round(time.Millisecond))
+			cmd.PrintErrf("%s %s %d %s\n", r.Method, report.Sanitize(r.Path), r.Status, r.Duration.Round(time.Millisecond))
 			if r.Body != "" {
 				cmd.PrintErrf("  %s\n", report.Sanitize(r.Body))
 			}

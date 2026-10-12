@@ -79,7 +79,7 @@ func (t *Transport) allowed(req *http.Request) bool {
 	if len(validation.IsDNS1123Label(t.Namespace)) > 0 {
 		return false // a namespace that is not one label would widen the paths below
 	}
-	path, ok := strings.CutPrefix(u.EscapedPath(), strings.TrimSuffix(t.Base.Path, "/"))
+	path, ok := strings.CutPrefix(u.EscapedPath(), strings.TrimSuffix(t.Base.EscapedPath(), "/")) // both encoded
 	if !ok {
 		return false
 	}

@@ -72,6 +72,7 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"timeout zero", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--timeout", "0"}, "--timeout must be longer than 0"},
 		{"namespace required", []string{"--kubeconfig", noNS}, "namespace required"},
 		{"namespace is not one DNS label", []string{"-n", "kube-system/secrets", "--kubeconfig", withNS}, "invalid namespace"},
+		{"other namespace is not one DNS label", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--other-namespace", ""}, "invalid --other-namespace"},
 		{"--as-uid without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-uid", "1234"}, "--as-group and --as-uid need --as"},
 		{"check not in this build", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-02"}, "not in this build yet"},
 		{"kubeconfig cannot load", []string{"-n", "tenant-a", "--kubeconfig", filepath.Join(t.TempDir(), "missing")}, "kubeconfig"},

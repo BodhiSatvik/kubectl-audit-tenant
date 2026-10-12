@@ -35,6 +35,8 @@ jobs:
       KREW_VERSION: v0.5.0
     steps:
       - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.37.1
       - name: Install krew
         run: |
           set -euo pipefail

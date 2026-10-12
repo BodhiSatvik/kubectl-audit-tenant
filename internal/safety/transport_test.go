@@ -211,6 +211,19 @@ func TestSafetyMatchesPathsUnderTheServerPrefix(t *testing.T) {
 	}
 }
 
+func TestSafetyMatchesAnEncodedServerPrefix(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{"GET /k8s x/version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`)})
+	base, _ := url.Parse(srv.URL + "/k8s%20x")
+	cfg := &rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, nil)}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := cs.Discovery().ServerVersion(); err != nil || v.GitVersion != "v1.37.0" {
+		t.Errorf("ServerVersion() = %v, %v; a percent-encoded prefix must still match", v, err)
+	}
+}
+
 func TestSafetyGuardsAgainstCraftedRequests(t *testing.T) {
 	srv := testutil.NewServer(t, map[string]http.HandlerFunc{"POST /api/v1/namespaces/tenant-a/pods": testutil.JSON(http.StatusCreated, `{}`)})
 	base, _ := url.Parse(srv.URL)
