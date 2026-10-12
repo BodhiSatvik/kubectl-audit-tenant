@@ -1,0 +1,10 @@
+namespace team-a | as team-a-dev (groups: team-a, system:authenticated) | cluster kind-dev
+
+PASS  AT-01  No cluster-scoped access         RBAC denied all 4 actions
+FAIL  AT-05  NodePort services blocked        a NodePort Service was accepted in a dry run
+      fix    add a policy that rejects type: NodePort, or remove `create services` from the tenant role
+SKIP  AT-09  Pod Security Admission enforced  cannot read namespace labels (forbidden)
+      fix    grant `get` on namespace team-a to this identity, or run with --as <admin>
+
+1 passed | 1 failed (AT-05) | 1 skipped (AT-09) | 0 errors | exit 1
+MTB IDs and layers: -o wide | machine output: -o json, -o policyreport

@@ -1,0 +1,66 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publishes the release
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false # tests run in this job; goreleaser reads GITHUB_TOKEN from env
+      - uses: actions/setup-go@v6 # v6 builds with go.mod's toolchain directive
+        with:
+          go-version-file: go.mod
+      - run: go test ./... && make safety # never publish a binary whose read-only guarantee was not tested
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.18.3 # pinned like every other tool; bump on purpose
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  krew-install:
+    needs: goreleaser
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read # downloads public release assets only
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KREW_VERSION: v0.5.0
+    steps:
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.37.1
+      - name: Install krew
+        run: |
+          set -euo pipefail
+          os=$(uname | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+          cd "$(mktemp -d)"
+          curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/download/${KREW_VERSION}/krew-${os}_${arch}.tar.gz"
+          tar zxf "krew-${os}_${arch}.tar.gz"
+          "./krew-${os}_${arch}" install krew
+          echo "$HOME/.krew/bin" >> "$GITHUB_PATH"
+      - name: Install from the manifest and archive, then from the manifest URL, each in a clean KREW_ROOT
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          os=$(uname | tr '[:upper:]' '[:lower:]')
+          arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern audit-tenant.yaml --pattern "*_${os}_${arch}.tar.gz"
+          export KREW_ROOT
+          KREW_ROOT=$(mktemp -d)
+          archive=$(ls ./*_"${os}_${arch}".tar.gz) # a glob inside --archive=... never expands
+          kubectl krew install --manifest=audit-tenant.yaml --archive="$archive"
+          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "${tag#v}"
+          KREW_ROOT=$(mktemp -d)
+          kubectl krew install --manifest-url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/audit-tenant.yaml"
+          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "${tag#v}"

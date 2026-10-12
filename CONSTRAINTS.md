@@ -25,10 +25,10 @@ Read this file before writing code. Do not weaken it to make a change pass. Tigh
 | Architecture | depguard: `internal/headroom` imports no `k8s.io/client-go`; `internal/report` imports no `internal/checks` or `internal/probe`; only `internal/safety` and `internal/cluster` import `k8s.io/client-go/transport` | `golangci-lint run` (depguard rules in `.golangci.yml`) | every edit |
 | Secrets | Zero findings | `gitleaks detect --redact --no-banner` | every edit |
 | Floor guard | Zero floor violations in the diff against `origin/main` | `python3 hack/floor-guard.py` | task end (`make check`), CI |
-| Coverage | At least 80% of statements in every package under `internal/`; at least 90% for `internal/safety` and `internal/probe` | `go test ./... -coverprofile=coverage.out` then `hack/coverage-gate.sh` | task end, CI |
+| Coverage | At least 80% of statements in every package under `internal/`; at least 90% for `internal/safety` and `internal/probe` | `make unit`: `go test ./... -race -coverprofile=coverage.out` into `test.log`, then `hack/coverage-gate.sh test.log` (it also fails on any failed test) | task end, CI |
 | Safety invariant | Zero requests outside the allowlist; zero Secret bodies; every deny-list request refused | `go test ./internal/safety/... -run 'TestSafety' -count=1 -v` | task end, CI |
 | Security: dependencies | No known vulnerability reachable from the binary | `govulncheck ./...` | CI (`make check-full`) |
-| Integration | AT-01 to AT-03 PASS and FAIL fixtures under real RBAC; `--as-group` without `--as` exits 2 | `make envtest` (controller-runtime envtest 1.37.x) | CI |
+| Integration | AT-01 to AT-03 PASS and FAIL fixtures under real RBAC; `--as-group` with no user to impersonate exits 2 | `make envtest` (controller-runtime envtest 1.37.x) | CI |
 | End-to-end | Exactly the verdict table in DESIGN.md section 8 for all four runs; JSON schema valid; PolicyReport applies with `--dry-run=server` | `make e2e` (kind + Kyverno, versions in `test/e2e/versions.env`) | CI |
 | Performance | Median of 5 full runs on kind under 10 s; no e2e run makes more than 40 API requests | `make bench` inside the e2e job; writes `BENCHMARK.md` | CI |
 | Release | Five archives and `checksums.txt`; krew installs in clean roots on ubuntu and macos; `--manifest-url` install works; `version` prints the tag | release workflow (goreleaser) | on tag |

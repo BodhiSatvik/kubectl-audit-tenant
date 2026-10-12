@@ -1,0 +1,36 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the floor guard diffs against origin/main
+      - uses: actions/setup-go@v6 # v6 builds with go.mod's toolchain directive
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.14.0
+          install-only: true
+      - name: Install gitleaks and govulncheck
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.30.1
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - run: hack/check-public.sh --self-test && hack/check-public.sh
+      - run: make check
+      - run: make vuln
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.18.3 # pinned like every other tool; bump on purpose
+          args: release --snapshot --clean
+      - name: Snapshot has five archives, checksums.txt and the krew manifest
+        run: |
+          test "$(ls dist/*.tar.gz dist/*.zip | wc -l)" -eq 5
+          test -s dist/checksums.txt && test -s dist/krew/audit-tenant.yaml

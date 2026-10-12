@@ -15,16 +15,16 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 ## Task list (index; cards in TODOS.md)
 
 ### Phase 1: walking skeleton
-- [ ] B1 Module, tooling and CI
-- [ ] B2 Report types and check registry
-- [ ] B3 Safety transport
-- [ ] B4 Cluster client, startup and cache
-- [ ] B5 Runner
-- [ ] B6 SSAR helper and AT-01
-- [ ] B7 CLI command surface
-- [ ] B8 Checklist printer
-- [ ] B9 e2e scaffold on kind
-- [ ] B10 Release pipeline dry run
+- [x] B1 Module, tooling and CI
+- [x] B2 Report types and check registry
+- [x] B3 Safety transport
+- [x] B4 Cluster client, startup and cache
+- [x] B5 Runner
+- [x] B6 SSAR helper and AT-01
+- [x] B7 CLI command surface
+- [x] B8 Checklist printer
+- [x] B9 e2e scaffold on kind
+- [x] B10 Release pipeline dry run
 
 ### Checkpoint 1: walking skeleton
 - [ ] `make check` green; e2e asserts AT-01 for all four identities; snapshot release builds; review with Satvik
@@ -70,7 +70,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 ### Phase 6: docs and release
 - [ ] B29 README
 - [ ] B30 Citation, changelog, diagrams
-- [ ] B31 Pre-release gate and v0.1.0 tag (Satvik pushes, tags, opens the krew-index PR, registers the domain)
+- [ ] B31 Pre-release gate and v0.1.0 tag (Satvik pushes, tags and opens the krew-index PR)
 
 ### Checkpoint 6: complete
 - [ ] DESIGN.md acceptance criteria 1–11 met; ready for outreach
@@ -90,4 +90,7 @@ Do B1 and B2 alone (types and registry are the shared contract). Then four lanes
 | krew index lead time | Low | `--manifest-url` and `go install` paths in the README from day one |
 
 ## Open questions
-- None blocking. `audit-tenant.dev` registration is Satvik's step before the tag (D20); if taken, the keys switch to `audit-tenant.bodhisatvik.github.io`.
+- None. `audit-tenant.dev` was registered on 2026-10-11 (D20).
+
+## How to run the tasks
+Use Addy's `/build` for each task: it reads the next unchecked task here, takes the card (acceptance criteria, verify command, files) from `TODOS.md` section v0.1, writes the failing test first, implements, runs `make check`, commits once, and ticks the task in both files. Do not use `/build auto` in Phase 1: it requires a `SPEC.md` path this repo does not use (the spec is `DESIGN.md`), and the skeleton phase wants a human look at each step.

@@ -1,4 +1,6 @@
 # Stages from CONSTRAINTS.md. fast: every edit. check: task end. check-full: CI.
+SHELL := bash
+.SHELLFLAGS := -o pipefail -ec
 GO ?= go
 PKG := ./...
 
@@ -15,7 +17,7 @@ lint:
 secrets:
 	gitleaks detect --redact --no-banner
 unit:
-	$(GO) test $(PKG) -coverprofile=coverage.out -covermode=atomic 2>&1 | tee test.log
+	set -o pipefail; $(GO) test $(PKG) -race -coverprofile=coverage.out -covermode=atomic 2>&1 | tee test.log # in the recipe: make 3.81 (macOS) ignores .SHELLFLAGS
 	hack/coverage-gate.sh test.log
 safety:
 	$(GO) test ./internal/safety/... -run 'TestSafety' -count=1 -v
