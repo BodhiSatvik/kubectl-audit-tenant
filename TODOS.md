@@ -53,7 +53,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Phase 2: behavioral checks
 
-- [ ] **B11 AT-02 and AT-03.** AT-02: `get` and `list` secrets in `--other-namespace`; AT-03: escalate/bind on roles (target namespace) and clusterroles (no namespace), impersonate users/groups/serviceaccounts (no namespace), cluster-wide wildcard; reasons state the untested cases (in-namespace wildcard, in-namespace serviceaccount impersonation, `resourceNames` grants); admin-hint signal for the header when the wildcard is allowed in self mode.
+- [x] **B11 AT-02 and AT-03.** AT-02: `get` and `list` secrets in `--other-namespace`; AT-03: escalate/bind on clusterroles (no namespace; the in-namespace roles questions were dropped in D62), impersonate users/groups/serviceaccounts (no namespace), cluster-wide wildcard; reasons state the untested cases (in-namespace wildcard, in-namespace serviceaccount impersonation, `resourceNames` grants); admin-hint signal for the header when the wildcard is allowed in self mode.
   - AC: PASS and FAIL unit cases per check; reason texts golden.
   - Verify: `go test ./internal/checks/ -run 'AT02|AT03'`.
   - Depends on: B6. Files: `internal/checks/at02.go`, `internal/checks/at03.go`, tests.

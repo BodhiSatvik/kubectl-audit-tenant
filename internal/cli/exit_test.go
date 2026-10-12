@@ -55,6 +55,18 @@ func TestFailExitsOneWithNoErrorLine(t *testing.T) {
 	}
 }
 
+func TestAdminHintOnlyInSelfMode(t *testing.T) {
+	// Every "may I?" allowed: AT-03 proves the cluster-wide wildcard.
+	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":true}`))
+	const hint = "this identity looks like a cluster admin; add --as to test a tenant"
+	if _, stdout, _ := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, "")); !strings.Contains(stdout, hint) {
+		t.Errorf("self mode: stdout lacks the admin hint:\n%s", stdout)
+	}
+	if _, stdout, _ := run(t, "-n", "tenant-a", "--as", "team-a-dev", "--kubeconfig", kubeconfig(t, srv.URL, "")); strings.Contains(stdout, hint) {
+		t.Errorf("impersonation: the admin hint is for self mode only:\n%s", stdout)
+	}
+}
+
 func TestErrorExitsTwoWithNoErrorLine(t *testing.T) {
 	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(`{"allowed":false}`), testutil.JSON(http.StatusInternalServerError, `{}`)))
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""))

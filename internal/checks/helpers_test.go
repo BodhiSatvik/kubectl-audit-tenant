@@ -63,7 +63,7 @@ func connect(t *testing.T, ssar http.Handler) *cluster.Client {
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": ssar.ServeHTTP,
 	})
-	c, err := cluster.Connect(t.Context(), &rest.Config{Host: srv.URL}, cluster.Options{Namespace: "tenant-a", As: "team-a-dev", Timeout: time.Minute})
+	c, err := cluster.Connect(t.Context(), &rest.Config{Host: srv.URL}, cluster.Options{Namespace: "tenant-a", OtherNamespace: "kube-system", As: "team-a-dev", Timeout: time.Minute})
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}

@@ -116,7 +116,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	context.AfterFunc(ctx, stop) // after the first signal, a second one gets Go's default: exit at once
 
 	c, err := cluster.Connect(ctx, cfg, cluster.Options{
-		Namespace: namespace, Context: contextName, User: user,
+		Namespace: namespace, OtherNamespace: o.otherNamespace, Context: contextName, User: user,
 		As: as, AsGroups: asGroups, Timeout: o.timeout, Recorder: rec,
 	})
 	if err != nil {
@@ -134,6 +134,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		Timestamp:  time.Now().UTC(),
 		Results:    results,
 		FailOnSkip: o.failOnSkip,
+		AdminHint:  c.Identity.Mode == report.ModeSelf && checks.LooksLikeAdmin(results),
 	}
 	rep.Summary = report.Summarize(results, o.failOnSkip)
 	if errors.Is(ctx.Err(), context.Canceled) {

@@ -25,7 +25,9 @@ func fake(id string, n int, produce func(ctx context.Context, s Spec) []report.R
 		}
 		s.Results = append(s.Results, ResultSpec{ID: rid, Name: rid, MTB: "-"})
 	}
-	s.Run = func(ctx context.Context, _ *cluster.Client, s Spec, _ func(report.Result)) []report.Result { return produce(ctx, s) }
+	s.Run = func(ctx context.Context, _ *cluster.Client, s Spec, _ func(report.Result)) []report.Result {
+		return produce(ctx, s)
+	}
 	return s
 }
 

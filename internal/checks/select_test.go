@@ -57,17 +57,22 @@ func TestSelect(t *testing.T) {
 }
 
 func TestSelectRejectsChecksNotInThisBuild(t *testing.T) {
-	for _, include := range [][]string{{"AT-02"}, {"AT-01", "AT-02"}, {"AT-01", "AT-04.2"}} {
+	for _, include := range [][]string{{"AT-04"}, {"AT-01", "AT-04"}, {"AT-01", "AT-04.2"}} {
 		if _, err := Select(include, nil); err == nil || !strings.Contains(err.Error(), "is not in this build yet") {
 			t.Errorf("Select(%v) error = %v, want 'not in this build yet', never an AT-01-only report", include, err)
 		}
 	}
-	if _, err := Select(nil, []string{"AT-01"}); !errors.Is(err, ErrNoChecks) {
+	if _, err := Select([]string{"AT-01"}, []string{"AT-01"}); !errors.Is(err, ErrNoChecks) {
 		t.Errorf("Select(skip AT-01) error = %v, want ErrNoChecks (nothing else is built)", err)
 	}
-	specs, err := Select(nil, nil)
+	specs, err := Select([]string{"AT-01"}, nil)
 	if err != nil || len(specs) != 1 || specs[0].ID != "AT-01" || specs[0].Run == nil {
 		t.Errorf("Select() = %v, %v; want only the built check AT-01", ResultIDs(specs), err)
+	}
+	wantBuilt := []string{"AT-01", "AT-02", "AT-03"} // grows as checks land
+	specs, err = Select(nil, nil)
+	if err != nil || !slices.Equal(ResultIDs(specs), wantBuilt) || slices.ContainsFunc(specs, func(s Spec) bool { return s.Run == nil }) {
+		t.Errorf("Select() = %v, %v; want every built check, %v, and nothing else", ResultIDs(specs), err, wantBuilt)
 	}
 }
 

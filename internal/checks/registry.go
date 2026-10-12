@@ -47,10 +47,10 @@ var Registry = []Spec{
 		Results: one("AT-01", "No cluster-scoped access", "MTB-PL1-CC-CPI-1"), Run: at01},
 	{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, Severity: report.High,
 		Method:  "SSAR: get secrets and list secrets in --other-namespace",
-		Results: one("AT-02", "No cross-namespace secret access", "MTB-PL1-CC-TI-2")},
+		Results: one("AT-02", "No cross-namespace secret access", "MTB-PL1-CC-TI-2"), Run: at02},
 	{ID: "AT-03", Name: "No privilege escalation", Kind: report.Behavioral, Severity: report.High,
-		Method:  "SSAR: escalate and bind on roles and clusterroles; impersonate users, groups, serviceaccounts; cluster-wide wildcard",
-		Results: one("AT-03", "No privilege escalation", "MTB-PL2-CC-TI-1")},
+		Method:  "SSAR with no namespace: escalate and bind on clusterroles; impersonate users, groups, serviceaccounts; * on * in every API group",
+		Results: one("AT-03", "No privilege escalation", "MTB-PL2-CC-TI-1"), Run: at03},
 	{ID: "AT-04", Name: "Dangerous pod settings blocked", Kind: report.Behavioral, Severity: report.High,
 		Method: "dry-run pods after a compliant control pod: privileged, hostPath, hostPID, hostNetwork, root with escalation",
 		Results: []ResultSpec{

@@ -27,23 +27,25 @@ type Attributes = authzv1.ResourceAttributes
 
 // Options is what the CLI knows before the first request.
 type Options struct {
-	Namespace string
-	Context   string           // kubeconfig context name, for messages and the header
-	User      string           // kubeconfig user name, shown when the identity cannot be verified
-	As        string           // --as; empty in self mode
-	AsGroups  []string         // --as-group
-	Timeout   time.Duration    // the run deadline, for the timeout message
-	Recorder  *safety.Recorder // the caller's recorder, so --debug keeps the trace when startup fails; nil makes one
+	Namespace      string
+	OtherNamespace string           // --other-namespace, the namespace AT-02 asks about
+	Context        string           // kubeconfig context name, for messages and the header
+	User           string           // kubeconfig user name, shown when the identity cannot be verified
+	As             string           // --as; empty in self mode
+	AsGroups       []string         // --as-group
+	Timeout        time.Duration    // the run deadline, for the timeout message
+	Recorder       *safety.Recorder // the caller's recorder, so --debug keeps the trace when startup fails; nil makes one
 }
 
 // Client is one run's connection. Every request goes through the safety transport.
 type Client struct {
-	Clientset kubernetes.Interface
-	Recorder  *safety.Recorder
-	Namespace string
-	Server    string
-	Version   string
-	Identity  report.Identity
+	Clientset      kubernetes.Interface
+	Recorder       *safety.Recorder
+	Namespace      string
+	OtherNamespace string
+	Server         string
+	Version        string
+	Identity       report.Identity
 	// NamespaceObject is the target namespace read once at startup; NamespaceErr is the error
 	// that read returned (a 403 is kept for AT-09).
 	NamespaceObject *corev1.Namespace
@@ -90,7 +92,7 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{Clientset: cs, Recorder: rec, Namespace: opts.Namespace, Server: cfg.Host}
+	c := &Client{Clientset: cs, Recorder: rec, Namespace: opts.Namespace, OtherNamespace: opts.OtherNamespace, Server: cfg.Host}
 	c.quotas = sync.OnceValues(func() ([]corev1.ResourceQuota, error) {
 		l, err := cs.CoreV1().ResourceQuotas(opts.Namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
