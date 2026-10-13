@@ -104,18 +104,21 @@ func TestHelperProcess(_ *testing.T) {
 	os.Exit(cli.Main(args, info, genericiooptions.IOStreams{In: os.Stdin, Out: os.Stdout, ErrOut: os.Stderr}))
 }
 
-func TestInterruptPrintsAPartialReportAndExitsTwo(t *testing.T) {
+// interruptedRun runs the CLI in a child process, answers the startup question (list nodes) with
+// first, holds the next "may I?" and sends SIGINT while it hangs.
+func interruptedRun(t *testing.T, first string) (code int, stdout, stderr *bytes.Buffer, err error) {
+	t.Helper()
 	reached := make(chan struct{})
 	var once sync.Once
-	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(`{"allowed":false}`), func(_ http.ResponseWriter, r *http.Request) {
+	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(first), func(_ http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body) // read the body, or the server never notices the client leaving
 		once.Do(func() { close(reached) })
 		<-r.Context().Done() // hold the second question until the client gives up
 	}))
 	child := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--no-color") //nolint:gosec // the test re-executes its own binary as the helper process
 	child.Env = append(os.Environ(), "AUDIT_TENANT_HELPER=1")
-	var stdout, stderr bytes.Buffer
-	child.Stdout, child.Stderr = &stdout, &stderr
+	stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
+	child.Stdout, child.Stderr = stdout, stderr
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -128,12 +131,24 @@ func TestInterruptPrintsAPartialReportAndExitsTwo(t *testing.T) {
 	if err := child.Process.Signal(os.Interrupt); err != nil {
 		t.Fatal(err)
 	}
-	err := child.Wait()
-	code := 0
+	err = child.Wait()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		code = exitErr.ExitCode()
 	}
+	return code, stdout, stderr, err
+}
+
+func TestInterruptAfterAFailExitsOne(t *testing.T) {
+	// D63: a FAIL proven before the signal stands, as it does after --timeout (ADR 0004).
+	code, stdout, stderr, err := interruptedRun(t, `{"allowed":true}`)
+	if out := stdout.String(); code != 1 || !strings.Contains(out, "RBAC allows list nodes") || !strings.Contains(out, "interrupted") || !strings.Contains(out, "exit 1") {
+		t.Errorf("exit %d (%v); want 1: the FAIL proven before the interrupt stands\nstdout:\n%s\nstderr:\n%s", code, err, out, stderr.String())
+	}
+}
+
+func TestInterruptPrintsAPartialReportAndExitsTwo(t *testing.T) {
+	code, stdout, stderr, err := interruptedRun(t, `{"allowed":false}`)
 	out := stdout.String()
 	if code != 2 || !strings.Contains(out, "ERROR  AT-01") || !strings.Contains(out, "interrupted") || !strings.Contains(out, "re-run; the cluster was not changed") || !strings.Contains(out, "exit 2") {
 		t.Errorf("exit %d (%v); want 2 with the partial report:\nstdout:\n%s\nstderr:\n%s", code, err, out, stderr.String())

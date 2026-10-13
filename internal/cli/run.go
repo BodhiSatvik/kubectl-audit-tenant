@@ -3,7 +3,6 @@ package cli
 import (
 	"cmp"
 	"context"
-	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -136,10 +135,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		FailOnSkip: o.failOnSkip,
 		AdminHint:  c.Identity.Mode == report.ModeSelf && checks.LooksLikeAdmin(results),
 	}
-	rep.Summary = report.Summarize(results, o.failOnSkip)
-	if errors.Is(ctx.Err(), context.Canceled) {
-		rep.Summary.ExitCode = 2 // interrupted: the report is partial
-	}
+	rep.Summary = report.Summarize(results, o.failOnSkip) // an interrupted run's unfinished checks are ERROR; a proven FAIL still wins (D63)
 	printer := report.Checklist{Out: streams.Out, Color: report.WantColor(streams.Out, o.noColor), Plain: o.plain, Width: report.Width(streams.Out)}
 	if err := printer.Print(rep); err != nil {
 		return exit2("cannot write the report: %v", err)
