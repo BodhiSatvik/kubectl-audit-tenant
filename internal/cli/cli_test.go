@@ -76,7 +76,7 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"namespace is not one DNS label", []string{"-n", "kube-system/secrets", "--kubeconfig", withNS}, "invalid namespace"},
 		{"other namespace is not one DNS label", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--other-namespace", ""}, "invalid --other-namespace"},
 		{"--as-uid without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-uid", "1234"}, "--as-group and --as-uid need a user to impersonate"},
-		{"check not in this build", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-04"}, "not in this build yet"},
+		{"check not in this build", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-06"}, "not in this build yet"},
 		{"kubeconfig cannot load", []string{"-n", "tenant-a", "--kubeconfig", filepath.Join(t.TempDir(), "missing")}, "kubeconfig"},
 		{"unknown flag", []string{"-n", "tenant-a", "--bogus"}, "unknown flag"},
 		{"stray argument", []string{"-n", "tenant-a", "--kubeconfig", withNS, "extra"}, "unknown command"},
@@ -113,7 +113,7 @@ func TestRunPrintsTheChecklistAndExitsWithTheSummaryCode(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
-	for _, want := range []string{"namespace tenant-a", "as team-a-dev (groups: team-a)", "cluster kind-dev", "PASS  AT-01  No cluster-scoped access", "exit 0"} {
+	for _, want := range []string{"namespace tenant-a", "as team-a-dev (groups: team-a)", "cluster kind-dev", "PASS  AT-01    No cluster-scoped access", "exit 0"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
 		}

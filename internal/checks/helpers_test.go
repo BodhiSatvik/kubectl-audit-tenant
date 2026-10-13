@@ -2,12 +2,15 @@ package checks
 
 import (
 	"encoding/json"
+	"io"
+	"maps"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
 
 	authzv1 "k8s.io/api/authorization/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
@@ -55,17 +58,82 @@ func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // connect builds a cluster.Client for tenant-a whose SSARs are answered by ssar.
-func connect(t *testing.T, ssar http.Handler) *cluster.Client {
+func connect(t *testing.T, ssar http.Handler) *cluster.Client { return connectWith(t, ssar, nil) }
+
+// connectWith is connect plus extra routes, such as the dry-run endpoints of AT-04 and AT-05.
+func connectWith(t *testing.T, ssar http.Handler, extra map[string]http.HandlerFunc) *cluster.Client {
 	t.Helper()
-	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+	routes := map[string]http.HandlerFunc{
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"team-a-dev"}}}`),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": ssar.ServeHTTP,
-	})
+	}
+	maps.Copy(routes, extra)
+	srv := testutil.NewServer(t, routes)
 	c, err := cluster.Connect(t.Context(), &rest.Config{Host: srv.URL}, cluster.Options{Namespace: "tenant-a", OtherNamespace: "kube-system", As: "team-a-dev", Timeout: time.Minute})
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	return c
+}
+
+// probeServer answers dry-run creates of pods and services. It names each object by the probe
+// it is (control, AT-04.1 to AT-04.5, control-service, AT-05), answers from answers (accepted
+// when a name has no answer), and remembers the names in the order they were sent.
+type probeServer struct {
+	mu      sync.Mutex
+	answers map[string]http.HandlerFunc
+	sent    []string
+}
+
+func (s *probeServer) routes() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"POST /api/v1/namespaces/tenant-a/pods":     s.ServeHTTP,
+		"POST /api/v1/namespaces/tenant-a/services": s.ServeHTTP,
+	}
+}
+
+func (s *probeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	if r.URL.Query().Get("dryRun") != "All" {
+		http.Error(w, "not a dry run", http.StatusBadRequest)
+		return
+	}
+	var obj struct {
+		Kind string
+		Spec struct {
+			Type        string
+			HostPID     bool
+			HostNetwork bool
+			Volumes     []corev1.Volume
+			Containers  []corev1.Container
+		}
+	}
+	_ = json.Unmarshal(body, &obj)
+	name := "control"
+	switch sp := obj.Spec; {
+	case obj.Kind == "Service" && sp.Type == "NodePort":
+		name = "AT-05"
+	case obj.Kind == "Service":
+		name = "control-service"
+	case len(sp.Volumes) > 0:
+		name = "AT-04.2"
+	case sp.HostPID:
+		name = "AT-04.3"
+	case sp.HostNetwork:
+		name = "AT-04.4"
+	case sp.Containers[0].SecurityContext.Privileged != nil:
+		name = "AT-04.1"
+	case *sp.Containers[0].SecurityContext.RunAsUser == 0:
+		name = "AT-04.5"
+	}
+	s.mu.Lock()
+	s.sent = append(s.sent, name)
+	s.mu.Unlock()
+	if h, ok := s.answers[name]; ok {
+		h(w, r)
+		return
+	}
+	testutil.JSON(http.StatusCreated, string(body))(w, r)
 }

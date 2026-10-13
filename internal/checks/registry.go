@@ -38,6 +38,15 @@ func (s Spec) result(r ResultSpec, verdict report.Verdict, layer, reason, hint s
 		Verdict: verdict, Layer: layer, Reason: reason, Hint: hint}
 }
 
+// all gives every selected result of this check the same verdict.
+func (s Spec) all(verdict report.Verdict, layer, reason, hint string) []report.Result {
+	out := make([]report.Result, 0, len(s.Results))
+	for _, r := range s.Results {
+		out = append(out, s.result(r, verdict, layer, reason, hint))
+	}
+	return out
+}
+
 func one(id, name, mtb string) []ResultSpec { return []ResultSpec{{ID: id, Name: name, MTB: mtb}} }
 
 // Registry lists the ten checks in run order (DESIGN.md section 5).
@@ -59,7 +68,7 @@ var Registry = []Spec{
 			{ID: "AT-04.3", Name: "hostPID blocked", MTB: "MTB-PL1-BC-HI-4"},
 			{ID: "AT-04.4", Name: "hostNetwork blocked", MTB: "MTB-PL1-BC-HI-3"},
 			{ID: "AT-04.5", Name: "Privilege escalation to root blocked", MTB: "MTB-PL1-BC-CPI-6"},
-		}},
+		}, Run: at04},
 	{ID: "AT-05", Name: "NodePort services blocked", Kind: report.Behavioral, Severity: report.Medium,
 		Method:  "dry-run Service of type NodePort after a ClusterIP control Service",
 		Results: one("AT-05", "NodePort services blocked", "MTB-PL1-BC-HI-1")},

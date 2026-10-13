@@ -84,7 +84,7 @@ run 2 0 --kubeconfig "$sa"
 expect 2 '^PASS  AT-01 '
 expect 2 'groups: .*system:serviceaccounts:tenant-a'
 
-run 3 0 -n tenant-b --as system:serviceaccount:tenant-b:tenant-b-dev
+run 3 1 -n tenant-b --as system:serviceaccount:tenant-b:tenant-b-dev
 expect 3 '^PASS  AT-01 '
 
 run 4 1 -n tenant-a

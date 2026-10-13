@@ -65,7 +65,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: table test with one real server string per rule and the empty-message case; rule order test (webhook before 400); coverage of `internal/probe` at least 90%.
   - Verify: `go test ./internal/probe/ -run Classify`; `hack/coverage-gate.sh`.
   - Depends on: B12. Files: `internal/probe/classify.go`, `internal/probe/classify_test.go`, `internal/probe/testdata/messages.txt`.
-- [ ] **B14 AT-04.** Order per DESIGN.md: SSAR create pods; denied → create/update/patch SSARs on the six controller kinds → PASS (RBAC) or SKIP; allowed → control pod → five probes → classifier; control rejected → five SKIPs; the control runs only when an AT-04 sub-check is selected.
+- [x] **B14 AT-04.** Order per DESIGN.md: SSAR create pods; denied → create/update/patch SSARs on the six controller kinds → PASS (RBAC) or SKIP; allowed → control pod → five probes → classifier; control rejected → five SKIPs; the control runs only when an AT-04 sub-check is selected.
   - AC: unit cases: allowed with PSA rejections; all denied; denied with `update deployments` allowed; control rejected by quota; `--checks AT-04.2` alone.
   - Verify: `go test ./internal/checks/ -run AT04`.
   - Depends on: B13. Files: `internal/checks/at04.go`, tests.

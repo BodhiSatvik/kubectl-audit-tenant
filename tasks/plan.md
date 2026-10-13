@@ -33,7 +33,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B11 AT-02 and AT-03
 - [x] B12 Probe builders and sizing
 - [x] B13 Rejection classifier
-- [ ] B14 AT-04
+- [x] B14 AT-04
 - [ ] B15 AT-05
 - [ ] B16 e2e: AT-01 to AT-05
 
