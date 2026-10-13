@@ -2,7 +2,8 @@
 # run.sh: the kind end-to-end test (make e2e). It creates or reuses a kind cluster, installs
 # Kyverno with the restrict-nodeport policy in Enforce mode, applies the tenant-a and tenant-b
 # fixtures, builds the plugin and runs it as the four identities of DESIGN.md section 8.
-# Phase 1 asserts AT-01 and the exit codes; later phases extend the expectations.
+# It asserts the verdict of every result (test/e2e/expected/run<N>.txt), the deciding layer of
+# the behavioral checks, the exit codes, the header lines and a fix line under every non-PASS.
 #
 # Environment: E2E_CLUSTER (default audit-tenant-e2e); E2E_DELETE=1 deletes the cluster at the end.
 # Outputs land in bin/ (git-ignored). The user's own kubeconfig is never changed.
@@ -66,11 +67,15 @@ run() {
   [ "$code" = "$want" ] || fail "run $name exited $code, want $want; stderr: $(cat "bin/e2e-$name.err")"
 }
 expect() { grep -qE "$2" "bin/e2e-$1.out" || fail "run $1: expected /$2/ in the output above"; }
+absent() { ! grep -qE "$2" "bin/e2e-$1.out" || fail "run $1: /$2/ must not appear in the output above"; }
+# count N REGEX WANT: exactly WANT lines of run N match REGEX.
+count() { local got; got=$(grep -cE "$2" "bin/e2e-$1.out" || true); [ "$got" = "$3" ] || fail "run $1: $got lines match /$2/, want $3"; }
+# verdicts N: the "VERDICT ID" pairs of run N are exactly test/e2e/expected/runN.txt, in order.
+verdicts() { awk '/^(PASS|FAIL|SKIP|ERROR) /{print $1, $2}' "bin/e2e-$1.out" | diff -u "test/e2e/expected/run$1.txt" - || fail "run $1: verdicts differ from test/e2e/expected/run$1.txt (diff above)"; }
 # Acceptance criterion 6: every FAIL, SKIP and ERROR line is followed by a non-empty fix line.
 hints() { awk '/^(FAIL|SKIP|ERROR) /{if (want) bad=1; want=1; next} want{if ($1 != "fix" || NF < 2) bad=1; want=0} END{exit bad || want}' "bin/e2e-$1.out" || fail "run $1: a FAIL, SKIP or ERROR line has no fix line"; }
 
 run 1 0 -n tenant-a --as system:serviceaccount:tenant-a:tenant-a-dev
-expect 1 '^PASS  AT-01 '
 
 # run 2: the service account's own token in its own kubeconfig, no --as (self mode)
 sa=bin/e2e-sa-kubeconfig
@@ -81,17 +86,21 @@ kubectl --kubeconfig "$sa" config set-credentials tenant-a-dev --token "$(kubect
 kubectl --kubeconfig "$sa" config set-context tenant-a --cluster kind --user tenant-a-dev --namespace tenant-a >/dev/null
 kubectl --kubeconfig "$sa" config use-context tenant-a >/dev/null
 run 2 0 --kubeconfig "$sa"
-expect 2 '^PASS  AT-01 '
 expect 2 'groups: .*system:serviceaccounts:tenant-a'
 
 run 3 1 -n tenant-b --as system:serviceaccount:tenant-b:tenant-b-dev
-expect 3 '^PASS  AT-01 '
+count 3 '^FAIL +AT-04\.[1-5] +.* was accepted in a dry run$' 5 # no PSA label, and admin may create pods
 
 run 4 1 -n tenant-a
-expect 4 '^FAIL  AT-01 '
-# The admin header line needs AT-03 (B11); B16 adds that expectation.
+expect 4 '^this identity looks like a cluster admin; add --as to test a tenant$'
+absent 2 'looks like a cluster admin' # self mode as a tenant: no hint
 
-for n in 1 2 3 4; do hints "$n"; done
+for n in 1 2 4; do count "$n" '^PASS +AT-04\.[1-5] .* violates PodSecurity "restricted:latest"' 5; done # PSA applies to admins too
+for n in 1 2 3 4; do
+  verdicts "$n"
+  count "$n" '^PASS +AT-05 .* admission webhook "validate\.kyverno\.svc-fail" denied' 1
+  hints "$n"
+done
 
-say "e2e: all four runs match (AT-01, exit codes and hints)"
+say "e2e: all four runs match (verdicts AT-01 to AT-05, layers, exit codes, headers and hints)"
 if [ "${E2E_DELETE:-}" = 1 ]; then kind delete cluster --name "$cluster"; fi

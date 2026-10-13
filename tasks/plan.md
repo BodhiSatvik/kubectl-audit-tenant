@@ -35,7 +35,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B13 Rejection classifier
 - [x] B14 AT-04
 - [x] B15 AT-05
-- [ ] B16 e2e: AT-01 to AT-05
+- [x] B16 e2e: AT-01 to AT-05
 
 ### Checkpoint 2
 - [ ] Behavioral checks green on kind for all four identities; coverage gate green

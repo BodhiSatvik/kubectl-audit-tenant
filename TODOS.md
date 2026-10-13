@@ -73,7 +73,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: unit cases: webhook rejects NodePort (PASS, layer webhook); control rejected (SKIP); accepted (FAIL); update allowed (SKIP).
   - Verify: `go test ./internal/checks/ -run AT05`.
   - Depends on: B13. Files: `internal/checks/at05.go`, tests.
-- [ ] **B16 e2e: AT-01 to AT-05.** Extend `run.sh` assertions to AT-01..05 for runs 1 to 4 (AT-04 FAIL on tenant-b, AT-05 PASS via the Kyverno webhook, AT-04 PASS via PSA on tenant-a); `hints()` in run.sh already asserts a fix line under every FAIL, SKIP and ERROR.
+- [x] **B16 e2e: AT-01 to AT-05.** Extend `run.sh` assertions to AT-01..05 for runs 1 to 4 (AT-04 FAIL on tenant-b, AT-05 PASS via the Kyverno webhook, AT-04 PASS via PSA on tenant-a); `hints()` in run.sh already asserts a fix line under every FAIL, SKIP and ERROR.
   - AC: e2e job green with the extended expectations; run 4 shows the admin header line.
   - Verify: e2e workflow.
   - Depends on: B14, B15. Files: `test/e2e/run.sh`, `test/e2e/expected/`.
