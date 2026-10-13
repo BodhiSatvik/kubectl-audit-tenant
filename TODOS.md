@@ -57,7 +57,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: PASS and FAIL unit cases per check; reason texts golden.
   - Verify: `go test ./internal/checks/ -run 'AT02|AT03'`.
   - Depends on: B6. Files: `internal/checks/at02.go`, `internal/checks/at03.go`, tests.
-- [ ] **B12 Probe builders and sizing.** Control pod (restricted-compliant), five mutators (AT-04.1 sets `privileged: true` and `allowPrivilegeEscalation: true`; AT-04.5 the three fields), sizes from the LimitRange via the cache (defaults → none; min only → min; none or 403 → 1m/1Mi), ClusterIP control Service and NodePort probe Service, labels and generateName.
+- [x] **B12 Probe builders and sizing.** Control pod (restricted-compliant), five mutators (AT-04.1 sets `privileged: true` and `allowPrivilegeEscalation: true`; AT-04.5 the three fields), sizes from the LimitRange via the cache (defaults → none; min only → min; none or 403 → 1m/1Mi), ClusterIP control Service and NodePort probe Service, labels and generateName.
   - AC: builders produce the exact fields per DESIGN.md; sizing table test for the four LimitRange cases; objects pass `kubectl apply --dry-run=server` on kind in B16.
   - Verify: `go test ./internal/probe/ -run 'Build|Size'`.
   - Depends on: B4. Files: `internal/probe/pod.go`, `internal/probe/service.go`, `internal/probe/size.go`, tests.
