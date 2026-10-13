@@ -69,7 +69,7 @@ func TestSelectRejectsChecksNotInThisBuild(t *testing.T) {
 	if err != nil || len(specs) != 1 || specs[0].ID != "AT-01" || specs[0].Run == nil {
 		t.Errorf("Select() = %v, %v; want only the built check AT-01", ResultIDs(specs), err)
 	}
-	wantBuilt := []string{"AT-01", "AT-02", "AT-03", "AT-04.1", "AT-04.2", "AT-04.3", "AT-04.4", "AT-04.5"} // grows as checks land
+	wantBuilt := []string{"AT-01", "AT-02", "AT-03", "AT-04.1", "AT-04.2", "AT-04.3", "AT-04.4", "AT-04.5", "AT-05"} // grows as checks land
 	specs, err = Select(nil, nil)
 	if err != nil || !slices.Equal(ResultIDs(specs), wantBuilt) || slices.ContainsFunc(specs, func(s Spec) bool { return s.Run == nil }) {
 		t.Errorf("Select() = %v, %v; want every built check, %v, and nothing else", ResultIDs(specs), err, wantBuilt)

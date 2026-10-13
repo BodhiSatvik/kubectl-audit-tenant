@@ -71,7 +71,7 @@ var Registry = []Spec{
 		}, Run: at04},
 	{ID: "AT-05", Name: "NodePort services blocked", Kind: report.Behavioral, Severity: report.Medium,
 		Method:  "dry-run Service of type NodePort after a ClusterIP control Service",
-		Results: one("AT-05", "NodePort services blocked", "MTB-PL1-BC-HI-1")},
+		Results: one("AT-05", "NodePort services blocked", "MTB-PL1-BC-HI-1"), Run: at05},
 	{ID: "AT-06", Name: "ResourceQuota present and complete", Kind: report.Config, Severity: report.Medium,
 		Method:  "LIST resourcequotas: an unscoped quota with requests.cpu, requests.memory, limits.cpu, limits.memory, pods",
 		Results: one("AT-06", "ResourceQuota present and complete", "MTB-PL1-CC-FNS-1")},

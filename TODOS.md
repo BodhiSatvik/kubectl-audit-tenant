@@ -69,7 +69,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: unit cases: allowed with PSA rejections; all denied; denied with `update deployments` allowed; control rejected by quota; `--checks AT-04.2` alone.
   - Verify: `go test ./internal/checks/ -run AT04`.
   - Depends on: B13. Files: `internal/checks/at04.go`, tests.
-- [ ] **B15 AT-05.** SSAR create services; denied → update/patch SSARs → PASS or SKIP; allowed → ClusterIP control → NodePort probe → classifier.
+- [x] **B15 AT-05.** SSAR create services; denied → update/patch SSARs → PASS or SKIP; allowed → ClusterIP control → NodePort probe → classifier.
   - AC: unit cases: webhook rejects NodePort (PASS, layer webhook); control rejected (SKIP); accepted (FAIL); update allowed (SKIP).
   - Verify: `go test ./internal/checks/ -run AT05`.
   - Depends on: B13. Files: `internal/checks/at05.go`, tests.
