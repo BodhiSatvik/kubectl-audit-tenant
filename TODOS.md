@@ -61,7 +61,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: builders produce the exact fields per DESIGN.md; sizing table test for the four LimitRange cases; objects pass `kubectl apply --dry-run=server` on kind in B16.
   - Verify: `go test ./internal/probe/ -run 'Build|Size'`.
   - Depends on: B4. Files: `internal/probe/pod.go`, `internal/probe/service.go`, `internal/probe/size.go`, tests.
-- [ ] **B13 Rejection classifier.** Ordered rule table: PSA, webhook denied, ValidatingAdmissionPolicy denied, no dry-run support, quota or LimitRange text, HTTP 400/422, other (full text, or "HTTP <code> <reason>" when empty); accepted → FAIL; layer vocabulary incl. `admission (policy: name)`.
+- [x] **B13 Rejection classifier.** Ordered rule table: PSA, webhook denied, ValidatingAdmissionPolicy denied, no dry-run support, quota or LimitRange text, HTTP 400/422, other (full text, or "HTTP <code> <reason>" when empty); accepted → FAIL; layer vocabulary incl. `admission (policy: name)`.
   - AC: table test with one real server string per rule and the empty-message case; rule order test (webhook before 400); coverage of `internal/probe` at least 90%.
   - Verify: `go test ./internal/probe/ -run Classify`; `hack/coverage-gate.sh`.
   - Depends on: B12. Files: `internal/probe/classify.go`, `internal/probe/classify_test.go`, `internal/probe/testdata/messages.txt`.
