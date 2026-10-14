@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	authzv1 "k8s.io/api/authorization/v1"
@@ -61,7 +62,7 @@ func (s *Server) Client(t testing.TB, namespace string, rec *safety.Recorder) *k
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &rest.Config{Host: s.URL, QPS: 50, Burst: 300, WrapTransport: safety.Wrap(namespace, base, rec)}
+	cfg := &rest.Config{Host: s.URL, QPS: 50, Burst: 300, WrapTransport: safety.Wrap(namespace, base, rec, new(atomic.Bool))}
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		t.Fatalf("NewForConfig: %v", err)
@@ -80,7 +81,8 @@ func JSON(status int, body string) http.HandlerFunc {
 
 // SSAR answers a SelfSubjectAccessReview like the API server: the question it received echoed
 // back as spec, with status (for example `{"allowed":false}`). "May I create
-// selfsubjectaccessreviews?" is always allowed, as on a real server that just served one.
+// selfsubjectaccessreviews?" is always allowed, as on a real server that just served one, and so is
+// the no-rights anchor "may I list pods?" (D80): every real tenant may.
 func SSAR(status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var review authzv1.SelfSubjectAccessReview
@@ -91,6 +93,9 @@ func SSAR(status string) http.HandlerFunc {
 		answer := status
 		if a := review.Spec.ResourceAttributes; a != nil && a.Verb == "create" && a.Resource == "selfsubjectaccessreviews" {
 			answer = `{"allowed":true}`
+		}
+		if a := review.Spec.ResourceAttributes; a != nil && a.Verb == "list" && a.Resource == "pods" {
+			answer = `{"allowed":true}` // the no-rights anchor: every real tenant may list pods
 		}
 		spec, _ := json.Marshal(review.Spec)
 		JSON(http.StatusCreated, `{"spec":`+string(spec)+`,"status":`+answer+`}`)(w, r)

@@ -25,7 +25,9 @@ func fake(id string, n int, produce func(ctx context.Context, s Spec) []report.R
 		}
 		s.Results = append(s.Results, ResultSpec{ID: rid, Name: rid, MTB: "-"})
 	}
-	s.Run = func(ctx context.Context, _ *cluster.Client, s Spec) []report.Result { return produce(ctx, s) }
+	s.Run = func(ctx context.Context, _ *cluster.Client, s Spec, _ func(report.Result)) []report.Result {
+		return produce(ctx, s)
+	}
 	return s
 }
 
@@ -77,6 +79,34 @@ func TestRunnerAbandonsACheckThatIgnoresTheDeadline(t *testing.T) {
 	}
 }
 
+func TestRunnerKeepsAFailProvenBeforeACheckIsLost(t *testing.T) {
+	// D61: a grant the check proved stays FAIL when the check never returns or crashes.
+	const timeout = 200 * time.Millisecond
+	provesThen := func(then func()) Spec {
+		s := fake("AT-03", 1, nil)
+		s.Run = func(_ context.Context, _ *cluster.Client, s Spec, prove func(report.Result)) []report.Result {
+			prove(s.result(s.Results[0], report.Fail, "RBAC", "RBAC allows impersonate users", "remove the grant"))
+			prove(s.result(s.Results[0], report.Fail, "RBAC", "RBAC allows impersonate users, impersonate groups", "remove the grant"))
+			then()
+			return nil
+		}
+		return s
+	}
+	for name, s := range map[string]Spec{
+		"a check stuck in a credential helper": provesThen(func() { time.Sleep(5 * time.Second) }),
+		"a check that crashes":                 provesThen(func() { panic("nil map") }),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), timeout)
+			defer cancel()
+			got := Run(ctx, nil, []Spec{s}, timeout)
+			if len(got) != 1 || got[0].Verdict != report.Fail || got[0].Reason != "RBAC allows impersonate users, impersonate groups" {
+				t.Errorf("results = %+v, want the last proven FAIL", got)
+			}
+		})
+	}
+}
+
 func TestRunnerTurnsAPanicIntoAnError(t *testing.T) {
 	boom := fake("AT-04", 2, func(context.Context, Spec) []report.Result { panic("nil map") })
 	got := Run(t.Context(), nil, []Spec{boom, fake("AT-05", 1, allPass)}, time.Minute)
@@ -112,6 +142,22 @@ func TestRunnerCancelMidRunPrintsAPartialReport(t *testing.T) {
 	for _, r := range got[2:] {
 		if r.Verdict != report.Error || r.Reason != "interrupted" || r.Hint != "re-run; the cluster was not changed" {
 			t.Errorf("%s = %+v, want ERROR interrupted with the re-run hint", r.ID, r)
+		}
+	}
+}
+
+// Added for the PR #3 must-fix items (TODOS: the "cluster was not changed" hint).
+// Value: protects=an interruption after an unverified create does not tell the user the cluster is unchanged; fails_when=notRun ignores the latch;
+// why_new=the test above has no latch set; seam=none; no_claim=the exact kubectl command in the hint
+func TestRunnerInterruptedAfterAnUnverifiedCreateNamesTheLeftovers(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	c := &cluster.Client{Namespace: "tenant-a"}
+	c.Unverified.Store(true)
+	interrupted := fake("AT-04", 2, func(context.Context, Spec) []report.Result { cancel(); return nil })
+	for _, r := range Run(ctx, c, []Spec{interrupted}, time.Minute) {
+		if r.Reason != "interrupted" || strings.Contains(r.Hint, "not changed") || !strings.Contains(r.Hint, "-n tenant-a -l app.kubernetes.io/managed-by=audit-tenant") {
+			t.Errorf("%s = %+v, want interrupted with a hint that lists leftovers", r.ID, r)
 		}
 	}
 }
@@ -173,5 +219,20 @@ func TestRunnerMatchesResultsByIDNotCount(t *testing.T) {
 	got := Run(t.Context(), nil, []Spec{repeat}, time.Minute)
 	if !slices.Equal(ids(got), []string{"AT-04.1", "AT-04.2"}) || got[1].Verdict != report.Error || got[1].Hint != hintBug {
 		t.Errorf("results = %+v; want AT-04.2 as a tool-bug ERROR, never hidden behind a repeated AT-04.1", got)
+	}
+}
+
+func TestRunnerKeepsAProvenFailTheCheckLeftOut(t *testing.T) {
+	// D84(1), D61: a check that returns normally but leaves out a FAIL it proved (interrupted
+	// between two probe forms) must not lose it; a returned result for the same ID still wins.
+	s := fake("AT-04", 2, nil)
+	s.Run = func(_ context.Context, _ *cluster.Client, s Spec, prove func(report.Result)) []report.Result {
+		prove(s.result(s.Results[0], report.Fail, "-", "a privileged container was accepted in a dry run", "fix it"))
+		prove(s.result(s.Results[1], report.Fail, "-", "proven first", "fix it"))
+		return []report.Result{s.result(s.Results[1], report.Fail, "-", "returned last", "fix it")}
+	}
+	got := Run(t.Context(), nil, []Spec{s}, time.Minute)
+	if len(got) != 2 || got[0].Verdict != report.Fail || got[1].Reason != "returned last" {
+		t.Errorf("results = %+v; want the proven AT-04.1 FAIL kept and the returned AT-04.2 result winning", got)
 	}
 }

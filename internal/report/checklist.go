@@ -7,7 +7,8 @@ import (
 )
 
 // Checklist is the default printer: a header, one line per result, a fix line under every
-// non-PASS, and a summary (DESIGN.md section 6).
+// non-PASS, a note line under a result that names what it did not test, and a summary
+// (DESIGN.md section 6).
 type Checklist struct {
 	Out   io.Writer
 	Color bool // the caller decides with WantColor
@@ -41,6 +42,9 @@ func (p Checklist) Print(r Report) error {
 		fmt.Fprintf(&b, "%s  %-*s  %-*s  %s\n", p.verdict(res.Verdict, vw), iw, res.ID, nw, res.Name, reason)
 		if res.Verdict != Pass {
 			fmt.Fprintf(&b, "%*s  %-*s  %s\n", vw, "", iw, "fix", Sanitize(res.Hint))
+		}
+		if res.Note != "" { // after the fix line, which always follows a non-PASS directly
+			fmt.Fprintf(&b, "%*s  %-*s  %s\n", vw, "", iw, "note", Sanitize(res.Note))
 		}
 	}
 	b.WriteString("\n" + summaryLine(r, dot) + "\n")

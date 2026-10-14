@@ -30,12 +30,12 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [ ] `make check` green; e2e asserts AT-01 for all four identities; snapshot release builds; review with Satvik
 
 ### Phase 2: behavioral checks
-- [ ] B11 AT-02 and AT-03
-- [ ] B12 Probe builders and sizing
-- [ ] B13 Rejection classifier
-- [ ] B14 AT-04
-- [ ] B15 AT-05
-- [ ] B16 e2e: AT-01 to AT-05
+- [x] B11 AT-02 and AT-03
+- [x] B12 Probe builders and sizing
+- [x] B13 Rejection classifier
+- [x] B14 AT-04
+- [x] B15 AT-05
+- [x] B16 e2e: AT-01 to AT-05
 
 ### Checkpoint 2
 - [ ] Behavioral checks green on kind for all four identities; coverage gate green

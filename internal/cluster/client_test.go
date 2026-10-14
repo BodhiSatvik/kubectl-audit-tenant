@@ -1,7 +1,9 @@
 package cluster_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
@@ -12,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/klog/v2"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
@@ -219,5 +222,110 @@ func TestConnectInterruptedDuringStartup(t *testing.T) {
 	_, err := cluster.Connect(ctx, &rest.Config{Host: srv.URL}, opts)
 	if err == nil || !strings.Contains(err.Error(), "interrupted") {
 		t.Errorf("Connect() error = %v, want 'interrupted'", err)
+	}
+}
+
+func TestSSARWithoutAVerdictIsNotADenial(t *testing.T) {
+	// A proxy that reflects the request: the question comes back, status.allowed does not.
+	routes := happy()
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}},"status":{}}`)
+	_, c, err := connect(t, routes, opts)
+	if err != nil {
+		t.Fatalf("Connect() error = %v; an answer without a verdict is AT-01's ERROR, not a startup failure", err)
+	}
+	for _, source := range []string{"the first question", "the same question again"} {
+		if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.FirstQuestion); !errors.Is(err, cluster.ErrNoVerdict) {
+			t.Errorf("%s: SSAR = %v, %v; want ErrNoVerdict, never a denial", source, r, err)
+		}
+	}
+}
+
+func TestSSARAnEchoedRequestHasNoVerdict(t *testing.T) {
+	// D64: a proxy that sends the request back. The request carries no status, so the echo has
+	// no verdict; with a status in the request, the echo would read as "allowed: false".
+	routes := happy()
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		testutil.JSON(http.StatusCreated, string(body))(w, r)
+	}
+	_, c, err := connect(t, routes, opts)
+	if err != nil {
+		t.Fatalf("Connect() error = %v; an echoed answer is the checks' ERROR, not a startup failure", err)
+	}
+	if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.Attributes{Verb: "get", Resource: "secrets", Namespace: "kube-system"}); !errors.Is(err, cluster.ErrNoVerdict) {
+		t.Errorf("SSAR behind an echoing proxy = %v, %v; want ErrNoVerdict, never a denial", r, err)
+	}
+}
+
+// Added by the /ship pre-landing review (Phase 2).
+// Value: protects=an answer whose verdict key differs in letter case, or is null, is ErrNoVerdict, never a denial (D93); fails_when=the presence check matches keys
+// case-insensitively again; why_new=the tests above cover a missing status only; seam=none; no_claim=how a real proxy rewrites keys
+func TestSSARAVerdictTheAPIDecoderCannotReadIsNotADenial(t *testing.T) {
+	for _, status := range []string{`"status":{"Allowed":true}`, `"Status":{"allowed":true}`, `"status":{"allowed":null}`} {
+		routes := happy()
+		routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}},`+status+`}`)
+		_, c, err := connect(t, routes, opts)
+		if err != nil {
+			t.Fatalf("%s: Connect() error = %v", status, err)
+		}
+		if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.FirstQuestion); !errors.Is(err, cluster.ErrNoVerdict) {
+			t.Errorf("%s: SSAR = %v, %v; want ErrNoVerdict, never a denial", status, r, err)
+		}
+	}
+}
+
+// Added by the /ship pre-landing review (Phase 2).
+// Value: protects=API Warning headers (a PSA warn label) never reach stderr, which carries only --debug output (D90); fails_when=client-go's default
+// warning handler is back; why_new=CLI tests capture streams.ErrOut, not klog; seam=none; no_claim=what --debug prints
+func TestAPIWarningsNeverReachStderr(t *testing.T) {
+	var logged bytes.Buffer
+	klog.LogToStderr(false)
+	klog.SetOutput(&logged)
+	t.Cleanup(func() { klog.LogToStderr(true) })
+	routes := happy()
+	ssar := routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"]
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Warning", `299 - "would violate PodSecurity \"restricted:latest\""`)
+		ssar(w, r)
+	}
+	if _, _, err := connect(t, routes, opts); err != nil {
+		t.Fatal(err)
+	}
+	klog.Flush()
+	if logged.Len() != 0 {
+		t.Errorf("an API warning was logged to stderr: %q", logged.String())
+	}
+}
+
+func TestSSARIsSentAsJSON(t *testing.T) {
+	// The body is built by hand (D64); without the header a proxy that enforces it answers 415.
+	routes := happy()
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = func(w http.ResponseWriter, r *http.Request) {
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			http.Error(w, "Content-Type "+ct, http.StatusUnsupportedMediaType)
+			return
+		}
+		testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}},"status":{"allowed":false}}`)(w, r)
+	}
+	if _, _, err := connect(t, routes, opts); err != nil {
+		t.Errorf("Connect() error = %v; the SSAR must carry Content-Type: application/json", err)
+	}
+}
+
+func TestSSARTheNoRightsAnchorIsSentOncePerRun(t *testing.T) {
+	// D80: up to five checks ask the anchor; one request answers them all.
+	srv, c, err := connect(t, happy(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listPods := cluster.Attributes{Verb: "list", Resource: "pods", Namespace: ns}
+	before := len(srv.Hits())
+	for range 3 {
+		if _, err := c.SelfSubjectAccessReview(t.Context(), listPods); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sent := len(srv.Hits()) - before; sent != 1 {
+		t.Errorf("sent %d SSARs for one question, want 1", sent)
 	}
 }

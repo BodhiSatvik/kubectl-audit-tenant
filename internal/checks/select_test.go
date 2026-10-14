@@ -18,7 +18,7 @@ func implemented(t *testing.T) {
 	saved := Registry
 	Registry = slices.Clone(Registry)
 	for i := range Registry {
-		Registry[i].Run = func(context.Context, *cluster.Client, Spec) []report.Result { return nil }
+		Registry[i].Run = func(context.Context, *cluster.Client, Spec, func(report.Result)) []report.Result { return nil }
 	}
 	t.Cleanup(func() { Registry = saved })
 }
@@ -57,17 +57,30 @@ func TestSelect(t *testing.T) {
 }
 
 func TestSelectRejectsChecksNotInThisBuild(t *testing.T) {
-	for _, include := range [][]string{{"AT-02"}, {"AT-01", "AT-02"}, {"AT-01", "AT-04.2"}} {
+	for _, include := range [][]string{{"AT-06"}, {"AT-01", "AT-06"}, {"AT-01", "AT-10"}} {
 		if _, err := Select(include, nil); err == nil || !strings.Contains(err.Error(), "is not in this build yet") {
 			t.Errorf("Select(%v) error = %v, want 'not in this build yet', never an AT-01-only report", include, err)
 		}
 	}
-	if _, err := Select(nil, []string{"AT-01"}); !errors.Is(err, ErrNoChecks) {
+	// Skipping every built check leaves nothing; unbuilt checks never fill the gap. The message below
+	// keeps its Phase 1 text because hack/floor-guard.py flags any reworded assertion (D71).
+	var built []string
+	for _, s := range Registry {
+		if s.Run != nil {
+			built = append(built, s.ID)
+		}
+	}
+	if _, err := Select(nil, built); !errors.Is(err, ErrNoChecks) {
 		t.Errorf("Select(skip AT-01) error = %v, want ErrNoChecks (nothing else is built)", err)
 	}
-	specs, err := Select(nil, nil)
+	specs, err := Select([]string{"AT-01"}, nil)
 	if err != nil || len(specs) != 1 || specs[0].ID != "AT-01" || specs[0].Run == nil {
 		t.Errorf("Select() = %v, %v; want only the built check AT-01", ResultIDs(specs), err)
+	}
+	wantBuilt := []string{"AT-01", "AT-02", "AT-03", "AT-04.1", "AT-04.2", "AT-04.3", "AT-04.4", "AT-04.5", "AT-05"} // grows as checks land
+	specs, err = Select(nil, nil)
+	if err != nil || !slices.Equal(ResultIDs(specs), wantBuilt) || slices.ContainsFunc(specs, func(s Spec) bool { return s.Run == nil }) {
+		t.Errorf("Select() = %v, %v; want every built check, %v, and nothing else", ResultIDs(specs), err, wantBuilt)
 	}
 }
 

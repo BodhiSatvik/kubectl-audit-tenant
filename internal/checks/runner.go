@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
@@ -34,7 +37,7 @@ func Run(ctx context.Context, c *cluster.Client, specs []Spec, timeout time.Dura
 				out = append(out, g)
 				continue
 			}
-			reason, hint := notRun(ctx, timeout)
+			reason, hint := notRun(ctx, timeout, c)
 			if crashed != nil {
 				reason, hint = fmt.Sprintf("the check crashed: %v", crashed), hintBug
 			}
@@ -45,8 +48,21 @@ func Run(ctx context.Context, c *cluster.Client, specs []Spec, timeout time.Dura
 }
 
 // runOne runs a check on its own goroutine, so a request the context cannot cancel (a hung
-// credential helper) still ends at the deadline, and a panic becomes an ERROR, not a crash.
+// credential helper) still ends at the deadline, and a panic becomes an ERROR, not a crash. A FAIL
+// the check proved is kept whenever the check leaves it out, does not return, or crashes (D61, D84).
 func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Result, crashed any) {
+	var mu sync.Mutex
+	proven := map[string]report.Result{} // the latest FAIL per result ID
+	prove := func(r report.Result) {
+		mu.Lock()
+		defer mu.Unlock()
+		proven[r.ID] = r
+	}
+	keep := func() []report.Result {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Collect(maps.Values(proven))
+	}
 	type outcome struct {
 		results []report.Result
 		crashed any
@@ -55,30 +71,33 @@ func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Re
 	go func() {
 		defer func() {
 			if p := recover(); p != nil {
-				done <- outcome{crashed: p}
+				done <- outcome{results: keep(), crashed: p}
 			}
 		}()
-		done <- outcome{results: s.Run(ctx, c, s)}
+		done <- outcome{results: append(s.Run(ctx, c, s, prove), keep()...)} // Run keeps the first result per ID: a returned one wins, a proven FAIL fills a gap (D84)
 	}()
 	select {
 	case o := <-done:
 		return o.results, o.crashed
 	case <-ctx.Done():
-		// shortcut: 100ms grace for a check handing back its partial results; a check that ignores ctx is abandoned, upgrade if a check ever needs longer to unwind
+		// shortcut: 100ms grace for a check handing back its partial results; a check that ignores ctx is abandoned with only the FAILs it proved, upgrade if a check ever needs longer to unwind
 		select {
 		case o := <-done:
 			return o.results, o.crashed
 		case <-time.After(100 * time.Millisecond):
-			return nil, nil
+			return keep(), nil
 		}
 	}
 }
 
-// notRun explains a result the check did not produce.
-func notRun(ctx context.Context, timeout time.Duration) (reason, hint string) {
+// notRun explains a result the check did not produce. After a create answer that was not a
+// verified dry run, an interruption cannot claim the cluster is unchanged.
+func notRun(ctx context.Context, timeout time.Duration, c *cluster.Client) (reason, hint string) {
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return fmt.Sprintf("not run: timeout after %s", timeout), "raise --timeout, or run fewer checks with --checks"
+	case ctx.Err() != nil && c != nil && c.Unverified.Load():
+		return "interrupted", "re-run; a create was not verified as a dry run, so list leftovers: kubectl get pods,services -n " + c.Namespace + " -l app.kubernetes.io/managed-by=audit-tenant"
 	case ctx.Err() != nil:
 		return "interrupted", "re-run; the cluster was not changed"
 	}

@@ -76,7 +76,7 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"namespace is not one DNS label", []string{"-n", "kube-system/secrets", "--kubeconfig", withNS}, "invalid namespace"},
 		{"other namespace is not one DNS label", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--other-namespace", ""}, "invalid --other-namespace"},
 		{"--as-uid without --as", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as-uid", "1234"}, "--as-group and --as-uid need a user to impersonate"},
-		{"check not in this build", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-02"}, "not in this build yet"},
+		{"check not in this build", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-06"}, "not in this build yet"},
 		{"kubeconfig cannot load", []string{"-n", "tenant-a", "--kubeconfig", filepath.Join(t.TempDir(), "missing")}, "kubeconfig"},
 		{"unknown flag", []string{"-n", "tenant-a", "--bogus"}, "unknown flag"},
 		{"stray argument", []string{"-n", "tenant-a", "--kubeconfig", withNS, "extra"}, "unknown command"},
@@ -113,7 +113,7 @@ func TestRunPrintsTheChecklistAndExitsWithTheSummaryCode(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
-	for _, want := range []string{"namespace tenant-a", "as team-a-dev (groups: team-a)", "cluster kind-dev", "PASS  AT-01  No cluster-scoped access", "exit 0"} {
+	for _, want := range []string{"namespace tenant-a", "as team-a-dev (groups: team-a)", "cluster kind-dev", "PASS  AT-01    No cluster-scoped access", "exit 0"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
 		}
@@ -287,5 +287,14 @@ func TestDebugPrintsPostAnswerBodiesWithoutHeaders(t *testing.T) {
 	}
 	if strings.Contains(stderr, "test-token") || strings.Contains(stderr, "Authorization") {
 		t.Errorf("--debug must not print request headers:\n%s", stderr)
+	}
+}
+
+func TestOtherNamespaceReachesAT02(t *testing.T) {
+	// D72: without it, AT-02 would ask a cluster-wide question that ignores RoleBindings in that namespace.
+	srv := cluster(t) // every "may I?" denied
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-02", "--other-namespace", "prod")
+	if code != 0 || !strings.Contains(stdout, "secrets in prod") {
+		t.Errorf("exit %d, stderr %q; want AT-02 to ask about --other-namespace prod:\n%s", code, stderr, stdout)
 	}
 }

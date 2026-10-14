@@ -16,8 +16,11 @@ type ResultSpec struct {
 }
 
 // RunFunc runs one check against the cluster and returns one Result per entry of spec.Results,
-// in order. When ctx ends it returns the results it has; the runner fills in the rest.
-type RunFunc func(ctx context.Context, c *cluster.Client, spec Spec) []report.Result
+// in order. When ctx ends it returns the results it has; the runner fills in the rest. A check
+// passes each FAIL to prove the moment it is proven, so the runner can still report it when the
+// check leaves it out, never returns or crashes (D61, D84); a later call for the same result ID
+// replaces it, and a result the check returns wins over it.
+type RunFunc func(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result)) []report.Result
 
 // Spec is the static description of a check, as list-checks prints it, plus its Run function.
 type Spec struct {
@@ -36,6 +39,15 @@ func (s Spec) result(r ResultSpec, verdict report.Verdict, layer, reason, hint s
 		Verdict: verdict, Layer: layer, Reason: reason, Hint: hint}
 }
 
+// all gives every selected result of this check the same verdict.
+func (s Spec) all(verdict report.Verdict, layer, reason, hint string) []report.Result {
+	out := make([]report.Result, 0, len(s.Results))
+	for _, r := range s.Results {
+		out = append(out, s.result(r, verdict, layer, reason, hint))
+	}
+	return out
+}
+
 func one(id, name, mtb string) []ResultSpec { return []ResultSpec{{ID: id, Name: name, MTB: mtb}} }
 
 // Registry lists the ten checks in run order (DESIGN.md section 5).
@@ -44,23 +56,23 @@ var Registry = []Spec{
 		Method:  "SSAR with no namespace: list nodes, create namespaces, create clusterrolebindings, create persistentvolumes; before a PASS, a control: create selfsubjectaccessreviews must be allowed",
 		Results: one("AT-01", "No cluster-scoped access", "MTB-PL1-CC-CPI-1"), Run: at01},
 	{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, Severity: report.High,
-		Method:  "SSAR: get secrets and list secrets in --other-namespace",
-		Results: one("AT-02", "No cross-namespace secret access", "MTB-PL1-CC-TI-2")},
+		Method:  "SSAR: get, list and watch secrets in --other-namespace",
+		Results: one("AT-02", "No cross-namespace secret access", "MTB-PL1-CC-TI-2"), Run: at02},
 	{ID: "AT-03", Name: "No privilege escalation", Kind: report.Behavioral, Severity: report.High,
-		Method:  "SSAR: escalate and bind on roles and clusterroles; impersonate users, groups, serviceaccounts; cluster-wide wildcard",
-		Results: one("AT-03", "No privilege escalation", "MTB-PL2-CC-TI-1")},
+		Method:  "SSAR with no namespace: escalate and bind on clusterroles; impersonate users, groups, serviceaccounts; * on * in every API group",
+		Results: one("AT-03", "No privilege escalation", "MTB-PL2-CC-TI-1"), Run: at03},
 	{ID: "AT-04", Name: "Dangerous pod settings blocked", Kind: report.Behavioral, Severity: report.High,
-		Method: "dry-run pods after a compliant control pod: privileged, hostPath, hostPID, hostNetwork, root with escalation",
+		Method: "dry-run pods after a compliant control pod: privileged (two forms), hostPath, hostPID, hostNetwork, allowPrivilegeEscalation",
 		Results: []ResultSpec{
 			{ID: "AT-04.1", Name: "Privileged container blocked", MTB: "MTB-PL1-BC-CPI-5"},
 			{ID: "AT-04.2", Name: "hostPath volume blocked", MTB: "MTB-PL1-BC-HI-1"},
 			{ID: "AT-04.3", Name: "hostPID blocked", MTB: "MTB-PL1-BC-HI-4"},
 			{ID: "AT-04.4", Name: "hostNetwork blocked", MTB: "MTB-PL1-BC-HI-3"},
-			{ID: "AT-04.5", Name: "Privilege escalation to root blocked", MTB: "MTB-PL1-BC-CPI-6"},
-		}},
+			{ID: "AT-04.5", Name: "Privilege escalation blocked", MTB: "MTB-PL1-BC-CPI-6"},
+		}, Run: at04},
 	{ID: "AT-05", Name: "NodePort services blocked", Kind: report.Behavioral, Severity: report.Medium,
 		Method:  "dry-run Service of type NodePort after a ClusterIP control Service",
-		Results: one("AT-05", "NodePort services blocked", "MTB-PL1-BC-HI-1")},
+		Results: one("AT-05", "NodePort services blocked", "MTB-PL1-BC-HI-1"), Run: at05},
 	{ID: "AT-06", Name: "ResourceQuota present and complete", Kind: report.Config, Severity: report.Medium,
 		Method:  "LIST resourcequotas: an unscoped quota with requests.cpu, requests.memory, limits.cpu, limits.memory, pods",
 		Results: one("AT-06", "ResourceQuota present and complete", "MTB-PL1-CC-FNS-1")},
