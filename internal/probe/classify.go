@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,8 +28,13 @@ const (
 	hintLimitRange = "a LimitRange min or max stopped the probe before the security gates; check the namespace's LimitRange, then re-run"
 	hintMalformed  = "a bug in audit-tenant: the cluster says the probe is malformed; please report it with --debug output"
 	hintUnknown    = "the cluster rejected the probe for a reason audit-tenant does not recognize, so it decides nothing; read the reason, or run with --debug and report it"
-	hintUnsent     = "re-run; if it repeats, run with --debug and report the server message"
+	hintRetry      = "re-run; if it repeats, run with --debug and report the server message"
 )
+
+// policyErrors are the texts of a ValidatingAdmissionPolicy that could not evaluate the object; with
+// failurePolicy Fail the API server reports each one as "denied request" (k8s.io/apiserver CEL, D84, D99).
+var policyErrors = []string{"resulted in error", "failed to configure", "running out of cost budget", "compilation error",
+	"runtime cost could not be calculated", "internal error compiling expression"}
 
 // Classify reads the cluster's answer to a dry-run probe with the rules of DESIGN.md section 5,
 // in order, first match wins. nil means the probe was accepted: FAIL on layer "-", and the caller
@@ -40,22 +46,22 @@ func Classify(err error) Outcome {
 	}
 	status, ok := errors.AsType[*apierrors.StatusError](err)
 	if !ok {
-		return Outcome{report.Error, "-", "could not send the probe: " + err.Error(), hintUnsent}
+		return Outcome{report.Error, "-", "could not send the probe: " + err.Error(), hintRetry}
 	}
 	s := status.ErrStatus
 	msg := s.Message
 	full := cmp.Or(msg, strings.TrimSpace(fmt.Sprintf("HTTP %d %s", s.Code, s.Reason)))
-	decided := s.Code >= 400 && s.Code < 500 // every text rule needs a 4xx: a 5xx is a failing backend, not a decision (D82, D84); 429 is handled first (D95)
+	decided := s.Code >= 400 // every text rule needs a 4xx: a 429 or 5xx has returned above (D82, D84, D95)
 	switch {
 	case s.Code == http.StatusTooManyRequests || s.Code >= http.StatusInternalServerError:
 		// A throttled or failing server decides nothing, whatever its text says; a webhook may deny with 429 (D95).
-		return Outcome{report.Error, "-", full, hintUnsent}
+		return Outcome{report.Error, "-", full, hintRetry}
 	case decided && strings.Contains(msg, "admission webhook") && strings.Contains(msg, "denied the request"): // the API server's phrase; "denied" alone can be part of a webhook name
 		// Before PSA: a webhook such as Kyverno's podSecurity rule quotes the PSA text, but it decided.
 		return Outcome{report.Pass, "admission (webhook: " + between(msg, `admission webhook "`, `"`) + ")", from(msg, "admission webhook"), ""}
 	case decided && strings.Contains(msg, "violates PodSecurity"):
 		return Outcome{report.Pass, "admission (PSA)", from(msg, "violates PodSecurity"), ""}
-	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && (strings.Contains(msg, "resulted in error") || strings.Contains(msg, "failed to configure")):
+	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && slices.ContainsFunc(policyErrors, func(e string) bool { return strings.Contains(msg, e) }):
 		// A policy whose expression or binding fails also "denies" the request; it decided nothing (D84).
 		return Outcome{report.Error, "-", full, "the ValidatingAdmissionPolicy could not evaluate the probe, so it decides nothing; check the policy's expressions, parameters and binding"}
 	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && strings.Contains(msg, "denied request"):

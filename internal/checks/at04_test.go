@@ -431,6 +431,27 @@ func TestAT04InterruptAfterTheFirstPrivilegedFormKeepsTheFail(t *testing.T) {
 	}
 }
 
+// Added by the /ship pre-landing review, pass 3 (Phase 2).
+// Value: protects=a control send cut by a signal returns nothing, so the runner reports "interrupted" (or the timeout) with its hint (D65, DESIGN.md
+// failure rules); fails_when=controlFailed loses its ctx guard and reports "could not send the probe"; why_new=no test held a control; seam=none;
+// no_claim=the exit code (ERROR either way)
+func TestAnInterruptedControlLeavesTheResultsToTheRunner(t *testing.T) {
+	for _, tt := range []struct {
+		control string
+		spec    Spec
+	}{{"control", at04Spec()}, {"control-service", at05Spec()}} {
+		ctx, cancel := context.WithCancel(t.Context())
+		hold := func(_ http.ResponseWriter, r *http.Request) { cancel(); <-r.Context().Done() }
+		ps := &probeServer{answers: map[string]http.HandlerFunc{tt.control: hold}}
+		ssar := &ssarServer{answers: map[string]string{"list nodes": denied, "create pods": allowed, "create services": allowed}}
+		got := Run(ctx, connectWith(t, ssar, ps.routes()), []Spec{tt.spec}, time.Minute)
+		cancel()
+		if len(got) == 0 || slices.ContainsFunc(got, func(r report.Result) bool { return r.Reason != "interrupted" }) {
+			t.Errorf("%s held: %+v, want every result interrupted, as the runner reports it", tt.control, got)
+		}
+	}
+}
+
 func TestAT04StopsAResultAtItsFirstFail(t *testing.T) {
 	// D84(2): once a form is accepted, the FAIL is proven; the other form would be one more dangerous request.
 	ps := &probeServer{}

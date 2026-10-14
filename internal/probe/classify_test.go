@@ -169,7 +169,7 @@ func TestClassifyAThrottledOrFailingServerDecidesNothing(t *testing.T) {
 		{http.StatusInternalServerError, ""},
 		{http.StatusServiceUnavailable, "etcdserver: leader changed"},
 	} {
-		if got := Classify(statusError(tt.code, "", tt.msg)); got.Verdict != report.Error || got.Hint != hintUnsent {
+		if got := Classify(statusError(tt.code, "", tt.msg)); got.Verdict != report.Error || got.Hint != hintRetry {
 			t.Errorf("HTTP %d %q = %+v, want ERROR with the re-run hint", tt.code, tt.msg, got)
 		}
 	}
@@ -183,7 +183,7 @@ func TestClassifyEveryTextRuleNeedsA4xx(t *testing.T) {
 		`services "audit-tenant-probe-x" is forbidden: exceeded quota: q, requested: services.nodeports=1, used: services.nodeports=0, limited: services.nodeports=0`,
 		// Added by the /ship test coverage audit, pass 1 (Phase 2).
 		// Value: protects=a 5xx quoting quota, LimitRange or dry-run text is ERROR (exit 2), never a SKIP (exit 0 without --fail-on-skip);
-		// fails_when=the 4xx guard is dropped from a SKIP rule; why_new=the rows above are PASS-rule texts only; seam=none; no_claim=the hint each ERROR carries
+		// fails_when=a 5xx reaches a SKIP rule (the D95 case or the 4xx guard is dropped); why_new=the rows above are PASS-rule texts only; seam=none; no_claim=the hint each ERROR carries
 		`pods "audit-tenant-probe-x" is forbidden: exceeded quota: q, requested: limits.cpu=5, used: limits.cpu=0, limited: limits.cpu=1`,
 		`pods "audit-tenant-probe-x" is forbidden: minimum cpu usage per Container is 100m, but request is 1m`,
 		`admission webhook "side-effects.example.com" does not support dry run`,
@@ -194,11 +194,28 @@ func TestClassifyEveryTextRuleNeedsA4xx(t *testing.T) {
 	}
 }
 
+// Added by the /ship pre-landing review, pass 3 (Phase 2).
+// Value: protects=a 4xx that names a ValidatingAdmissionPolicy without "denied request" is not a PASS; fails_when=rule 2b loses its "denied request"
+// clause; why_new=every policy row above carries the phrase; seam=none; no_claim=which texts real policies send
+func TestClassifyAPolicyMessageWithoutADenialDecidesNothing(t *testing.T) {
+	msg := `pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' is being deleted`
+	for _, code := range []int32{http.StatusForbidden, http.StatusUnprocessableEntity} {
+		if got := Classify(statusError(code, "", msg)); got.Verdict != report.Error {
+			t.Errorf("HTTP %d %q = %+v, want ERROR: only a denial decides", code, msg, got)
+		}
+	}
+}
+
 func TestClassifyAPolicyThatCannotEvaluateIsAnError(t *testing.T) {
 	// D84(4): a ValidatingAdmissionPolicy expression or binding error also says "denied request" (HTTP 422).
 	for _, msg := range []string{
 		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: expression 'object.spec.containers.all(c, !c.securityContext.privileged)' resulted in error: no such key: securityContext`,
 		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: failed to configure binding: params not found`,
+		// D99 (/ship review pass 3): the other CEL evaluation failures of k8s.io/apiserver.
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: validation failed due to running out of cost budget, no further validation rules will be run`,
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: compilation error: undeclared reference to 'objekt'`,
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: runtime cost could not be calculated for expression: x, no further expression will be run`,
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: unexpected internal error compiling expression`,
 	} {
 		if got := Classify(statusError(http.StatusUnprocessableEntity, "Invalid", msg)); got.Verdict != report.Error || !strings.Contains(got.Hint, "ValidatingAdmissionPolicy") {
 			t.Errorf("Classify(%q) = %+v, want ERROR with a policy hint, never a PASS", msg, got)
