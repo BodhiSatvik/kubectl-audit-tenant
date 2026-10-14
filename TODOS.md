@@ -61,7 +61,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: builders produce the exact fields per DESIGN.md; sizing table test for the four LimitRange cases; objects pass `kubectl apply --dry-run=server` on kind in B16.
   - Verify: `go test ./internal/probe/ -run 'Build|Size'`.
   - Depends on: B4. Files: `internal/probe/pod.go`, `internal/probe/service.go`, `internal/probe/size.go`, tests.
-- [x] **B13 Rejection classifier.** Ordered rule table: 429 or 5xx → ERROR (D95), webhook denied, PSA, ValidatingAdmissionPolicy evaluation error (D99) or denied, no dry-run support, NodePort quota, quota or LimitRange text (every text rule needs a 4xx), HTTP 400/422, other (D76, D82, D84) (full text, or "HTTP <code> <reason>" when empty); accepted → FAIL; layer vocabulary incl. `admission (policy: name)`.
+- [x] **B13 Rejection classifier.** Ordered rule table: 429 or 5xx → ERROR (D95), ValidatingAdmissionPolicy evaluation error (D99, D102), webhook denied, PSA, ValidatingAdmissionPolicy denied, no dry-run support, NodePort quota, quota or LimitRange text (every text rule needs a 4xx), HTTP 400/422, other (D76, D82, D84) (full text, or "HTTP <code> <reason>" when empty); accepted → FAIL; layer vocabulary incl. `admission (policy: name)`.
   - AC: table test with one real server string per rule and the empty-message case; rule order test (webhook before 400); coverage of `internal/probe` at least 90%.
   - Verify: `go test ./internal/probe/ -run Classify`; `hack/coverage-gate.sh`.
   - Depends on: B12. Files: `internal/probe/classify.go`, `internal/probe/classify_test.go`, `internal/probe/testdata/messages.txt`.
@@ -160,6 +160,16 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 **Checkpoint 6 (v0.1.0):** every acceptance criterion met; `evidence/` row in the lab for the first outside install when it happens.
 
+### Before merging Phase 2 (/ship final round, 2026-10-14)
+
+Found by the /ship verification round on 7e886d0, after the review's fix-cycle limit. The PR stays a draft until the first two are fixed.
+- [ ] The D101 latch fires only on a visible `resourceVersion`. A create answer with no generated name, an unreadable or oversized 2xx answer, a failed send, or a 429/5xx also leaves the run unsure whether an object was stored, and AT-05 still sends its creates (reproduced: AT-05 FAIL after a nameless control answer). Set the latch on every create answer that is not a verified dry run, reword its reason to "could not be verified as a dry run", and test each case (Claude adversarial, security specialist, red team).
+- [ ] client-go retries a create up to 10 times on a 429 or 5xx with Retry-After, below every check, so one probe can be 11 real writes if a hop drops dryRun=All. Strip Retry-After from pods and services POST answers in the safety transport (or send creates with MaxRetries(0)), with a safety test (security specialist, red team).
+- [ ] After a stored create, an interrupted result still says "re-run; the cluster was not changed" (runner `notRun`, DESIGN.md section 6); drop that clause once the latch is set (Claude adversarial).
+- [ ] Tests: the code-below-400 test over every text rule, asserting ERROR; a D102 row whose expression quotes the webhook phrase; the AT-04 `storedEarlier` guard (or drop it until a creating check runs before AT-04).
+- [ ] The AT-05 FAIL hint names only `create services`; also name `update` and `patch`, which can turn an existing Service into NodePort (Codex structured review, P2).
+- [ ] Small: one re-run hint text lives in two packages (`hintRetry`, `hintRequestFailed`); `messages.txt` claims one string per classifier rule but has no 429 or policy-error row; the D91 test gives its 429 the reason ServiceUnavailable; one AT-05 test row pins client-go's error wording.
+
 ### Review follow-ups from the Phase 1 ship (2026-10-12, D59)
 
 Found by the /ship adversarial reviews and left for the phase that owns them. Each one names its card.
@@ -185,7 +195,7 @@ Found by the end-of-phase review (specialists, red team, Claude and Codex advers
 - [ ] On OpenShift (restricted-v2 SCC) or with registry allowlists, the control pod's fixed `runAsUser: 65532` and the public pause image are rejected, so AT-04 is SKIP; an SCC 403 on a probe matches no classifier rule (ERROR). Consider dropping `runAsUser`, adding `readOnlyRootFilesystem: true`, an SCC classifier rule and a `--probe-image` flag (Later).
 - [ ] Pods a controller creates can pass under a PSA exemption that the tenant's own probes do not have; the README's "what a PASS does not prove" must say so (B29).
 - [ ] `--debug` now prints whole dry-run Pod answers, which can carry values a mutating webhook injected; the README tells users to paste `--debug` into issues (B25, with the existing redaction item).
-- [ ] Redesign AT-04's and AT-05's RBAC-only branch around one SelfSubjectRulesReview (one request; SSAR fallback when `incomplete`): it would cover every way to get a pod or Service, including the in-namespace paths the PASS note names today (creating Secrets of type service-account-token, RoleBindings, service account tokens, impersonating local service accounts). A read-only tenant's run already costs about 53 requests (31 controller SSARs), over the 40 budget (B27, D77).
+- [ ] Redesign AT-04's and AT-05's RBAC-only branch around one SelfSubjectRulesReview (one request; SSAR fallback when `incomplete`): it would cover every way to get a pod or Service, including the in-namespace paths the PASS note names today and the paths that make a controller create pods from an existing template (raising an HPA's minReplicas, deleting or evicting pods; Codex /ship final round) (creating Secrets of type service-account-token, RoleBindings, service account tokens, impersonating local service accounts). A read-only tenant's run already costs about 53 requests (31 controller SSARs), over the 40 budget (B27, D77).
 - [ ] AT-04 probes test regular containers only; add an initContainers form, allowed hostPath prefixes, and a hostPort probe for AT-04.4's MTB ID, or narrow the MTB tags (B22 with the MTB ID check, D78).
 - [ ] Running as root (`runAsUser: 0`) left AT-04.5 in D78; decide whether it becomes its own result (B31 spec pass).
 - [ ] When the tenant may create pods, AT-04 does not ask about `pods/ephemeralcontainers`; a webhook or ValidatingAdmissionPolicy whose rules list `pods` does not match that subresource, so a policy PASS can leave privileged ephemeral containers open (PSA covers them). The AT-04.1 and AT-04.5 notes say so now; ask update/patch on the subresource on the probe branch and SKIP or note a non-PSA PASS when allowed (B22, D97; /ship review pass 2).

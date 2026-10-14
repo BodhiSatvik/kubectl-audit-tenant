@@ -53,11 +53,11 @@ A check that reads objects in or about the target namespace and compares them wi
 _Avoid_: Static check, config scan
 
 **Probe**:
-A deliberately non-compliant object that a behavioral check submits with server-side dry-run. It is never stored.
+A deliberately non-compliant object that a behavioral check submits with server-side dry-run. The API server never stores it; a proxy that drops `dryRun=All` can, and the tool then reports the object and sends no further create (D79, D101).
 _Avoid_: Payload, attack pod, test resource
 
 **Control probe**:
-A compliant pod that a behavioral check rehearses before its dangerous probes, to prove the cluster can accept a pod at all.
+A compliant pod (AT-04) or ClusterIP Service (AT-05) that a behavioral check rehearses before its dangerous probes, to prove the cluster can accept that kind of object at all.
 _Avoid_: Baseline pod, canary pod, sanity check
 
 **Default-deny rule**:
