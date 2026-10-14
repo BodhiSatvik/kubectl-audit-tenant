@@ -28,7 +28,8 @@ const (
 
 // ssarServer answers SelfSubjectAccessReviews from canned status bodies keyed by "verb resource",
 // echoing the question as the API server does, and remembers every question. A question
-// without an answer gets HTTP 500, except AT-01's positive control, which is allowed.
+// without an answer gets HTTP 500, except AT-01's positive control and the "list pods" anchor,
+// which are allowed.
 type ssarServer struct {
 	mu      sync.Mutex
 	answers map[string]string
@@ -49,6 +50,9 @@ func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok && a.Verb+" "+a.Resource == "create selfsubjectaccessreviews" {
 		body, ok = allowed, true // AT-01's positive control: a real API server always says yes
 	}
+	if !ok && a.Verb+" "+a.Resource == "list pods" {
+		body, ok = allowed, true // the no-rights anchor (D80): every real tenant may list pods
+	}
 	if !ok {
 		http.Error(w, "no canned answer for "+a.Verb+" "+a.Resource, http.StatusInternalServerError)
 		return
@@ -68,6 +72,7 @@ func connectWith(t *testing.T, ssar http.Handler, extra map[string]http.HandlerF
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"team-a-dev"}}}`),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": ssar.ServeHTTP,
+		"GET /api/v1/namespaces/tenant-a/limitranges":                 testutil.JSON(http.StatusOK, `{"items":[]}`),
 	}
 	maps.Copy(routes, extra)
 	srv := testutil.NewServer(t, routes)
@@ -123,9 +128,9 @@ func (s *probeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		name = "AT-04.3"
 	case sp.HostNetwork:
 		name = "AT-04.4"
-	case sp.Containers[0].SecurityContext.Privileged != nil:
+	case sp.Containers[0].SecurityContext.Privileged != nil: // both privileged forms (D78)
 		name = "AT-04.1"
-	case *sp.Containers[0].SecurityContext.RunAsUser == 0:
+	case *sp.Containers[0].SecurityContext.AllowPrivilegeEscalation:
 		name = "AT-04.5"
 	}
 	s.mu.Lock()
@@ -135,5 +140,12 @@ func (s *probeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h(w, r)
 		return
 	}
-	testutil.JSON(http.StatusCreated, string(body))(w, r)
+	// Accepted: answer as the API server does a dry run, with a generated name and no resourceVersion.
+	var answer map[string]any
+	_ = json.Unmarshal(body, &answer)
+	if meta, ok := answer["metadata"].(map[string]any); ok {
+		meta["name"] = "audit-tenant-probe-x7k2p"
+	}
+	out, _ := json.Marshal(answer)
+	testutil.JSON(http.StatusCreated, string(out))(w, r)
 }

@@ -34,9 +34,16 @@ func ControlPod(res corev1.ResourceRequirements) *corev1.Pod {
 	}
 }
 
-// Privileged makes AT-04.1's probe. Escalation must be allowed too, or API validation rejects
-// the pod before admission sees it (ADR 0005).
+// Privileged makes AT-04.1's first probe. It clears the control's allowPrivilegeEscalation: false,
+// which API validation refuses next to privileged: true (D70). That still changes a second field,
+// so AT-04.1 also sends PrivilegedWithEscalation, and passes only when both are rejected (D78).
 func Privileged(p *corev1.Pod) {
+	sc := p.Spec.Containers[0].SecurityContext
+	sc.Privileged, sc.AllowPrivilegeEscalation = new(true), nil
+}
+
+// PrivilegedWithEscalation makes AT-04.1's second probe: privileged, with escalation allowed.
+func PrivilegedWithEscalation(p *corev1.Pod) {
 	sc := p.Spec.Containers[0].SecurityContext
 	sc.Privileged, sc.AllowPrivilegeEscalation = new(true), new(true)
 }
@@ -52,9 +59,8 @@ func HostPID(p *corev1.Pod) { p.Spec.HostPID = true }
 // HostNetwork makes AT-04.4's probe.
 func HostNetwork(p *corev1.Pod) { p.Spec.HostNetwork = true }
 
-// RootWithEscalation makes AT-04.5's probe: one capability, running as root with escalation
-// allowed, takes three fields.
-func RootWithEscalation(p *corev1.Pod) {
-	sc := p.Spec.Containers[0].SecurityContext
-	sc.AllowPrivilegeEscalation, sc.RunAsUser, sc.RunAsNonRoot = new(true), new(int64(0)), new(false)
+// Escalation makes AT-04.5's probe: escalation allowed, still running as the control's non-root
+// user, so a policy that only requires non-root cannot fake the PASS (D78).
+func Escalation(p *corev1.Pod) {
+	p.Spec.Containers[0].SecurityContext.AllowPrivilegeEscalation = new(true)
 }

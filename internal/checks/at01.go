@@ -27,7 +27,7 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 	// allows creating the SSAR it just served. A bare "no" means something else answered. A "no"
 	// with denied set came from an authorizer (an access proxy with its own roles, D57); a
 	// reflected request cannot carry it, so the denials stand and the reason says so.
-	control, err := can(ctx, c, "create", "authorization.k8s.io", "selfsubjectaccessreviews", "")
+	control, err := can(ctx, c, question{verb: "create", group: "authorization.k8s.io", resource: "selfsubjectaccessreviews"})
 	if err == nil && !control.allowed && !control.denied {
 		err = &notAPIServerError{"the answer to \"may I create selfsubjectaccessreviews?\" was no, although the request was just served; something other than the API server answered"}
 	}
@@ -41,5 +41,5 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 	if control.denied {
 		reason += "; the access path also denied create selfsubjectaccessreviews (an access proxy with its own roles?)"
 	}
-	return []report.Result{spec.result(r, report.Pass, "RBAC", reason, "")}
+	return rbacPass(ctx, c, spec, []report.Result{spec.result(r, report.Pass, "RBAC", reason, "")})
 }

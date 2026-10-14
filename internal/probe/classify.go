@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
@@ -21,7 +22,7 @@ type Outcome struct {
 
 // Hints for answers that decide nothing.
 const (
-	hintQuota      = "a ResourceQuota stopped the probe before the security gates (quota full, or a size it requires is missing); free quota or add a LimitRange with defaults, then re-run"
+	hintQuota      = "a ResourceQuota stopped the probe before the security gates (quota full, or a resource it requires is missing from the probe); free quota, then re-run"
 	hintLimitRange = "a LimitRange min or max stopped the probe before the security gates; check the namespace's LimitRange, then re-run"
 	hintMalformed  = "a bug in audit-tenant: the cluster says the probe is malformed; please report it with --debug output"
 	hintUnknown    = "the cluster rejected the probe for a reason audit-tenant does not recognize, so it decides nothing; read the reason, or run with --debug and report it"
@@ -43,19 +44,33 @@ func Classify(err error) Outcome {
 	s := status.ErrStatus
 	msg := s.Message
 	full := cmp.Or(msg, strings.TrimSpace(fmt.Sprintf("HTTP %d %s", s.Code, s.Reason)))
+	decided := s.Code >= 400 && s.Code < 500 // every text rule needs a 4xx: a 5xx is a failing backend, not a decision (D82, D84)
 	switch {
-	case strings.Contains(msg, "violates PodSecurity"):
-		return Outcome{report.Pass, "admission (PSA)", from(msg, "violates PodSecurity"), ""}
-	case strings.Contains(msg, "admission webhook") && strings.Contains(msg, "denied"):
+	case decided && strings.Contains(msg, "admission webhook") && strings.Contains(msg, "denied the request"): // the API server's phrase; "denied" alone can be part of a webhook name
+		// Before PSA: a webhook such as Kyverno's podSecurity rule quotes the PSA text, but it decided.
 		return Outcome{report.Pass, "admission (webhook: " + between(msg, `admission webhook "`, `"`) + ")", from(msg, "admission webhook"), ""}
-	case strings.Contains(msg, "ValidatingAdmissionPolicy") && strings.Contains(msg, "denied request"):
+	case decided && strings.Contains(msg, "violates PodSecurity"):
+		return Outcome{report.Pass, "admission (PSA)", from(msg, "violates PodSecurity"), ""}
+	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && (strings.Contains(msg, "resulted in error") || strings.Contains(msg, "failed to configure")):
+		// A policy whose expression or binding fails also "denies" the request; it decided nothing (D84).
+		return Outcome{report.Error, "-", full, "the ValidatingAdmissionPolicy could not evaluate the probe, so it decides nothing; check the policy's expressions, parameters and binding"}
+	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && strings.Contains(msg, "denied request"):
 		return Outcome{report.Pass, "admission (policy: " + between(msg, "ValidatingAdmissionPolicy '", "'") + ")", from(msg, "ValidatingAdmissionPolicy"), ""}
-	case strings.Contains(msg, "does not support dry run") || strings.Contains(msg, "sideEffects"):
+	case decided && (strings.Contains(msg, "does not support dry run") || strings.Contains(msg, "sideEffects")):
 		return Outcome{report.Skip, "-", full, fmt.Sprintf("webhook %q cannot take a dry run, so the probe was not tested; ask its owner to set sideEffects: NoneOnDryRun in its webhook configuration",
 			cmp.Or(between(msg, `admission webhook "`, `"`), "unknown"))}
-	case strings.Contains(msg, "exceeded quota") || strings.Contains(msg, "must specify"):
+	case decided && strings.Contains(msg, "exceeded quota") && strings.Contains(msg, "services.nodeports"): // a PASS rule too, so 4xx only (D84)
+		// The control Service uses no node port. A zero limit is the NodePort fence itself (D68); a full
+		// non-zero limit means NodePort Services are allowed, so it decides nothing (D76).
+		if limit := between(between(msg, "limited: ", "\n")+",", "services.nodeports=", ","); limit != "" {
+			if q, err := resource.ParseQuantity(limit); err == nil && q.IsZero() {
+				return Outcome{report.Pass, "admission (quota: " + between(msg, "exceeded quota: ", ",") + ")", from(msg, "exceeded quota"), ""}
+			}
+		}
+		return Outcome{report.Skip, "-", full, "the namespace's services.nodeports quota is full but above zero, so NodePort Services are allowed; set it to 0, or add a policy that rejects type: NodePort"}
+	case decided && (strings.Contains(msg, "exceeded quota") || strings.Contains(msg, "failed quota")): // "must specify" alone also appears in validation errors (D82)
 		return Outcome{report.Skip, "-", full, hintQuota}
-	case strings.Contains(msg, "forbidden: maximum") || strings.Contains(msg, "forbidden: minimum"):
+	case decided && (strings.Contains(msg, " usage per Container is ") || strings.Contains(msg, " usage per Pod is ")): // LimitRanger, one violation or several in brackets
 		return Outcome{report.Skip, "-", full, hintLimitRange}
 	case s.Code == 400 || s.Code == 422:
 		return Outcome{report.Error, "-", full, hintMalformed}

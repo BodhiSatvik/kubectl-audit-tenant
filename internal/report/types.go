@@ -45,6 +45,7 @@ type Result struct {
 	Layer    string   `json:"layer"` // RBAC, admission (...), config, or "-"
 	Reason   string   `json:"reason"`
 	Hint     string   `json:"hint"`
+	Note     string   `json:"note,omitempty"` // what the check did not test; printed on its own line, never cut (D86)
 }
 
 // The two identity modes.

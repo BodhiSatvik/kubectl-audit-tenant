@@ -37,7 +37,7 @@ func TestSizeFollowsTheLimitRange(t *testing.T) {
 		err    error
 		want   corev1.ResourceRequirements
 	}{
-		{"defaults for cpu and memory: no sizes, the server fills them in", limitRange(defaults), nil, corev1.ResourceRequirements{}},
+		{"defaults for cpu and memory: still explicit sizes (D85)", limitRange(defaults), nil, sized("1m", "1Mi")},
 		{"min only: the min", limitRange(corev1.LimitRangeItem{Type: corev1.LimitTypeContainer, Min: list("100m", "64Mi")}), nil, sized("100m", "64Mi")},
 		{"a pod min counts too", limitRange(corev1.LimitRangeItem{Type: corev1.LimitTypePod, Min: list("", "32Mi")}), nil, sized("1m", "32Mi")},
 		{"no LimitRange: 1m and 1Mi", nil, nil, sized("1m", "1Mi")},
@@ -53,5 +53,13 @@ func TestSizeFollowsTheLimitRange(t *testing.T) {
 				t.Errorf("Size() = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSizeIgnoresServerFilledDefaults(t *testing.T) {
+	// D85: the API server copies max into default and defaultRequest; following them would send the max.
+	maxOnly := limitRange(corev1.LimitRangeItem{Type: corev1.LimitTypeContainer, Min: list("200m", "64Mi"), Max: list("2", "4Gi"), Default: list("2", "4Gi"), DefaultRequest: list("2", "4Gi")})
+	if got := Size(maxOnly, nil); !equality.Semantic.DeepEqual(got, sized("200m", "64Mi")) {
+		t.Errorf("Size() = %+v, want the min 200m/64Mi, never the max", got)
 	}
 }

@@ -205,3 +205,18 @@ func TestRunnerMatchesResultsByIDNotCount(t *testing.T) {
 		t.Errorf("results = %+v; want AT-04.2 as a tool-bug ERROR, never hidden behind a repeated AT-04.1", got)
 	}
 }
+
+func TestRunnerKeepsAProvenFailTheCheckLeftOut(t *testing.T) {
+	// D84(1), D61: a check that returns normally but leaves out a FAIL it proved (interrupted
+	// between two probe forms) must not lose it; a returned result for the same ID still wins.
+	s := fake("AT-04", 2, nil)
+	s.Run = func(_ context.Context, _ *cluster.Client, s Spec, prove func(report.Result)) []report.Result {
+		prove(s.result(s.Results[0], report.Fail, "-", "a privileged container was accepted in a dry run", "fix it"))
+		prove(s.result(s.Results[1], report.Fail, "-", "proven first", "fix it"))
+		return []report.Result{s.result(s.Results[1], report.Fail, "-", "returned last", "fix it")}
+	}
+	got := Run(t.Context(), nil, []Spec{s}, time.Minute)
+	if len(got) != 2 || got[0].Verdict != report.Fail || got[1].Reason != "returned last" {
+		t.Errorf("results = %+v; want the proven AT-04.1 FAIL kept and the returned AT-04.2 result winning", got)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -50,7 +51,7 @@ func nthSSAR(n int, first, then http.HandlerFunc) http.HandlerFunc {
 func TestFailExitsOneWithNoErrorLine(t *testing.T) {
 	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":true}`))
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""))
-	if code != 1 || !strings.Contains(stdout, "FAIL  AT-01") || !strings.Contains(stdout, "exit 1") || stderr != "" {
+	if code != 1 || !regexp.MustCompile(`(?m)^FAIL +AT-01 `).MatchString(stdout) || !strings.Contains(stdout, "exit 1") || stderr != "" { // the verdict column pads to the widest verdict
 		t.Errorf("exit %d, stderr %q; want exit 1, a FAIL line and nothing on stderr:\n%s", code, stderr, stdout)
 	}
 }

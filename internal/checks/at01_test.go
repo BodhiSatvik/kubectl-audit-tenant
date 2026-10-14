@@ -32,7 +32,7 @@ func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := &ssarServer{answers: map[string]string{"list nodes": denied, "get pods": tt.status}}
 			c := connect(t, srv)
-			got, err := can(t.Context(), c, "get", "", "pods", "tenant-a")
+			got, err := can(t.Context(), c, question{verb: "get", resource: "pods", namespace: "tenant-a"})
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("can() error = %v, want %q", err, tt.wantErr)
@@ -53,7 +53,7 @@ func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
 	} {
 		t.Run(name+" is an error", func(t *testing.T) {
 			c := connect(t, testutil.JSON(http.StatusCreated, body))
-			_, err := can(t.Context(), c, "get", "", "pods", "tenant-a")
+			_, err := can(t.Context(), c, question{verb: "get", resource: "pods", namespace: "tenant-a"})
 			if err == nil || !strings.Contains(err.Error(), "does not repeat the question") || hintFor(err) != hintNotAPIServer {
 				t.Errorf("can() error = %v, want a not-the-API-server error: such an answer must never read as a denial", err)
 			}
@@ -62,14 +62,14 @@ func TestSSARReadsAnswersAsTheAPIDefines(t *testing.T) {
 	t.Run("an answer without a verdict is an error", func(t *testing.T) {
 		// A proxy that reflects the request echoes the question but carries no status.allowed.
 		c := connect(t, testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"get","resource":"pods","namespace":"tenant-a"}}}`))
-		_, err := can(t.Context(), c, "get", "", "pods", "tenant-a")
+		_, err := can(t.Context(), c, question{verb: "get", resource: "pods", namespace: "tenant-a"})
 		if err == nil || !strings.Contains(err.Error(), "has no verdict") || hintFor(err) != hintNotAPIServer {
 			t.Errorf("can() error = %v, want a not-the-API-server error: a missing verdict must never read as a denial", err)
 		}
 	})
 	t.Run("a failed request is an error", func(t *testing.T) {
 		c := connect(t, &ssarServer{answers: map[string]string{"list nodes": denied}})
-		if _, err := can(t.Context(), c, "get", "", "pods", "tenant-a"); err == nil {
+		if _, err := can(t.Context(), c, question{verb: "get", resource: "pods", namespace: "tenant-a"}); err == nil {
 			t.Error("can() with an HTTP 500 answer should fail")
 		}
 	})
@@ -94,6 +94,7 @@ func TestAT01PassWhenAllFourActionsAreDenied(t *testing.T) {
 		{Verb: "create", Group: "rbac.authorization.k8s.io", Resource: "clusterrolebindings"},
 		{Verb: "create", Resource: "persistentvolumes"},
 		{Verb: "create", Group: "authorization.k8s.io", Resource: "selfsubjectaccessreviews"},
+		{Verb: "list", Resource: "pods", Namespace: "tenant-a"}, // the no-rights anchor before an RBAC-only PASS (D80)
 	}
 	if !slices.Equal(srv.asked, wantAsked) {
 		t.Errorf("asked %+v, want the control and the four cluster-scoped questions once each (startup's answer reused)", srv.asked)

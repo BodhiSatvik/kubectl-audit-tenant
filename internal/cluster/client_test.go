@@ -231,9 +231,59 @@ func TestSSARWithoutAVerdictIsNotADenial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Connect() error = %v; an answer without a verdict is AT-01's ERROR, not a startup failure", err)
 	}
-	for _, source := range []string{"the kept startup answer", "a fresh answer"} {
+	for _, source := range []string{"the first question", "the same question again"} {
 		if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.FirstQuestion); !errors.Is(err, cluster.ErrNoVerdict) {
 			t.Errorf("%s: SSAR = %v, %v; want ErrNoVerdict, never a denial", source, r, err)
 		}
+	}
+}
+
+func TestSSARAnEchoedRequestHasNoVerdict(t *testing.T) {
+	// D64: a proxy that sends the request back. The request carries no status, so the echo has
+	// no verdict; with a status in the request, the echo would read as "allowed: false".
+	routes := happy()
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		testutil.JSON(http.StatusCreated, string(body))(w, r)
+	}
+	_, c, err := connect(t, routes, opts)
+	if err != nil {
+		t.Fatalf("Connect() error = %v; an echoed answer is the checks' ERROR, not a startup failure", err)
+	}
+	if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.Attributes{Verb: "get", Resource: "secrets", Namespace: "kube-system"}); !errors.Is(err, cluster.ErrNoVerdict) {
+		t.Errorf("SSAR behind an echoing proxy = %v, %v; want ErrNoVerdict, never a denial", r, err)
+	}
+}
+
+func TestSSARIsSentAsJSON(t *testing.T) {
+	// The body is built by hand (D64); without the header a proxy that enforces it answers 415.
+	routes := happy()
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = func(w http.ResponseWriter, r *http.Request) {
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			http.Error(w, "Content-Type "+ct, http.StatusUnsupportedMediaType)
+			return
+		}
+		testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}},"status":{"allowed":false}}`)(w, r)
+	}
+	if _, _, err := connect(t, routes, opts); err != nil {
+		t.Errorf("Connect() error = %v; the SSAR must carry Content-Type: application/json", err)
+	}
+}
+
+func TestSSARTheNoRightsAnchorIsSentOncePerRun(t *testing.T) {
+	// D80: up to five checks ask the anchor; one request answers them all.
+	srv, c, err := connect(t, happy(), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listPods := cluster.Attributes{Verb: "list", Resource: "pods", Namespace: ns}
+	before := len(srv.Hits())
+	for range 3 {
+		if _, err := c.SelfSubjectAccessReview(t.Context(), listPods); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if sent := len(srv.Hits()) - before; sent != 1 {
+		t.Errorf("sent %d SSARs for one question, want 1", sent)
 	}
 }

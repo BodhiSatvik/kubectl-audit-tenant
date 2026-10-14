@@ -52,7 +52,8 @@ type Client struct {
 	NamespaceErr    error
 
 	firstSSAR   *authzv1.SelfSubjectAccessReview // startup answer, reused once by AT-01
-	firstErr    error                            // ErrNoVerdict from startup's question, handed to AT-01 the same way
+	anchorMu    sync.Mutex
+	anchor      *authzv1.SelfSubjectAccessReview // the AnchorQuestion answer, kept for the run (D80)
 	quotas      func() ([]corev1.ResourceQuota, error)
 	limitRanges func() ([]corev1.LimitRange, error)
 }
@@ -119,21 +120,54 @@ func (c *Client) Quotas() ([]corev1.ResourceQuota, error) { return c.quotas() }
 // LimitRanges lists the namespace's LimitRanges once per run.
 func (c *Client) LimitRanges() ([]corev1.LimitRange, error) { return c.limitRanges() }
 
-// ErrNoVerdict means an SSAR answer has no status.allowed. The API server always sends that field,
-// so something else answered, such as a proxy that reflects the request.
+// ErrNoVerdict means an SSAR answer has no status.allowed. The API server always sends that field
+// and the request never carries it, so something else answered, such as a proxy that echoes the
+// request back.
 var ErrNoVerdict = errors.New("the answer has no verdict (status.allowed)")
 
+// AnchorQuestion is "may I list pods here?": every real tenant may. A no means the identity has no
+// rights in the namespace (a misspelled --as user), so no RBAC-only PASS can stand (D69, D80).
+func (c *Client) AnchorQuestion() Attributes {
+	return Attributes{Verb: "list", Resource: "pods", Namespace: c.Namespace}
+}
+
 // SelfSubjectAccessReview asks the cluster "may I?". The answer startup already fetched for
-// FirstQuestion is handed out once instead of being asked again.
+// FirstQuestion is handed out once instead of being asked again; the AnchorQuestion is asked at
+// most once per run, however many checks need it. Every other question is a real request.
 func (c *Client) SelfSubjectAccessReview(ctx context.Context, attrs Attributes) (*authzv1.SelfSubjectAccessReview, error) {
-	if attrs == FirstQuestion && (c.firstSSAR != nil || c.firstErr != nil) {
-		first, err := c.firstSSAR, c.firstErr
-		c.firstSSAR, c.firstErr = nil, nil
-		return first, err
+	if first := c.firstSSAR; first != nil && attrs == FirstQuestion {
+		c.firstSSAR = nil
+		return first, nil
 	}
-	ssar := &authzv1.SelfSubjectAccessReview{Spec: authzv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &attrs}}
-	// Not the typed Create: a decoded bool cannot tell "allowed": false from a missing field.
-	res := c.Clientset.AuthorizationV1().RESTClient().Post().Resource("selfsubjectaccessreviews").Body(ssar).Do(ctx)
+	if attrs == c.AnchorQuestion() {
+		c.anchorMu.Lock()
+		defer c.anchorMu.Unlock()
+		if c.anchor != nil {
+			return c.anchor, nil
+		}
+		a, err := c.ask(ctx, attrs)
+		if err == nil {
+			c.anchor = a
+		}
+		return a, err
+	}
+	return c.ask(ctx, attrs)
+}
+
+// ask sends one SelfSubjectAccessReview.
+func (c *Client) ask(ctx context.Context, attrs Attributes) (*authzv1.SelfSubjectAccessReview, error) {
+	// Not the typed Create: it sends "status": {"allowed": false} (the field has no omitempty), so an
+	// echoed request would read as a denial (D64); and a decoded bool cannot tell false from missing.
+	body, err := json.Marshal(struct {
+		APIVersion string                              `json:"apiVersion"`
+		Kind       string                              `json:"kind"`
+		Spec       authzv1.SelfSubjectAccessReviewSpec `json:"spec"`
+	}{"authorization.k8s.io/v1", "SelfSubjectAccessReview", authzv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &attrs}})
+	if err != nil {
+		return nil, err
+	}
+	res := c.Clientset.AuthorizationV1().RESTClient().Post().Resource("selfsubjectaccessreviews").
+		SetHeader("Content-Type", "application/json").Body(body).Do(ctx) // Body([]byte) sets no Content-Type
 	answer := &authzv1.SelfSubjectAccessReview{} // a fresh object, so a missing echo stays missing
 	if err := res.Into(answer); err != nil {
 		return nil, err

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -197,5 +198,26 @@ func TestChecklistSanitizesTheHeader(t *testing.T) {
 	out := render(t, Checklist{}, r)
 	if strings.ContainsAny(out, "\x1b\r\x07\u202e") || !strings.HasPrefix(out, "namespace team-a · as uPASS (self) (unverified) (groups: g, h) · cluster kindved\n") {
 		t.Errorf("header carries server text unsanitized: %q", strings.SplitN(out, "\n", 2)[0])
+	}
+}
+
+func TestChecklistPrintsANoteUnderItsResult(t *testing.T) {
+	// D86: what a PASS did not test is never cut with the reason; a fix line still comes first.
+	var out bytes.Buffer
+	r := Report{Namespace: "team-a", Identity: Identity{Mode: ModeSelf, Username: "dev", Verified: true}, Results: []Result{
+		{ID: "AT-03", Name: "No privilege escalation", Verdict: Pass, Reason: strings.Repeat("r", 300), Note: "not tested: grants limited to named roles (resourceNames)"},
+		{ID: "AT-05", Name: "NodePort services blocked", Verdict: Fail, Reason: "accepted", Hint: "add a policy", Note: "tested on create only"},
+	}}
+	if err := (Checklist{Out: &out}).Print(r); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(out.String(), "\n")
+	want := []string{
+		"      note   not tested: grants limited to named roles (resourceNames)",
+		"      fix    add a policy",
+		"      note   tested on create only",
+	}
+	if !strings.Contains(out.String(), want[0]+"\n") || !slices.Contains(lines, want[1]) || slices.Index(lines, want[1]) > slices.Index(lines, want[2]) {
+		t.Errorf("checklist:\n%s\nwant the note lines %q, a fix line before a note", out.String(), want)
 	}
 }

@@ -3,6 +3,7 @@ package probe
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -57,6 +58,8 @@ func TestClassifyEveryRuleOnARealServerString(t *testing.T) {
 		{"webhook", report.Pass, "admission (webhook: validate.kyverno.svc-fail)", `admission webhook "validate.kyverno.svc-fail" denied the request`, ""},
 		{"policy", report.Pass, "admission (policy: deny-nodeport)", "ValidatingAdmissionPolicy 'deny-nodeport' with binding 'deny-nodeport-binding' denied request", ""},
 		{"dry-run", report.Skip, "-", `admission webhook "side-effects.example.com" does not support dry run`, "sideEffects: NoneOnDryRun"},
+		{"quota-nodeports", report.Pass, "admission (quota: qa-nodeports)", "exceeded quota: qa-nodeports, requested: services.nodeports=1", ""},
+		{"quota-nodeports-full", report.Skip, "-", `services "audit-tenant-probe-k2v9q" is forbidden: exceeded quota: qa-nodeports`, "NodePort Services are allowed"},
 		{"quota-exceeded", report.Skip, "-", `pods "audit-tenant-probe-nk6zp" is forbidden: exceeded quota`, "ResourceQuota"},
 		{"quota-must-specify", report.Skip, "-", `pods "audit-tenant-probe-b6zp4" is forbidden: failed quota`, "ResourceQuota"},
 		{"limitrange-min", report.Skip, "-", `pods "audit-tenant-probe-vxbn5" is forbidden: minimum cpu`, "LimitRange"},
@@ -109,5 +112,70 @@ func TestClassifyAcceptedEmptyAndUnsent(t *testing.T) {
 	}
 	if got := Classify(errors.New("dial tcp: connection refused")); got.Verdict != report.Error || !strings.Contains(got.Reason, "connection refused") || got.Hint == "" {
 		t.Errorf("transport error = %+v, want ERROR naming the error, with a hint", got)
+	}
+}
+
+func TestClassifyWebhookDenialNeedsTheAPIServerPhrase(t *testing.T) {
+	// "denied" inside a webhook's name is not a denial: the API server says "denied the request".
+	err := statusError(http.StatusBadRequest, "BadRequest", `admission webhook "denied-hostpath.policy.example.com" does not support dry run`)
+	if got := Classify(err); got.Verdict != report.Skip || !strings.Contains(got.Hint, "NoneOnDryRun") {
+		t.Errorf("Classify() = %+v, want SKIP with the sideEffects hint, never a PASS", got)
+	}
+}
+
+func TestClassifyAWebhookThatQuotesPodSecurityIsTheWebhook(t *testing.T) {
+	// Kyverno's podSecurity rule denies through its webhook and quotes the PSA text; the webhook decided.
+	err := statusError(http.StatusBadRequest, "", "admission webhook \"validate.kyverno.svc-fail\" denied the request: \n\nresource Pod/tenant-a/audit-tenant-probe-x was blocked due to the following policies \n\npodsecurity-subrule-restricted:\n  restricted: 'Validation rule 'restricted' failed. It violates PodSecurity \"restricted:latest\": privileged'\n")
+	if got := Classify(err); got.Verdict != report.Pass || got.Layer != "admission (webhook: validate.kyverno.svc-fail)" {
+		t.Errorf("Classify() = %+v, want PASS on layer admission (webhook: validate.kyverno.svc-fail)", got)
+	}
+}
+
+func TestClassifyALimitRangeWithSeveralViolationsIsALimitRangeSkip(t *testing.T) {
+	// LimitRanger joins several violations in brackets: "is forbidden: [minimum ..., minimum ...]".
+	err := statusError(http.StatusForbidden, "Forbidden", `pods "audit-tenant-probe-x" is forbidden: [minimum cpu usage per Container is 100m, but request is 1m, minimum memory usage per Container is 64Mi, but request is 1Mi]`)
+	if got := Classify(err); got.Verdict != report.Skip || !strings.Contains(got.Hint, "LimitRange") {
+		t.Errorf("Classify() = %+v, want SKIP with the LimitRange hint", got)
+	}
+}
+
+func TestClassifyAValidationMessageThatSaysMustSpecifyIsMalformed(t *testing.T) {
+	// D82: apimachinery's union validation says "must specify one of: ..."; only quota says "failed quota".
+	err := statusError(http.StatusUnprocessableEntity, "Invalid", `Pod "audit-tenant-probe-x" is invalid: spec.volumes[0]: Invalid value: "": must specify one of: hostPath, emptyDir`)
+	if got := Classify(err); got.Verdict != report.Error || !strings.Contains(got.Hint, "a bug in audit-tenant") {
+		t.Errorf("Classify() = %+v, want ERROR with the malformed-probe hint, not a quota SKIP", got)
+	}
+}
+
+func TestClassifyAnAdmissionDenialWithAServerErrorIsAnError(t *testing.T) {
+	// D82: a webhook may deny with HTTP 500 when its backend fails; that is a failure, not a policy decision.
+	err := statusError(http.StatusInternalServerError, "InternalError", `admission webhook "guard.example.com" denied the request: policy backend unavailable`)
+	if got := Classify(err); got.Verdict != report.Error || got.Hint == "" {
+		t.Errorf("Classify() = %+v, want ERROR: only a 4xx answer is a policy decision", got)
+	}
+}
+
+func TestClassifyEveryPassRuleNeedsA4xx(t *testing.T) {
+	// D82, D84(5): a 5xx answer that quotes admission or quota text is a failure, not a fence.
+	for _, msg := range []string{
+		`pods "audit-tenant-probe-x" is forbidden: violates PodSecurity "restricted:latest": privileged`,
+		`services "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'deny-nodeport' with binding 'b' denied request: no`,
+		`services "audit-tenant-probe-x" is forbidden: exceeded quota: q, requested: services.nodeports=1, used: services.nodeports=0, limited: services.nodeports=0`,
+	} {
+		if got := Classify(statusError(http.StatusInternalServerError, "InternalError", msg)); got.Verdict != report.Error {
+			t.Errorf("HTTP 500 %q = %+v, want ERROR", msg, got)
+		}
+	}
+}
+
+func TestClassifyAPolicyThatCannotEvaluateIsAnError(t *testing.T) {
+	// D84(4): a ValidatingAdmissionPolicy expression or binding error also says "denied request" (HTTP 422).
+	for _, msg := range []string{
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: expression 'object.spec.containers.all(c, !c.securityContext.privileged)' resulted in error: no such key: securityContext`,
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: failed to configure binding: params not found`,
+	} {
+		if got := Classify(statusError(http.StatusUnprocessableEntity, "Invalid", msg)); got.Verdict != report.Error || !strings.Contains(got.Hint, "ValidatingAdmissionPolicy") {
+			t.Errorf("Classify(%q) = %+v, want ERROR with a policy hint, never a PASS", msg, got)
+		}
 	}
 }

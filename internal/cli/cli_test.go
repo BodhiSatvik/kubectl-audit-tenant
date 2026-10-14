@@ -289,3 +289,12 @@ func TestDebugPrintsPostAnswerBodiesWithoutHeaders(t *testing.T) {
 		t.Errorf("--debug must not print request headers:\n%s", stderr)
 	}
 }
+
+func TestOtherNamespaceReachesAT02(t *testing.T) {
+	// D72: without it, AT-02 would ask a cluster-wide question that ignores RoleBindings in that namespace.
+	srv := cluster(t) // every "may I?" denied
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-02", "--other-namespace", "prod")
+	if code != 0 || !strings.Contains(stdout, "secrets in prod") {
+		t.Errorf("exit %d, stderr %q; want AT-02 to ask about --other-namespace prod:\n%s", code, stderr, stdout)
+	}
+}

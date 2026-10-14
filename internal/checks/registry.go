@@ -18,7 +18,8 @@ type ResultSpec struct {
 // RunFunc runs one check against the cluster and returns one Result per entry of spec.Results,
 // in order. When ctx ends it returns the results it has; the runner fills in the rest. A check
 // passes each FAIL to prove the moment it is proven, so the runner can still report it when the
-// check never returns or crashes (D61); a later call for the same result ID replaces it.
+// check leaves it out, never returns or crashes (D61, D84); a later call for the same result ID
+// replaces it, and a result the check returns wins over it.
 type RunFunc func(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result)) []report.Result
 
 // Spec is the static description of a check, as list-checks prints it, plus its Run function.
@@ -55,19 +56,19 @@ var Registry = []Spec{
 		Method:  "SSAR with no namespace: list nodes, create namespaces, create clusterrolebindings, create persistentvolumes; before a PASS, a control: create selfsubjectaccessreviews must be allowed",
 		Results: one("AT-01", "No cluster-scoped access", "MTB-PL1-CC-CPI-1"), Run: at01},
 	{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, Severity: report.High,
-		Method:  "SSAR: get secrets and list secrets in --other-namespace",
+		Method:  "SSAR: get, list and watch secrets in --other-namespace",
 		Results: one("AT-02", "No cross-namespace secret access", "MTB-PL1-CC-TI-2"), Run: at02},
 	{ID: "AT-03", Name: "No privilege escalation", Kind: report.Behavioral, Severity: report.High,
 		Method:  "SSAR with no namespace: escalate and bind on clusterroles; impersonate users, groups, serviceaccounts; * on * in every API group",
 		Results: one("AT-03", "No privilege escalation", "MTB-PL2-CC-TI-1"), Run: at03},
 	{ID: "AT-04", Name: "Dangerous pod settings blocked", Kind: report.Behavioral, Severity: report.High,
-		Method: "dry-run pods after a compliant control pod: privileged, hostPath, hostPID, hostNetwork, root with escalation",
+		Method: "dry-run pods after a compliant control pod: privileged (two forms), hostPath, hostPID, hostNetwork, allowPrivilegeEscalation",
 		Results: []ResultSpec{
 			{ID: "AT-04.1", Name: "Privileged container blocked", MTB: "MTB-PL1-BC-CPI-5"},
 			{ID: "AT-04.2", Name: "hostPath volume blocked", MTB: "MTB-PL1-BC-HI-1"},
 			{ID: "AT-04.3", Name: "hostPID blocked", MTB: "MTB-PL1-BC-HI-4"},
 			{ID: "AT-04.4", Name: "hostNetwork blocked", MTB: "MTB-PL1-BC-HI-3"},
-			{ID: "AT-04.5", Name: "Privilege escalation to root blocked", MTB: "MTB-PL1-BC-CPI-6"},
+			{ID: "AT-04.5", Name: "Privilege escalation blocked", MTB: "MTB-PL1-BC-CPI-6"},
 		}, Run: at04},
 	{ID: "AT-05", Name: "NodePort services blocked", Kind: report.Behavioral, Severity: report.Medium,
 		Method:  "dry-run Service of type NodePort after a ClusterIP control Service",

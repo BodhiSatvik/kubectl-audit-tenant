@@ -48,8 +48,8 @@ func Run(ctx context.Context, c *cluster.Client, specs []Spec, timeout time.Dura
 }
 
 // runOne runs a check on its own goroutine, so a request the context cannot cancel (a hung
-// credential helper) still ends at the deadline, and a panic becomes an ERROR, not a crash. A
-// check that does not return keeps the FAILs it proved before (D61).
+// credential helper) still ends at the deadline, and a panic becomes an ERROR, not a crash. A FAIL
+// the check proved is kept whenever the check leaves it out, does not return, or crashes (D61, D84).
 func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Result, crashed any) {
 	var mu sync.Mutex
 	proven := map[string]report.Result{} // the latest FAIL per result ID
@@ -74,7 +74,7 @@ func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Re
 				done <- outcome{results: keep(), crashed: p}
 			}
 		}()
-		done <- outcome{results: s.Run(ctx, c, s, prove)}
+		done <- outcome{results: append(s.Run(ctx, c, s, prove), keep()...)} // Run keeps the first result per ID: a returned one wins, a proven FAIL fills a gap (D84)
 	}()
 	select {
 	case o := <-done:

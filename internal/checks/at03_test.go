@@ -25,7 +25,8 @@ func TestAT03PassAsksTheSixClusterScopedQuestionsAndNamesWhatIsNotTested(t *test
 
 	want := report.Result{ID: "AT-03", Name: "No privilege escalation", Kind: report.Behavioral, MTB: "MTB-PL2-CC-TI-1", Severity: report.High,
 		Verdict: report.Pass, Layer: "RBAC",
-		Reason: "RBAC denied all 6 actions; not tested: rights that stay inside the namespace (a namespace-wide *, escalate and bind on its roles, impersonating its service accounts), and grants limited to named roles or users (resourceNames)"}
+		Reason: "RBAC denied all 6 actions",
+		Note:   "not tested: rights that stay inside the namespace (a namespace-wide *, escalate and bind on its roles, impersonating its service accounts), grants from RoleBindings in other namespaces (such as impersonating kube-system service accounts), and grants limited to named roles or users (resourceNames)"}
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("at03() = %+v,\nwant %+v", got, want)
 	}
@@ -37,6 +38,7 @@ func TestAT03PassAsksTheSixClusterScopedQuestionsAndNamesWhatIsNotTested(t *test
 		{Verb: "impersonate", Resource: "groups"},
 		{Verb: "impersonate", Resource: "serviceaccounts"},
 		{Verb: "*", Group: "*", Resource: "*"},
+		{Verb: "list", Resource: "pods", Namespace: "tenant-a"}, // the no-rights anchor (D80)
 	}
 	if !slices.Equal(srv.asked[1:], wantAsked) { // asked[0] is startup's question
 		t.Errorf("asked %+v,\nwant %+v", srv.asked[1:], wantAsked)
