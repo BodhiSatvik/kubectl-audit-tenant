@@ -149,3 +149,12 @@ func (s *probeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	out, _ := json.Marshal(answer)
 	testutil.JSON(http.StatusCreated, string(out))(w, r)
 }
+
+// listOf answers a LIST with items, as the API server does.
+func listOf[T any](items ...T) http.HandlerFunc {
+	body, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		panic(err)
+	}
+	return testutil.JSON(http.StatusOK, string(body))
+}

@@ -82,7 +82,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Phase 3: configuration checks and headroom
 
-- [ ] **B17 AT-06 and AT-07.** AT-06: unscoped quota with the five keys (aliases `cpu`, `memory`, `count/pods`); AT-07: Container LimitRange with default and defaultRequest for cpu and memory; both from the cache; 403 → SKIP with the permission.
+- [x] **B17 AT-06 and AT-07.** AT-06: unscoped quota with the five keys (aliases `cpu`, `memory`, `count/pods`); AT-07: Container LimitRange with default and defaultRequest for cpu and memory; both from the cache; 403 → SKIP with the permission.
   - AC: table tests for scoped-only quota, missing keys, aliases, several LimitRanges, 403.
   - Verify: `go test ./internal/checks/ -run 'AT06|AT07'`.
   - Depends on: B6. Files: `internal/checks/at06.go`, `internal/checks/at07.go`, tests.

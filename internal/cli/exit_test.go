@@ -23,12 +23,12 @@ import (
 // clusterWithSSAR is cluster(t) with a custom answer to every SelfSubjectAccessReview.
 func clusterWithSSAR(t *testing.T, ssar http.HandlerFunc) *testutil.Server {
 	t.Helper()
-	return testutil.NewServer(t, map[string]http.HandlerFunc{
+	return testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"kind-dev"}}}`),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": ssar,
-	})
+	}))
 }
 
 // nthSSAR answers the first n SSARs with first and the rest with then.

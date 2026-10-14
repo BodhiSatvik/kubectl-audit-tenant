@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/checks"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cli"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
 )
@@ -41,12 +43,35 @@ users: [{name: kind-dev, user: {token: test-token}}]
 // cluster serves a startup-complete cluster whose every "may I?" is denied.
 func cluster(t *testing.T) *testutil.Server {
 	t.Helper()
-	return testutil.NewServer(t, map[string]http.HandlerFunc{
+	return testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"team-a-dev","groups":["team-a"]}}}`),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
-	})
+	}))
+}
+
+// unreadable adds the LISTs of the configuration checks to routes, each refused with 403 as for a
+// tenant that may not read them: those checks SKIP, which leaves the exit code alone.
+func unreadable(routes map[string]http.HandlerFunc) map[string]http.HandlerFunc {
+	for _, resource := range []string{"resourcequotas", "limitranges"} {
+		routes["GET /api/v1/namespaces/tenant-a/"+resource] = testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, resource+" is forbidden")
+	}
+	return routes
+}
+
+// unbuilt removes the Run of the named checks for the duration of the test, as before their tasks
+// landed, so the "not in this build" exit keeps a test once every check is built.
+func unbuilt(t *testing.T, ids ...string) {
+	t.Helper()
+	saved := checks.Registry
+	checks.Registry = slices.Clone(checks.Registry)
+	for i := range checks.Registry {
+		if slices.Contains(ids, checks.Registry[i].ID) {
+			checks.Registry[i].Run = nil
+		}
+	}
+	t.Cleanup(func() { checks.Registry = saved })
 }
 
 func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
@@ -57,6 +82,7 @@ func run(t *testing.T, args ...string) (code int, stdout, stderr string) {
 }
 
 func TestFlagValidationExitsTwo(t *testing.T) {
+	unbuilt(t, "AT-06")
 	srv := cluster(t)
 	withNS := kubeconfig(t, srv.URL, "tenant-a")
 	noNS := kubeconfig(t, srv.URL, "")
@@ -127,12 +153,12 @@ func TestRunPrintsTheChecklistAndExitsWithTheSummaryCode(t *testing.T) {
 }
 
 func TestIdentityComesFromTheEffectiveConfig(t *testing.T) {
-	srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "forbidden"),
 		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
-	})
+	}))
 	path := filepath.Join(t.TempDir(), "kubeconfig")
 	cfg := fmt.Sprintf(`apiVersion: v1
 kind: Config
