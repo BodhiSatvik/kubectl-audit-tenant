@@ -146,6 +146,22 @@ func TestRunnerCancelMidRunPrintsAPartialReport(t *testing.T) {
 	}
 }
 
+// Added for the PR #3 must-fix items (TODOS: the "cluster was not changed" hint).
+// Value: protects=an interruption after an unverified create does not tell the user the cluster is unchanged; fails_when=notRun ignores the latch;
+// why_new=the test above has no latch set; seam=none; no_claim=the exact kubectl command in the hint
+func TestRunnerInterruptedAfterAnUnverifiedCreateNamesTheLeftovers(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	c := &cluster.Client{Namespace: "tenant-a"}
+	c.Unverified.Store(true)
+	interrupted := fake("AT-04", 2, func(context.Context, Spec) []report.Result { cancel(); return nil })
+	for _, r := range Run(ctx, c, []Spec{interrupted}, time.Minute) {
+		if r.Reason != "interrupted" || strings.Contains(r.Hint, "not changed") || !strings.Contains(r.Hint, "-n tenant-a -l app.kubernetes.io/managed-by=audit-tenant") {
+			t.Errorf("%s = %+v, want interrupted with a hint that lists leftovers", r.ID, r)
+		}
+	}
+}
+
 func TestRunnerDeadlineMarksUnfinishedChecksNotRun(t *testing.T) {
 	routes := map[string]http.HandlerFunc{
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),

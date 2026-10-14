@@ -34,7 +34,7 @@ func at05(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 }
 
 func at05Probe(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result)) []report.Result {
-	if res := storedEarlier(c, spec); res != nil {
+	if res := unverifiedEarlier(c, spec); res != nil {
 		return res
 	}
 	services := c.Clientset.CoreV1().Services(c.Namespace)

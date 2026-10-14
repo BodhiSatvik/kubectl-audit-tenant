@@ -51,9 +51,9 @@ type Client struct {
 	// that read returned (a 403 is kept for AT-09).
 	NamespaceObject *corev1.Namespace
 	NamespaceErr    error
-	// Stored is set when a dry-run create came back stored (dryRun=All was dropped on the way); no
-	// check sends a create after it (D101).
-	Stored atomic.Bool
+	// Unverified is set by the safety transport after the first create answer that is not a
+	// verified dry run (the server may have stored it); no create leaves the process after it (D101, D103).
+	Unverified atomic.Bool
 
 	firstSSAR   *authzv1.SelfSubjectAccessReview // startup answer, reused once by AT-01
 	anchorMu    sync.Mutex
@@ -94,12 +94,13 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 		return nil, fmt.Errorf("cannot load the kubeconfig: %w", err)
 	}
 	rec := cmp.Or(opts.Recorder, &safety.Recorder{})
-	cfg.Wrap(safety.Wrap(opts.Namespace, base, rec))
+	c := &Client{Recorder: rec, Namespace: opts.Namespace, OtherNamespace: opts.OtherNamespace, Server: cfg.Host}
+	cfg.Wrap(safety.Wrap(opts.Namespace, base, rec, &c.Unverified))
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{Clientset: cs, Recorder: rec, Namespace: opts.Namespace, OtherNamespace: opts.OtherNamespace, Server: cfg.Host}
+	c.Clientset = cs
 	c.quotas = sync.OnceValues(func() ([]corev1.ResourceQuota, error) {
 		l, err := cs.CoreV1().ResourceQuotas(opts.Namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {

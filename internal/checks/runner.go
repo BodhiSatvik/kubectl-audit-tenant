@@ -37,7 +37,7 @@ func Run(ctx context.Context, c *cluster.Client, specs []Spec, timeout time.Dura
 				out = append(out, g)
 				continue
 			}
-			reason, hint := notRun(ctx, timeout)
+			reason, hint := notRun(ctx, timeout, c)
 			if crashed != nil {
 				reason, hint = fmt.Sprintf("the check crashed: %v", crashed), hintBug
 			}
@@ -90,11 +90,14 @@ func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Re
 	}
 }
 
-// notRun explains a result the check did not produce.
-func notRun(ctx context.Context, timeout time.Duration) (reason, hint string) {
+// notRun explains a result the check did not produce. After a create answer that was not a
+// verified dry run, an interruption cannot claim the cluster is unchanged.
+func notRun(ctx context.Context, timeout time.Duration, c *cluster.Client) (reason, hint string) {
 	switch {
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return fmt.Sprintf("not run: timeout after %s", timeout), "raise --timeout, or run fewer checks with --checks"
+	case ctx.Err() != nil && c != nil && c.Unverified.Load():
+		return "interrupted", "re-run; a create was not verified as a dry run, so list leftovers: kubectl get pods,services -n " + c.Namespace + " -l app.kubernetes.io/managed-by=audit-tenant"
 	case ctx.Err() != nil:
 		return "interrupted", "re-run; the cluster was not changed"
 	}

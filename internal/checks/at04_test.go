@@ -471,6 +471,42 @@ func TestAStoredObjectStopsEveryLaterCreate(t *testing.T) {
 	}
 }
 
+// Added for the PR #3 must-fix items (D103).
+// Value: protects=after any control answer that is not a verified dry run, AT-05 sends no create, and client-go resends none; fails_when=the latch
+// fires only on a resourceVersion (the red team's nameless answer), or Retry-After reaches client-go; why_new=the test above covers a resourceVersion
+// only; seam=none; no_claim=AT-04's own reason text (the classifier's or notDryRun's)
+func TestAnUnverifiedCreateStopsEveryLaterCreate(t *testing.T) {
+	retryAfter := func(code int32) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Retry-After", "0")
+			testutil.Status(code, metav1.StatusReasonServiceUnavailable, "")(w, r)
+		}
+	}
+	for name, control := range map[string]http.HandlerFunc{
+		"no generated name":           testutil.JSON(http.StatusCreated, `{"metadata":{"name":"tenant-proxy-object"}}`), // the red team's answer
+		"an empty 2xx body":           testutil.JSON(http.StatusCreated, ``),
+		"a 2xx body that is not JSON": testutil.JSON(http.StatusOK, `<html>proxy</html>`),
+		"a failed send":               func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) },
+		"a 503 with Retry-After":      retryAfter(http.StatusServiceUnavailable),
+		"a 429 with Retry-After":      retryAfter(http.StatusTooManyRequests),
+	} {
+		t.Run(name, func(t *testing.T) {
+			ps := &probeServer{answers: map[string]http.HandlerFunc{"control": control}}
+			ssar := &ssarServer{answers: map[string]string{"list nodes": denied, "create pods": allowed, "create services": allowed}}
+			got := Run(t.Context(), connectWith(t, ssar, ps.routes()), []Spec{at04Spec(), at05Spec()}, time.Minute)
+			at05 := got[len(got)-1]
+			if at05.ID != "AT-05" || at05.Verdict != report.Error || !strings.Contains(at05.Reason, "no further create") || at05.Hint == "" {
+				t.Errorf("AT-05 = %+v, want ERROR: no create after an unverified answer", at05)
+			}
+			ps.mu.Lock()
+			defer ps.mu.Unlock()
+			if !slices.Equal(ps.sent, []string{"control"}) {
+				t.Errorf("sent %v, want the control pod once: no retry, and no create from AT-05", ps.sent)
+			}
+		})
+	}
+}
+
 func TestAT04StopsAResultAtItsFirstFail(t *testing.T) {
 	// D84(2): once a form is accepted, the FAIL is proven; the other form would be one more dangerous request.
 	ps := &probeServer{}

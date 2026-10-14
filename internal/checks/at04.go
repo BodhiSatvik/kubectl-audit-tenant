@@ -71,7 +71,7 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		}
 		return spec.all(report.Error, "-", "could not list limitranges to size the probes: "+err.Error(), hintRequestFailed)
 	}
-	if res := storedEarlier(c, spec); res != nil {
+	if res := unverifiedEarlier(c, spec); res != nil {
 		return res
 	}
 	size := probe.Size(ranges) // a 403 leaves ranges nil: 1m and 1Mi

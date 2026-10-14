@@ -23,13 +23,17 @@ const hintNoRights = "check -n, --as and --as-group: the identity may be misspel
 // hintDryRunDropped explains a server that stored a dry-run create.
 const hintDryRunDropped = "something between you and the API server drops dryRun=All (a proxy or gateway); run against the API server directly"
 
-// storedEarlier stops a check before its first create when an earlier answer in this run was
-// stored: the connection does not honor dryRun=All, so any further create could be real (D101).
-func storedEarlier(c *cluster.Client, spec Spec) []report.Result {
-	if !c.Stored.Load() {
+// hintUnverified explains a check stopped by an earlier create answer that was not a verified dry run.
+const hintUnverified = "see the earlier ERROR that sent a create: delete any object it names, fix what it reports, then re-run"
+
+// unverifiedEarlier stops a check before its first create when an earlier create answer in this
+// run was not a verified dry run: the server may have stored it, so any further create could be
+// real. The safety transport sets the latch and refuses the create anyway; this says why (D101, D103).
+func unverifiedEarlier(c *cluster.Client, spec Spec) []report.Result {
+	if !c.Unverified.Load() {
 		return nil
 	}
-	return spec.all(report.Error, "-", "not run: an earlier dry-run create was stored by the server, so no further create was sent", hintDryRunDropped)
+	return spec.all(report.Error, "-", "not run: an earlier create answer could not be verified as a dry run, so no further create was sent", hintUnverified)
 }
 
 // controlFailed turns a control probe that did not get through into the results of every
@@ -49,16 +53,18 @@ func controlFailed(ctx context.Context, spec Spec, err error, what, hint string)
 }
 
 // notDryRun stops a check whose answer to a dry-run create shows the server stored the object (a
-// resourceVersion: dryRun=All was dropped on the way; later checks then send no create, D101) or
-// did not come from the API server (no generated name). Every accepted answer is checked, the
-// control's first (D79, D84); the results of spec are those not decided yet.
+// resourceVersion: dryRun=All was dropped on the way) or did not come from the API server (no
+// generated name). Every accepted answer is checked, the control's first (D79, D84); the results
+// of spec are those not decided yet. The transport has latched on the same answer; setting the
+// latch here too keeps later checks from creating if the two ever read an answer differently (D101, D103).
 func notDryRun(c *cluster.Client, spec Spec, m metav1.Object, what string) []report.Result {
 	switch {
 	case m.GetResourceVersion() != "":
-		c.Stored.Store(true)
+		c.Unverified.Store(true)
 		return spec.all(report.Error, "-", fmt.Sprintf("the server stored the %s %s: it did not honor dryRun=All, so the run sends no further create; delete that object", what, m.GetName()),
 			hintDryRunDropped)
 	case !strings.HasPrefix(m.GetName(), probe.NamePrefix):
+		c.Unverified.Store(true)
 		return spec.all(report.Error, "-", "the answer to the dry-run "+what+" has no generated name, so it did not come from the API server", hintNotAPIServer)
 	}
 	return nil

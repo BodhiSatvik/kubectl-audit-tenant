@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	authnv1 "k8s.io/api/authentication/v1"
@@ -39,8 +41,8 @@ func TestSafety(t *testing.T) {
 		"GET /apis/autoscaling/v2/namespaces/tenant-a/horizontalpodautoscalers": ok,
 		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews":           testutil.JSON(http.StatusCreated, `{"status":{"allowed":false}}`),
 		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":                testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"tenant-a-dev"}}}`),
-		"POST /api/v1/namespaces/tenant-a/pods":                                 testutil.JSON(http.StatusCreated, `{"metadata":{"name":"probe"}}`),
-		"POST /api/v1/namespaces/tenant-a/services":                             testutil.JSON(http.StatusCreated, `{"metadata":{"name":"probe"}}`),
+		"POST /api/v1/namespaces/tenant-a/pods":                                 testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"}}`), // a dry-run answer: generated name, no resourceVersion
+		"POST /api/v1/namespaces/tenant-a/services":                             testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"}}`), // a dry-run answer: generated name, no resourceVersion
 	})
 	rec := &safety.Recorder{}
 	cs := srv.Client(t, ns, rec)
@@ -193,7 +195,7 @@ func TestSafetyMatchesPathsUnderTheServerPrefix(t *testing.T) {
 		"GET /version":                     testutil.JSON(http.StatusOK, `{"gitVersion":"wrong"}`),
 	})
 	base, _ := url.Parse(srv.URL + "/k8s/clusters/c-demo")
-	cfg := &rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, nil)}
+	cfg := &rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, nil, nil)}
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -214,7 +216,7 @@ func TestSafetyMatchesPathsUnderTheServerPrefix(t *testing.T) {
 func TestSafetyMatchesAnEncodedServerPrefix(t *testing.T) {
 	srv := testutil.NewServer(t, map[string]http.HandlerFunc{"GET /k8s x/version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`)})
 	base, _ := url.Parse(srv.URL + "/k8s%20x")
-	cfg := &rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, nil)}
+	cfg := &rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, nil, nil)}
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -231,14 +233,20 @@ func TestSafetyGuardsAgainstCraftedRequests(t *testing.T) {
 		name      string
 		namespace string
 		mutate    func(*url.URL)
+		noLatch   bool
 	}{
-		{"opaque target", ns, func(u *url.URL) { u.Opaque = "/api/v1/namespaces/tenant-a/pods?x=1" }},
-		{"namespace with a slash", "tenant-a/secrets", func(*url.URL) {}},
-		{"namespace ..", "..", func(*url.URL) {}},
-		{"other scheme", ns, func(u *url.URL) { u.Scheme = "ftp" }},
+		{"opaque target", ns, func(u *url.URL) { u.Opaque = "/api/v1/namespaces/tenant-a/pods?x=1" }, false},
+		{"namespace with a slash", "tenant-a/secrets", func(*url.URL) {}, false},
+		{"namespace ..", "..", func(*url.URL) {}, false},
+		{"other scheme", ns, func(u *url.URL) { u.Scheme = "ftp" }, false},
+		{"a dry-run create through a transport with no latch (D103)", ns, func(*url.URL) {}, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			tr := &safety.Transport{Namespace: tt.namespace, Base: base, Next: http.DefaultTransport}
+			latch := new(atomic.Bool) // a real latch, so each row is refused by its own rule
+			if tt.noLatch {
+				latch = nil
+			}
+			tr := &safety.Transport{Namespace: tt.namespace, Base: base, Next: http.DefaultTransport, Unverified: latch}
 			u, _ := url.Parse(srv.URL + "/api/v1/namespaces/" + tt.namespace + "/pods?dryRun=All")
 			tt.mutate(u)
 			req, _ := http.NewRequest(http.MethodPost, u.String(), strings.NewReader("{}"))
@@ -345,7 +353,7 @@ func TestSafetyKeepsUserInfoExtraOutOfTheTraceUnderAPrefixAndOnBadBodies(t *test
 			})
 			base, _ := url.Parse(srv.URL + prefix)
 			rec := &safety.Recorder{}
-			cs, err := kubernetes.NewForConfig(&rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, rec)})
+			cs, err := kubernetes.NewForConfig(&rest.Config{Host: base.String(), WrapTransport: safety.Wrap(ns, base, rec, nil)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -374,5 +382,72 @@ func TestSafetyRefusesAnAnswerTooLargeToBeFromAnAPIServer(t *testing.T) {
 	}
 	if reqs := rec.Requests(); len(reqs) != 1 || reqs[0].Body != "" {
 		t.Errorf("Requests() = %d recorded, body %d bytes; want the POST recorded with no body", len(reqs), len(reqs[0].Body))
+	}
+}
+
+// Added for the PR #3 must-fix items (D103).
+// Value: protects=after a pods or services POST answer that is not a verified dry run, no later create leaves the process; fails_when=the transport
+// latches only on some answers, or not at all; why_new=the D101 latch lived in the checks and saw only a resourceVersion; seam=the transport under a
+// real clientset; no_claim=what the checks report (internal/checks)
+func TestSafetySendsNoCreateAfterAnAnswerItCannotVerify(t *testing.T) {
+	dropped := func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) } // the connection drops after the request was sent
+	for _, tt := range []struct {
+		name   string
+		answer http.HandlerFunc
+		latch  bool
+	}{
+		{"an accepted dry run", testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"}}`), false},
+		{"a rejection", testutil.JSON(http.StatusForbidden, `{"kind":"Status","code":403}`), false},
+		{"a malformed probe", testutil.JSON(http.StatusUnprocessableEntity, `{"kind":"Status","code":422}`), false},
+		{"a stored object", testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p","resourceVersion":"4712"}}`), true},
+		{"a resourceVersion that is not a string", testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p","resourceVersion":4712}}`), true},
+		{"no generated name", testutil.JSON(http.StatusCreated, `{"metadata":{"name":"tenant-proxy-object"}}`), true},
+		{"no metadata", testutil.JSON(http.StatusCreated, `{"kind":"Pod"}`), true},
+		{"an empty 2xx body", testutil.JSON(http.StatusCreated, ``), true},
+		{"a 2xx body that is not JSON", testutil.JSON(http.StatusOK, `<html>proxy</html>`), true},
+		{"a 2xx body over 1 MiB", testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"},"x":"`+strings.Repeat("x", 1<<20)+`"}`), true},
+		{"a failed send", dropped, true},
+		{"a 429", testutil.JSON(http.StatusTooManyRequests, `{"kind":"Status","code":429}`), true},
+		{"a 503", testutil.JSON(http.StatusServiceUnavailable, `{"kind":"Status","code":503}`), true},
+		{"a redirect", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/elsewhere", http.StatusFound) }, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+				"POST /api/v1/namespaces/tenant-a/pods":     tt.answer,
+				"POST /api/v1/namespaces/tenant-a/services": testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-s"}}`),
+			})
+			cs := srv.Client(t, ns, nil)
+			dryRun := metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}}
+			_, _ = cs.CoreV1().Pods(ns).Create(t.Context(), &corev1.Pod{}, dryRun)
+			_, err := cs.CoreV1().Services(ns).Create(t.Context(), &corev1.Service{}, dryRun)
+			sent := slices.Contains(srv.Hits(), "POST /api/v1/namespaces/tenant-a/services")
+			if sent == tt.latch {
+				t.Errorf("after %s: later create sent = %v, want %v", tt.name, sent, !tt.latch)
+			}
+			if tt.latch && !errors.Is(err, safety.ErrUnverified) {
+				t.Errorf("after %s: error = %v, want ErrUnverified", tt.name, err)
+			}
+		})
+	}
+}
+
+// Added for the PR #3 must-fix items (D103).
+// Value: protects=client-go cannot resend a create: one probe is at most one write if a hop drops dryRun=All; fails_when=Retry-After reaches client-go,
+// which resends a POST up to 10 times on a 429 or 5xx; why_new=no test sent Retry-After; seam=the transport under a real clientset; no_claim=GET retries
+func TestSafetySendsEachCreateOnce(t *testing.T) {
+	for _, code := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		srv := testutil.NewServer(t, map[string]http.HandlerFunc{
+			"POST /api/v1/namespaces/tenant-a/pods": func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Retry-After", "0")
+				testutil.JSON(code, `{"kind":"Status","code":`+strconv.Itoa(code)+`}`)(w, nil)
+			},
+		})
+		_, err := srv.Client(t, ns, nil).CoreV1().Pods(ns).Create(t.Context(), &corev1.Pod{}, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+		if err == nil {
+			t.Errorf("HTTP %d: want the error returned", code)
+		}
+		if hits := srv.Hits(); len(hits) != 1 {
+			t.Errorf("HTTP %d with Retry-After: server saw %d creates, want 1", code, len(hits))
+		}
 	}
 }
