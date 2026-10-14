@@ -476,10 +476,10 @@ func TestAStoredObjectStopsEveryLaterCreate(t *testing.T) {
 // fires only on a resourceVersion (the red team's nameless answer), or Retry-After reaches client-go; why_new=the test above covers a resourceVersion
 // only; seam=none; no_claim=AT-04's own reason text (the classifier's or notDryRun's)
 func TestAnUnverifiedCreateStopsEveryLaterCreate(t *testing.T) {
-	retryAfter := func(code int32) http.HandlerFunc {
+	retryAfter := func(code int32, reason metav1.StatusReason) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Retry-After", "0")
-			testutil.Status(code, metav1.StatusReasonServiceUnavailable, "")(w, r)
+			testutil.Status(code, reason, "")(w, r)
 		}
 	}
 	for name, control := range map[string]http.HandlerFunc{
@@ -487,8 +487,8 @@ func TestAnUnverifiedCreateStopsEveryLaterCreate(t *testing.T) {
 		"an empty 2xx body":           testutil.JSON(http.StatusCreated, ``),
 		"a 2xx body that is not JSON": testutil.JSON(http.StatusOK, `<html>proxy</html>`),
 		"a failed send":               func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) },
-		"a 503 with Retry-After":      retryAfter(http.StatusServiceUnavailable),
-		"a 429 with Retry-After":      retryAfter(http.StatusTooManyRequests),
+		"a 503 with Retry-After":      retryAfter(http.StatusServiceUnavailable, metav1.StatusReasonServiceUnavailable),
+		"a 429 with Retry-After":      retryAfter(http.StatusTooManyRequests, metav1.StatusReasonTooManyRequests),
 	} {
 		t.Run(name, func(t *testing.T) {
 			ps := &probeServer{answers: map[string]http.HandlerFunc{"control": control}}
@@ -504,6 +504,25 @@ func TestAnUnverifiedCreateStopsEveryLaterCreate(t *testing.T) {
 				t.Errorf("sent %v, want the control pod once: no retry, and no create from AT-05", ps.sent)
 			}
 		})
+	}
+}
+
+// Added for the PR #3 follow-ups (TODOS: the AT-04 guard).
+// Value: protects=AT-04 sends no create once an earlier create in the run was not verified as a dry run (D101, D103); fails_when=AT-04 loses its
+// unverifiedEarlier guard, which no run reaches today because AT-04 is the first check that creates; why_new=every latch test sets it in AT-04 itself;
+// seam=none; no_claim=which later check would create first
+func TestAT04SendsNoCreateAfterAnUnverifiedOne(t *testing.T) {
+	ps := &probeServer{}
+	c := connectWith(t, &ssarServer{answers: mayPods}, ps.routes())
+	c.Unverified.Store(true)
+	got := at04(t.Context(), c, at04Spec(), ignore)
+	if len(got) != 5 || slices.ContainsFunc(got, func(r report.Result) bool {
+		return r.Verdict != report.Error || !strings.Contains(r.Reason, "no further create") || r.Hint != hintUnverified
+	}) {
+		t.Errorf("results = %+v, want five ERRORs that say no further create was sent", got)
+	}
+	if len(ps.sent) != 0 {
+		t.Errorf("sent %v, want no create", ps.sent)
 	}
 }
 
@@ -557,8 +576,8 @@ func TestAT04OneResultTakesTheWorstOfItsForms(t *testing.T) {
 // Value: protects=a 429 or 5xx probe answer ends AT-04: no later probe, every unfinished result ERROR (D91); fails_when=the loop goes on probing, so client-go's
 // retries repeat per probe; why_new=the 409 test above expects the run to go on; seam=none; no_claim=client-go's own retry count (no Retry-After here)
 func TestAT04StopsAtAnAnswerThatWouldRepeat(t *testing.T) {
-	for _, code := range []int32{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
-		ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": testutil.Status(code, metav1.StatusReasonServiceUnavailable, "")}}
+	for code, reason := range map[int32]metav1.StatusReason{http.StatusTooManyRequests: metav1.StatusReasonTooManyRequests, http.StatusServiceUnavailable: metav1.StatusReasonServiceUnavailable} {
+		ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": testutil.Status(code, reason, "")}}
 		got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), at04Spec(), ignore)
 		if len(got) != 5 || slices.ContainsFunc(got, func(r report.Result) bool { return r.Verdict != report.Error || r.Hint == "" }) {
 			t.Errorf("HTTP %d: results = %+v, want five ERRORs with a hint", code, got)

@@ -169,7 +169,7 @@ namespace team-a · as team-a-dev (groups: team-a, system:authenticated) · clus
 
 PASS  AT-01  No cluster-scoped access            RBAC denied all 4 actions
 FAIL  AT-05  NodePort services blocked           a NodePort Service was accepted in a dry run
-      fix    add a policy that rejects type: NodePort, or remove `create services` from the tenant role
+      fix    add a policy that rejects type: NodePort on create and update, or remove `create`, `update` and `patch` on services from the tenant role
 SKIP  AT-09  Pod Security Admission enforced     cannot read namespace labels (forbidden)
       fix    grant `get` on namespace team-a to this identity, or run with --as <admin>
 
@@ -196,7 +196,7 @@ Rules: counts are per result, not per check family (ten checks produce fourteen 
     {"id": "AT-05", "name": "NodePort services blocked", "kind": "behavioral", "mtb": "MTB-PL1-BC-HI-1",
      "severity": "medium", "verdict": "FAIL", "layer": "-",
      "reason": "a NodePort Service was accepted in a dry run",
-     "hint": "add a policy that rejects type: NodePort, or remove `create services` from the tenant role"}
+     "hint": "add a policy that rejects type: NodePort on create and update, or remove `create`, `update` and `patch` on services from the tenant role"}
   ],
   "summary": {"pass": 12, "fail": 1, "skip": 1, "error": 0, "exitCode": 1, "results": 14, "checks": 10}
 }

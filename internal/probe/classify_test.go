@@ -57,6 +57,8 @@ func TestClassifyEveryRuleOnARealServerString(t *testing.T) {
 		{"psa", report.Pass, "admission (PSA)", `violates PodSecurity "restricted:latest": privileged (container "probe"`, ""},
 		{"webhook", report.Pass, "admission (webhook: validate.kyverno.svc-fail)", `admission webhook "validate.kyverno.svc-fail" denied the request`, ""},
 		{"policy", report.Pass, "admission (policy: deny-nodeport)", "ValidatingAdmissionPolicy 'deny-nodeport' with binding 'deny-nodeport-binding' denied request", ""},
+		{"policy-error", report.Error, "-", `pods "audit-tenant-probe-nn5c8" is forbidden: ValidatingAdmissionPolicy 'capture-eval-error'`, "could not evaluate"},
+		{"throttled", report.Error, "-", "the server has received too many requests", "re-run"},
 		{"dry-run", report.Skip, "-", `admission webhook "side-effects.example.com" does not support dry run`, "sideEffects: NoneOnDryRun"},
 		{"quota-nodeports", report.Pass, "admission (quota: qa-nodeports)", "exceeded quota: qa-nodeports, requested: services.nodeports=1", ""},
 		{"quota-nodeports-full", report.Skip, "-", `services "audit-tenant-probe-k2v9q" is forbidden: exceeded quota: qa-nodeports`, "NodePort Services are allowed"},
@@ -169,7 +171,7 @@ func TestClassifyAThrottledOrFailingServerDecidesNothing(t *testing.T) {
 		{http.StatusInternalServerError, ""},
 		{http.StatusServiceUnavailable, "etcdserver: leader changed"},
 	} {
-		if got := Classify(statusError(tt.code, "", tt.msg)); got.Verdict != report.Error || got.Hint != hintRetry {
+		if got := Classify(statusError(tt.code, "", tt.msg)); got.Verdict != report.Error || got.Hint != HintRetry {
 			t.Errorf("HTTP %d %q = %+v, want ERROR with the re-run hint", tt.code, tt.msg, got)
 		}
 	}
@@ -221,6 +223,16 @@ func TestClassifyACodeBelow400DecidesNothing(t *testing.T) {
 			}
 		}
 	}
+	// Added for the PR #3 follow-ups: every rule's real text, below 400, is ERROR (not a SKIP, which exits 0).
+	for id, err := range messages(t) {
+		status, _ := errors.AsType[*apierrors.StatusError](err) // messages builds only StatusErrors
+		msg := status.ErrStatus.Message
+		for _, code := range []int32{0, http.StatusOK, http.StatusCreated, http.StatusFound} {
+			if got := Classify(statusError(code, "", msg)); got.Verdict != report.Error {
+				t.Errorf("%s text with HTTP %d = %+v, want ERROR", id, code, got)
+			}
+		}
+	}
 }
 
 func TestClassifyAPolicyThatCannotEvaluateIsAnError(t *testing.T) {
@@ -235,6 +247,8 @@ func TestClassifyAPolicyThatCannotEvaluateIsAnError(t *testing.T) {
 		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: unexpected internal error compiling expression`,
 		// D102: the error quotes the policy's expression, which may contain the PSA phrase; the policy still decided nothing.
 		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: expression 'object.metadata.annotations['approval'] == 'violates PodSecurity'' resulted in error: no such key: approval`,
+		// D102 again, with the webhook rule's phrase in the expression: the policy error still comes first.
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: expression 'object.metadata.annotations['note'] != 'admission webhook "x" denied the request'' resulted in error: no such key: note`,
 	} {
 		if got := Classify(statusError(http.StatusUnprocessableEntity, "Invalid", msg)); got.Verdict != report.Error || !strings.Contains(got.Hint, "ValidatingAdmissionPolicy") {
 			t.Errorf("Classify(%q) = %+v, want ERROR with a policy hint, never a PASS", msg, got)

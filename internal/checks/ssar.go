@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/probe"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
@@ -19,7 +20,7 @@ type answer struct {
 
 // Hints shared by every check that asks the cluster "may I?".
 const (
-	hintRequestFailed = "re-run; if it repeats, run with --debug and report the server message"
+	hintRequestFailed = probe.HintRetry
 	hintEvaluation    = "the cluster's authorizer reported an error; check the authorization webhook or ask a cluster admin"
 	hintNotAPIServer  = "check the server URL and any proxy in your kubeconfig: the answer did not come from a Kubernetes API server"
 )

@@ -28,8 +28,10 @@ const (
 	hintLimitRange = "a LimitRange min or max stopped the probe before the security gates; check the namespace's LimitRange, then re-run"
 	hintMalformed  = "a bug in audit-tenant: the cluster says the probe is malformed; please report it with --debug output"
 	hintUnknown    = "the cluster rejected the probe for a reason audit-tenant does not recognize, so it decides nothing; read the reason, or run with --debug and report it"
-	hintRetry      = "re-run; if it repeats, run with --debug and report the server message"
 )
+
+// HintRetry is the one hint for a request that failed or met a throttled or failing server; the checks use it too.
+const HintRetry = "re-run; if it repeats, run with --debug and report the server message"
 
 // policyErrors are the texts of a ValidatingAdmissionPolicy that could not evaluate the object; with
 // failurePolicy Fail the API server reports each one as "denied request" (k8s.io/apiserver CEL, D84, D99).
@@ -46,7 +48,7 @@ func Classify(err error) Outcome {
 	}
 	status, ok := errors.AsType[*apierrors.StatusError](err)
 	if !ok {
-		return Outcome{report.Error, "-", "could not send the probe: " + err.Error(), hintRetry}
+		return Outcome{report.Error, "-", "could not send the probe: " + err.Error(), HintRetry}
 	}
 	s := status.ErrStatus
 	msg := s.Message
@@ -55,7 +57,7 @@ func Classify(err error) Outcome {
 	switch {
 	case s.Code == http.StatusTooManyRequests || s.Code >= http.StatusInternalServerError:
 		// A throttled or failing server decides nothing, whatever its text says; a webhook may deny with 429 (D95).
-		return Outcome{report.Error, "-", full, hintRetry}
+		return Outcome{report.Error, "-", full, HintRetry}
 	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && slices.ContainsFunc(policyErrors, func(e string) bool { return strings.Contains(msg, e) }):
 		// A policy whose expression or binding fails also "denies" the request; it decided nothing (D84). First among the
 		// text rules: the error quotes the policy's own expression, which can contain any text, even "violates PodSecurity" (D102).

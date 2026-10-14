@@ -4,9 +4,14 @@
 # NoneOnDryRun, so no supported server can produce it; its text is k8s.io/apiserver's
 # NewDryRunUnsupportedErr format; quota-nodeports-full has the format of QA capture 006 (a
 # services.nodeports quota of 1 already used), with the generated probe name made up.
+# policy-error was captured on 2026-10-14 with a temporary policy whose expression reads a
+# missing annotation. throttled is the text client-go v0.37.1 builds for a 429 whose body is not
+# a Status object (k8s.io/apimachinery NewGenericServerResponse), checked against a plain-text 429.
 psa	403	Forbidden	"pods \"audit-tenant-probe-g54wp\" is forbidden: violates PodSecurity \"restricted:latest\": privileged (container \"probe\" must not set securityContext.privileged=true), allowPrivilegeEscalation != false (container \"probe\" must set securityContext.allowPrivilegeEscalation=false), unrestricted capabilities (container \"probe\" must set securityContext.capabilities.drop=[\"ALL\"]), runAsNonRoot != true (pod or container \"probe\" must set securityContext.runAsNonRoot=true), seccompProfile (pod or container \"probe\" must set securityContext.seccompProfile.type to \"RuntimeDefault\" or \"Localhost\")"
 webhook	400		"admission webhook \"validate.kyverno.svc-fail\" denied the request: \n\nresource Service/tenant-a/audit-tenant-probe-48zq4 was blocked due to the following policies \n\nrestrict-nodeport:\n  validate-nodeport: 'validation error: Services of type NodePort are not allowed. rule validate-nodeport failed at path /spec/type/'\n"
 policy	422	Invalid	"services \"audit-tenant-probe-q5zgg\" is forbidden: ValidatingAdmissionPolicy 'deny-nodeport' with binding 'deny-nodeport-binding' denied request: NodePort services are not allowed"
+policy-error	422	Invalid	"pods \"audit-tenant-probe-nn5c8\" is forbidden: ValidatingAdmissionPolicy 'capture-eval-error' with binding 'capture-eval-error-binding' denied request: expression 'object.metadata.annotations['approval'] == 'yes'' resulted in error: no such key: approval"
+throttled	429	TooManyRequests	"the server has received too many requests and has asked us to try again later (post pods)"
 dry-run	400	BadRequest	"admission webhook \"side-effects.example.com\" does not support dry run"
 quota-nodeports	403	Forbidden	"services \"audit-tenant-probe-w27db\" is forbidden: exceeded quota: qa-nodeports, requested: services.nodeports=1, used: services.nodeports=0, limited: services.nodeports=0"
 quota-nodeports-full	403	Forbidden	"services \"audit-tenant-probe-k2v9q\" is forbidden: exceeded quota: qa-nodeports, requested: services.nodeports=1, used: services.nodeports=1, limited: services.nodeports=1"

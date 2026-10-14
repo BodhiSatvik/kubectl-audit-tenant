@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,7 +51,7 @@ func TestAT05(t *testing.T) {
 			result(report.Skip, "-", "the compliant control Service was rejected, so the probes prove nothing: "+rejectAll, "the namespace rejects even a plain ClusterIP Service; fix that first"),
 			[]string{"control-service"}},
 		{"the NodePort Service is accepted", mayCreate, nil,
-			result(report.Fail, "-", "a NodePort Service was accepted in a dry run", "add a policy that rejects type: NodePort, or remove `create services` from the tenant role"),
+			result(report.Fail, "-", "a NodePort Service was accepted in a dry run", "add a policy that rejects type: NodePort on create and update, or remove `create`, `update` and `patch` on services from the tenant role"),
 			[]string{"control-service", "AT-05"}},
 		{"RBAC denies create and update but allows patch", map[string]string{"list nodes": denied, "create services": denied, "update services": denied, "patch services": allowed}, nil,
 			result(report.Skip, "-", "RBAC denies create services but allows patch services; an existing Service can be changed to type NodePort, so admission must be the fence and it was not exercised",
@@ -63,8 +64,6 @@ func TestAT05(t *testing.T) {
 				"not tested: ways to gain service creation inside the namespace (RoleBindings, service account tokens), grants limited to named Services (resourceNames), and operators that create Services for the tenant"), nil},
 		{"an identity with no rights", map[string]string{"list nodes": denied, "create services": denied, "update services": denied, "patch services": denied, "list pods": denied}, nil,
 			result(report.Skip, "-", "this identity may not even list pods in tenant-a, so an RBAC-only PASS would prove nothing", hintNoRights), nil},
-		{"the create services question fails", map[string]string{"list nodes": denied}, nil,
-			result(report.Error, "-", `could not ask "may I create services in tenant-a?": an error on the server ("no canned answer for create services") has prevented the request from succeeding (post selfsubjectaccessreviews.authorization.k8s.io)`, hintRequestFailed), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -81,6 +80,14 @@ func TestAT05(t *testing.T) {
 				t.Errorf("proved %v; a FAIL, and only a FAIL, is handed to the runner at once (D61)", proven)
 			}
 		})
+	}
+	// The create services question fails: the reason names the question and keeps the server's text; the rest of
+	// the reason is client-go's wording, which this test does not pin.
+	ps := &probeServer{}
+	got := at05(t.Context(), connectWith(t, &ssarServer{answers: map[string]string{"list nodes": denied}}, ps.routes()), at05Spec(), ignore)
+	if len(got) != 1 || got[0].Verdict != report.Error || got[0].Hint != hintRequestFailed || len(ps.sent) != 0 ||
+		!strings.HasPrefix(got[0].Reason, `could not ask "may I create services in tenant-a?": `) || !strings.Contains(got[0].Reason, "no canned answer for create services") {
+		t.Errorf("a failed create services question = %+v after %v, want ERROR naming the question and the server text, and no probe", got, ps.sent)
 	}
 }
 
