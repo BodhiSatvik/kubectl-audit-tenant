@@ -57,15 +57,15 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: PASS and FAIL unit cases per check; reason texts golden.
   - Verify: `go test ./internal/checks/ -run 'AT02|AT03'`.
   - Depends on: B6. Files: `internal/checks/at02.go`, `internal/checks/at03.go`, tests.
-- [x] **B12 Probe builders and sizing.** Control pod (restricted-compliant), mutators (AT-04.1 in two forms: `privileged: true` with `allowPrivilegeEscalation` unset and `true`; AT-04.5 `allowPrivilegeEscalation: true` only; D70, D78), sizes from the LimitRange via the cache (defaults → none; min only → min; none or 403 → 1m/1Mi), ClusterIP control Service and NodePort probe Service, labels and generateName.
+- [x] **B12 Probe builders and sizing.** Control pod (restricted-compliant), mutators (AT-04.1 in two forms: `privileged: true` with `allowPrivilegeEscalation` unset and `true`; AT-04.5 `allowPrivilegeEscalation: true` only; D70, D78), sizes from the LimitRange via the cache (always explicit: 1m/1Mi raised to the highest LimitRange min; 1m/1Mi on a 403; any other list error is ERROR; D85), ClusterIP control Service and NodePort probe Service, labels and generateName.
   - AC: builders produce the exact fields per DESIGN.md; sizing table test for the four LimitRange cases; objects pass `kubectl apply --dry-run=server` on kind in B16.
   - Verify: `go test ./internal/probe/ -run 'Build|Size'`.
   - Depends on: B4. Files: `internal/probe/pod.go`, `internal/probe/service.go`, `internal/probe/size.go`, tests.
-- [x] **B13 Rejection classifier.** Ordered rule table: PSA, webhook denied, ValidatingAdmissionPolicy denied, no dry-run support, quota or LimitRange text, HTTP 400/422, other (full text, or "HTTP <code> <reason>" when empty); accepted → FAIL; layer vocabulary incl. `admission (policy: name)`.
+- [x] **B13 Rejection classifier.** Ordered rule table: webhook denied, PSA, ValidatingAdmissionPolicy error or denied, no dry-run support, NodePort quota, quota or LimitRange text (every text rule needs a 4xx), HTTP 400/422, other (D76, D82, D84) (full text, or "HTTP <code> <reason>" when empty); accepted → FAIL; layer vocabulary incl. `admission (policy: name)`.
   - AC: table test with one real server string per rule and the empty-message case; rule order test (webhook before 400); coverage of `internal/probe` at least 90%.
   - Verify: `go test ./internal/probe/ -run Classify`; `hack/coverage-gate.sh`.
   - Depends on: B12. Files: `internal/probe/classify.go`, `internal/probe/classify_test.go`, `internal/probe/testdata/messages.txt`.
-- [x] **B14 AT-04.** Order per DESIGN.md: SSAR create pods; denied → create/update/patch SSARs on the seven controller kinds, ephemeral containers and four `/scale` subresources (D66, D77), then the no-rights anchor (D80) → PASS (RBAC) or SKIP; allowed → control pod → five probes → classifier; control rejected → five SKIPs; the control runs only when an AT-04 sub-check is selected.
+- [x] **B14 AT-04.** Order per DESIGN.md: SSAR create pods; denied → create/update/patch SSARs on the seven controller kinds, ephemeral containers and four `/scale` subresources (D66, D77), then the no-rights anchor (D80) → PASS (RBAC) or SKIP; allowed → control pod → six probes (AT-04.1 in two forms, D78) → classifier; control rejected → five SKIPs; the control runs only when an AT-04 sub-check is selected.
   - AC: unit cases: allowed with PSA rejections; all denied; denied with `update deployments` allowed; control rejected by quota; `--checks AT-04.2` alone.
   - Verify: `go test ./internal/checks/ -run AT04`.
   - Depends on: B13. Files: `internal/checks/at04.go`, tests.

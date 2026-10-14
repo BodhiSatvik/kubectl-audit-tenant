@@ -5,17 +5,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// NamePrefix starts the name the API server generates for every probe object; an answer
+// without it did not come from the API server.
+const NamePrefix = "audit-tenant-probe-"
+
 // meta marks every probe object, so an audit log reader can tell it apart (DESIGN.md section 5).
 func meta() metav1.ObjectMeta {
 	return metav1.ObjectMeta{
-		GenerateName: "audit-tenant-probe-",
+		GenerateName: NamePrefix,
 		Labels:       map[string]string{"app.kubernetes.io/managed-by": "audit-tenant"},
 		Annotations:  map[string]string{"audit-tenant.dev/probe": "true"},
 	}
 }
 
 // ControlPod is a pod that PSA restricted accepts: the baseline every dangerous probe changes
-// in exactly one way. Dry-run never pulls the image.
+// by one dangerous capability (the privileged forms also touch allowPrivilegeEscalation, D70,
+// D78). Dry-run never pulls the image.
 func ControlPod(res corev1.ResourceRequirements) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: meta(),

@@ -155,12 +155,18 @@ func TestClassifyAnAdmissionDenialWithAServerErrorIsAnError(t *testing.T) {
 	}
 }
 
-func TestClassifyEveryPassRuleNeedsA4xx(t *testing.T) {
+func TestClassifyEveryTextRuleNeedsA4xx(t *testing.T) {
 	// D82, D84(5): a 5xx answer that quotes admission or quota text is a failure, not a fence.
 	for _, msg := range []string{
 		`pods "audit-tenant-probe-x" is forbidden: violates PodSecurity "restricted:latest": privileged`,
 		`services "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'deny-nodeport' with binding 'b' denied request: no`,
 		`services "audit-tenant-probe-x" is forbidden: exceeded quota: q, requested: services.nodeports=1, used: services.nodeports=0, limited: services.nodeports=0`,
+		// Added by the /ship test coverage audit, pass 1 (Phase 2).
+		// Value: protects=a 5xx quoting quota, LimitRange or dry-run text is ERROR (exit 2), never a SKIP (exit 0 without --fail-on-skip);
+		// fails_when=the 4xx guard is dropped from a SKIP rule; why_new=the rows above are PASS-rule texts only; seam=none; no_claim=the hint each ERROR carries
+		`pods "audit-tenant-probe-x" is forbidden: exceeded quota: q, requested: limits.cpu=5, used: limits.cpu=0, limited: limits.cpu=1`,
+		`pods "audit-tenant-probe-x" is forbidden: minimum cpu usage per Container is 100m, but request is 1m`,
+		`admission webhook "side-effects.example.com" does not support dry run`,
 	} {
 		if got := Classify(statusError(http.StatusInternalServerError, "InternalError", msg)); got.Verdict != report.Error {
 			t.Errorf("HTTP 500 %q = %+v, want ERROR", msg, got)

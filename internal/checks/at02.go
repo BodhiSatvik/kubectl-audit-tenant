@@ -22,6 +22,7 @@ func at02(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 	if stop {
 		return res
 	}
-	return rbacPass(ctx, c, spec, []report.Result{spec.result(spec.Results[0], report.Pass, "RBAC",
-		"no general get, list or watch on secrets in "+other+" (named-secret grants are not tested)"+explicitNote(explicit), "")})
+	pass := spec.result(spec.Results[0], report.Pass, "RBAC", "no general get, list or watch on secrets in "+other+explicitNote(explicit), "")
+	pass.Note = "not tested: grants limited to named secrets (resourceNames)" // D86, D92
+	return rbacPass(ctx, c, spec, []report.Result{pass})
 }

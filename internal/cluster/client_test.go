@@ -1,6 +1,7 @@
 package cluster_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/klog/v2"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
@@ -252,6 +254,46 @@ func TestSSARAnEchoedRequestHasNoVerdict(t *testing.T) {
 	}
 	if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.Attributes{Verb: "get", Resource: "secrets", Namespace: "kube-system"}); !errors.Is(err, cluster.ErrNoVerdict) {
 		t.Errorf("SSAR behind an echoing proxy = %v, %v; want ErrNoVerdict, never a denial", r, err)
+	}
+}
+
+// Added by the /ship pre-landing review (Phase 2).
+// Value: protects=an answer whose verdict key differs in letter case, or is null, is ErrNoVerdict, never a denial (D93); fails_when=the presence check matches keys
+// case-insensitively again; why_new=the tests above cover a missing status only; seam=none; no_claim=how a real proxy rewrites keys
+func TestSSARAVerdictTheAPIDecoderCannotReadIsNotADenial(t *testing.T) {
+	for _, status := range []string{`"status":{"Allowed":true}`, `"Status":{"allowed":true}`, `"status":{"allowed":null}`} {
+		routes := happy()
+		routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = testutil.JSON(http.StatusCreated, `{"spec":{"resourceAttributes":{"verb":"list","resource":"nodes"}},`+status+`}`)
+		_, c, err := connect(t, routes, opts)
+		if err != nil {
+			t.Fatalf("%s: Connect() error = %v", status, err)
+		}
+		if r, err := c.SelfSubjectAccessReview(t.Context(), cluster.FirstQuestion); !errors.Is(err, cluster.ErrNoVerdict) {
+			t.Errorf("%s: SSAR = %v, %v; want ErrNoVerdict, never a denial", status, r, err)
+		}
+	}
+}
+
+// Added by the /ship pre-landing review (Phase 2).
+// Value: protects=API Warning headers (a PSA warn label) never reach stderr, which carries only --debug output (D90); fails_when=client-go's default
+// warning handler is back; why_new=CLI tests capture streams.ErrOut, not klog; seam=none; no_claim=what --debug prints
+func TestAPIWarningsNeverReachStderr(t *testing.T) {
+	var logged bytes.Buffer
+	klog.LogToStderr(false)
+	klog.SetOutput(&logged)
+	t.Cleanup(func() { klog.LogToStderr(true) })
+	routes := happy()
+	ssar := routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"]
+	routes["POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"] = func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Warning", `299 - "would violate PodSecurity \"restricted:latest\""`)
+		ssar(w, r)
+	}
+	if _, _, err := connect(t, routes, opts); err != nil {
+		t.Fatal(err)
+	}
+	klog.Flush()
+	if logged.Len() != 0 {
+		t.Errorf("an API warning was logged to stderr: %q", logged.String())
 	}
 }
 

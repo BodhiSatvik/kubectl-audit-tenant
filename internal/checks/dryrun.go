@@ -44,7 +44,7 @@ func notDryRun(spec Spec, m metav1.Object, what string) []report.Result {
 	case m.GetResourceVersion() != "":
 		return spec.all(report.Error, "-", fmt.Sprintf("the server stored the %s %s: it did not honor dryRun=All, so the check stopped; delete that object", what, m.GetName()),
 			"something between you and the API server drops dryRun=All (a proxy or gateway); run against the API server directly")
-	case !strings.HasPrefix(m.GetName(), "audit-tenant-probe-"):
+	case !strings.HasPrefix(m.GetName(), probe.NamePrefix):
 		return spec.all(report.Error, "-", "the answer to the dry-run "+what+" has no generated name, so it did not come from the API server", hintNotAPIServer)
 	}
 	return nil

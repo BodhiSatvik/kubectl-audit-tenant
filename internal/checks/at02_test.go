@@ -13,8 +13,9 @@ func at02Spec() Spec { return Registry[1] }
 func TestAT02(t *testing.T) {
 	base := report.Result{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, MTB: "MTB-PL1-CC-TI-2", Severity: report.High, Layer: "RBAC"}
 	pass, fail, explicit := base, base, base
-	pass.Verdict, pass.Reason = report.Pass, "no general get, list or watch on secrets in kube-system (named-secret grants are not tested)"
-	explicit.Verdict, explicit.Reason = report.Pass, pass.Reason+" (explicit deny: get secrets in kube-system)"
+	pass.Verdict, pass.Reason = report.Pass, "no general get, list or watch on secrets in kube-system"
+	pass.Note = "not tested: grants limited to named secrets (resourceNames)" // D92: in the note, which the checklist never cuts
+	explicit.Verdict, explicit.Reason, explicit.Note = report.Pass, pass.Reason+" (explicit deny: get secrets in kube-system)", pass.Note
 	fail.Verdict, fail.Reason = report.Fail, "RBAC allows list secrets in kube-system"
 	fail.Hint = "remove the RoleBinding or ClusterRoleBinding that lets this identity read secrets in kube-system; a tenant reads secrets only in its own namespace"
 	watch := fail

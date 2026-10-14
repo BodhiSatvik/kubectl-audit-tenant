@@ -81,6 +81,8 @@ func Connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, error) {
 	cfg = rest.CopyConfig(cfg)
 	cfg.QPS, cfg.Burst = 50, 300 // kubectl's values; client-go's defaults would throttle the run
+	// client-go would print API warnings (a PSA warn label, a policy's Warn action) to stderr; stderr is only --debug output (D90).
+	cfg.WarningHandlerWithContext = rest.NoWarnings{}
 	// JSON on the wire, so --debug can print the SSAR and probe answers as text.
 	cfg.ContentType, cfg.AcceptContentTypes = runtime.ContentTypeJSON, runtime.ContentTypeJSON
 	base, _, err := rest.DefaultServerUrlFor(cfg)
@@ -140,6 +142,7 @@ func (c *Client) SelfSubjectAccessReview(ctx context.Context, attrs Attributes) 
 		return first, nil
 	}
 	if attrs == c.AnchorQuestion() {
+		// Not sync.OnceValues: the request must end at the caller's deadline, not the run's (D94).
 		c.anchorMu.Lock()
 		defer c.anchorMu.Unlock()
 		if c.anchor != nil {
@@ -173,12 +176,13 @@ func (c *Client) ask(ctx context.Context, attrs Attributes) (*authzv1.SelfSubjec
 		return nil, err
 	}
 	raw, _ := res.Raw()
-	var verdict struct {
-		Status struct {
-			Allowed *bool `json:"allowed"`
-		} `json:"status"`
+	// Exact keys, as the API decoder reads them: encoding/json would also match "Status" or
+	// "Allowed", which the decode above ignores, so a grant would read as a denial (D93).
+	var top, status map[string]json.RawMessage
+	if json.Unmarshal(raw, &top) != nil || json.Unmarshal(top["status"], &status) != nil {
+		return nil, ErrNoVerdict
 	}
-	if json.Unmarshal(raw, &verdict) != nil || verdict.Status.Allowed == nil {
+	if v := string(status["allowed"]); v != "true" && v != "false" {
 		return nil, ErrNoVerdict
 	}
 	return answer, nil

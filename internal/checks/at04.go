@@ -2,6 +2,8 @@ package checks
 
 import (
 	"context"
+	"errors"
+	"net/http"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -89,6 +91,12 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 			if err != nil && ctx.Err() != nil {
 				return out // interrupted or out of time: the runner says so for the rest
 			}
+			if unavailable(err) { // it would repeat for every later probe, each with client-go's retries, and spend the --timeout (D91)
+				rest := spec
+				rest.Results = spec.Results[i:]
+				o := probe.Classify(err)
+				return append(out, rest.all(report.Error, "-", o.Reason, o.Hint)...)
+			}
 			if err == nil {
 				rest := spec
 				rest.Results = spec.Results[i:]
@@ -109,6 +117,16 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		out = append(out, res)
 	}
 	return out
+}
+
+// unavailable reports an answer that says nothing about the probe: a failed send, 429 Too Many
+// Requests or a 5xx.
+func unavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	s, ok := errors.AsType[*apierrors.StatusError](err)
+	return !ok || s.ErrStatus.Code == http.StatusTooManyRequests || s.ErrStatus.Code >= http.StatusInternalServerError
 }
 
 // at04Controllers decides AT-04 when RBAC denies create pods: a controller the tenant may create

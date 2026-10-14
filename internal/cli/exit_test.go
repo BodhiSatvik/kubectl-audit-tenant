@@ -76,6 +76,23 @@ func TestErrorExitsTwoWithNoErrorLine(t *testing.T) {
 	}
 }
 
+// Added by the /ship test coverage audit, pass 1 (Phase 2).
+// Value: protects=a SKIP exits 0, and exits 1 with --fail-on-skip (pipelines must not accept an unproven namespace); fails_when=the flag stops reaching report.Summarize;
+// why_new=only report tests set FailOnSkip; Phase 1 had no check that could SKIP; seam=none; no_claim=the summary wording (checklist goldens own it)
+func TestFailOnSkipTurnsASkipIntoExitOne(t *testing.T) {
+	for _, tt := range []struct {
+		flags []string
+		want  int
+	}{{nil, 0}, {[]string{"--fail-on-skip"}, 1}} {
+		// Startup's question and create services are denied, update services is allowed: AT-05 is SKIP.
+		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
+		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05"}, tt.flags...)...)
+		if code != tt.want || !regexp.MustCompile(`(?m)^SKIP +AT-05 `).MatchString(stdout) {
+			t.Errorf("flags %v: exit %d, stderr %q; want exit %d with AT-05 SKIP:\n%s", tt.flags, code, stderr, tt.want, stdout)
+		}
+	}
+}
+
 // Added by the /ship test coverage audit, pass 1.
 // Value: protects=--timeout bounds a run whose API server stops answering: partial report, ERROR "not run: timeout after 1s", exit 2;
 // fails_when=the CLI stops applying --timeout to the run context or passes another value to the runner; why_new=deadline tests build their own context, not the flag's;

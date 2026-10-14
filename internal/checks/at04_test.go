@@ -61,6 +61,14 @@ func TestAT04PassWhenAdmissionRejectsEveryProbe(t *testing.T) {
 	if want := []string{"control", "AT-04.1", "AT-04.1", "AT-04.2", "AT-04.3", "AT-04.4", "AT-04.5"}; !slices.Equal(ps.sent, want) {
 		t.Errorf("sent %v, want %v: the control first, then one probe per result, AT-04.1 in both forms", ps.sent, want)
 	}
+	// Added by the /ship test coverage audit, pass 1 (Phase 2).
+	// Value: protects=each admission PASS names what its probe did not test (D86); fails_when=at04 drops a PASS note or gives a result another result's note;
+	// why_new=no unit test or e2e line reads AT-04 notes; seam=none; no_claim=the full note wording, or AT-04.3 (it has no note)
+	for id, untested := range map[string]string{"AT-04.1": "initContainers", "AT-04.2": "allowed path prefixes", "AT-04.4": "hostPort", "AT-04.5": "initContainers"} {
+		if i := slices.Index(at04IDs, id); !strings.Contains(got[i].Note, untested) {
+			t.Errorf("%s note = %q, want it to name what was not tested (%s)", id, got[i].Note, untested)
+		}
+	}
 }
 
 func TestAT04AnAcceptedProbeIsAFailProvedAtOnce(t *testing.T) {
@@ -101,6 +109,14 @@ func TestAT04RBACDeniesPodsAndEveryController(t *testing.T) {
 	}
 	if len(got) != 5 || len(ps.sent) != 0 || len(ssar.asked) != 1+1+31+1 {
 		t.Errorf("%d results, %d probes, %d questions; want 5 results, no probe, startup + create pods + 31 + list pods", len(got), len(ps.sent), len(ssar.asked))
+	}
+	// Added by the /ship test coverage audit, pass 1 (Phase 2).
+	// Value: protects=every RBAC-only AT-04 PASS carries the note naming the pod paths it did not test (D86); fails_when=the note loop is dropped or skips a result;
+	// why_new=this test checked the reason only; the e2e has no RBAC-only AT-04 run; seam=none; no_claim=which pod paths the note lists
+	for _, r := range got {
+		if r.Note != at04RBACNote {
+			t.Errorf("%s note = %q, want the not-tested note of an RBAC-only PASS", r.ID, r.Note)
+		}
 	}
 }
 
@@ -427,6 +443,7 @@ func TestAT04StopsAResultAtItsFirstFail(t *testing.T) {
 func TestAT04OneResultTakesTheWorstOfItsForms(t *testing.T) {
 	// D78, D84: the verdict is the worst of the two privileged forms, whatever their order.
 	unread := testutil.Status(http.StatusConflict, metav1.StatusReasonConflict, "")
+	noDryRun := testutil.Status(http.StatusBadRequest, metav1.StatusReasonBadRequest, `admission webhook "privileged-guard.example.com" does not support dry run`) // a webhook that matches privileged pods only
 	specs, err := Select([]string{"AT-04.1"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -441,6 +458,14 @@ func TestAT04OneResultTakesTheWorstOfItsForms(t *testing.T) {
 		{"unreadable, then rejected", unread, rejectProbe, report.Error},
 		{"rejected, then unreadable", rejectProbe, unread, report.Error},
 		{"both rejected", rejectProbe, rejectProbe, report.Pass},
+		// Added by the /ship test coverage audit, pass 1 (Phase 2).
+		// Value: protects=AT-04.1 keeps the worse form: a SKIP beats a PASS, a proven FAIL beats an ERROR (D78, D84); fails_when=the worse map drops or reorders Skip or Fail;
+		// why_new=the rows above rank only FAIL and ERROR against PASS; seam=none; no_claim=the reason text of the kept form
+		{"rejected, then a webhook that cannot dry-run", rejectProbe, noDryRun, report.Skip},
+		{"unreadable, then accepted", unread, acceptProbe, report.Fail},
+		// Added by the /ship pre-landing review (Phase 2): the two orders the rows above miss, a FAIL over a SKIP and an ERROR over a SKIP.
+		{"a webhook that cannot dry-run, then accepted", noDryRun, acceptProbe, report.Fail},
+		{"a webhook that cannot dry-run, then unreadable", noDryRun, unread, report.Error},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": nth(tt.first, tt.second)}}
@@ -449,6 +474,57 @@ func TestAT04OneResultTakesTheWorstOfItsForms(t *testing.T) {
 				t.Errorf("AT-04.1 = %+v, want %s", got, tt.want)
 			}
 		})
+	}
+}
+
+// Added by the /ship pre-landing review (Phase 2).
+// Value: protects=a 429 or 5xx probe answer ends AT-04: no later probe, every unfinished result ERROR (D91); fails_when=the loop goes on probing, so client-go's
+// retries repeat per probe; why_new=the 409 test above expects the run to go on; seam=none; no_claim=client-go's own retry count (no Retry-After here)
+func TestAT04StopsAtAnAnswerThatWouldRepeat(t *testing.T) {
+	for _, code := range []int32{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+		ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": testutil.Status(code, metav1.StatusReasonServiceUnavailable, "")}}
+		got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), at04Spec(), ignore)
+		if len(got) != 5 || slices.ContainsFunc(got, func(r report.Result) bool { return r.Verdict != report.Error || r.Hint == "" }) {
+			t.Errorf("HTTP %d: results = %+v, want five ERRORs with a hint", code, got)
+		}
+		if want := []string{"control", "AT-04.1"}; !slices.Equal(ps.sent, want) {
+			t.Errorf("HTTP %d: sent %v, want %v: no probe after an answer that would repeat", code, ps.sent, want)
+		}
+	}
+}
+
+// Added by the /ship pre-landing review (Phase 2).
+// Value: protects=AT-04.1 sends both privileged forms, escalation unset then true (D78); fails_when=a form is dropped or duplicated, so a policy that rejects only one form gives a false PASS;
+// why_new=other tests pick answers by call order and never read the probe body; seam=none; no_claim=how a real policy treats either form (e2e: PSA rejects both)
+func TestAT04SendsBothPrivilegedForms(t *testing.T) {
+	var mu sync.Mutex
+	var forms []string
+	routes := map[string]http.HandlerFunc{"POST /api/v1/namespaces/tenant-a/pods": func(w http.ResponseWriter, r *http.Request) {
+		var p corev1.Pod
+		_ = json.NewDecoder(r.Body).Decode(&p)
+		sc := p.Spec.Containers[0].SecurityContext
+		if sc == nil || sc.Privileged == nil {
+			acceptProbe(w, r) // the control
+			return
+		}
+		form := "escalation unset"
+		if e := sc.AllowPrivilegeEscalation; e != nil && *e {
+			form = "escalation true"
+		} else if e != nil {
+			form = "escalation false"
+		}
+		mu.Lock()
+		forms = append(forms, form)
+		mu.Unlock()
+		rejectProbe(w, r)
+	}}
+	specs, err := Select([]string{"AT-04.1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, routes), specs[0], ignore)
+	if want := []string{"escalation unset", "escalation true"}; !slices.Equal(forms, want) {
+		t.Errorf("privileged forms sent = %v, want %v", forms, want)
 	}
 }
 
