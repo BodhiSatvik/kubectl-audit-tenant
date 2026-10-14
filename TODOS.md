@@ -90,7 +90,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: table tests: two policies, one combined policy, inline-DNS egress (FAIL with the two-policy hint), privileged label, missing label with AT-04 admission note.
   - Verify: `go test ./internal/checks/ -run 'AT08|AT09'`.
   - Depends on: B6. Files: `internal/checks/at08.go`, `internal/checks/at09.go`, tests.
-- [ ] **B19 Headroom math.** `internal/headroom`: pod request and limit (pod-level `spec.resources` first; limit-only counts as request; sidecar rule; LimitRange defaults, else 0 with a note), replicas (HPA matched by group, kind and name → maxReplicas), peak (RollingUpdate surge absolute or percent rounded up, Recreate, StatefulSet), quota comparison per key with aliases, shortfall text.
+- [x] **B19 Headroom math.** `internal/headroom`: pod request and limit (pod-level `spec.resources` first; limit-only counts as request; sidecar rule; LimitRange defaults, else 0 with a note), replicas (HPA matched by group, kind and name → maxReplicas), peak (RollingUpdate surge absolute or percent rounded up, Recreate, StatefulSet), quota comparison per key with aliases, shortfall text.
   - AC: table tests incl. the fixture (5 pods, 0.5 cpu / 640Mi requests, 2.5 cpu / 2.5Gi limits); percent rounding; sidecar overlap; limit-only; pod-level resources; coverage at least 80%.
   - Verify: `go test ./internal/headroom/...`.
   - Depends on: B1. Files: `internal/headroom/pod.go`, `internal/headroom/peak.go`, `internal/headroom/compare.go`, tests.
