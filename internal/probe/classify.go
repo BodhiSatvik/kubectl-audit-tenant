@@ -51,19 +51,20 @@ func Classify(err error) Outcome {
 	s := status.ErrStatus
 	msg := s.Message
 	full := cmp.Or(msg, strings.TrimSpace(fmt.Sprintf("HTTP %d %s", s.Code, s.Reason)))
-	decided := s.Code >= 400 // every text rule needs a 4xx: a 429 or 5xx has returned above (D82, D84, D95)
+	decided := s.Code >= 400 // every text rule needs a 4xx; a 429 or 5xx is handled by the first case (D82, D84, D95)
 	switch {
 	case s.Code == http.StatusTooManyRequests || s.Code >= http.StatusInternalServerError:
 		// A throttled or failing server decides nothing, whatever its text says; a webhook may deny with 429 (D95).
 		return Outcome{report.Error, "-", full, hintRetry}
+	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && slices.ContainsFunc(policyErrors, func(e string) bool { return strings.Contains(msg, e) }):
+		// A policy whose expression or binding fails also "denies" the request; it decided nothing (D84). First among the
+		// text rules: the error quotes the policy's own expression, which can contain any text, even "violates PodSecurity" (D102).
+		return Outcome{report.Error, "-", full, "the ValidatingAdmissionPolicy could not evaluate the probe, so it decides nothing; check the policy's expressions, parameters and binding"}
 	case decided && strings.Contains(msg, "admission webhook") && strings.Contains(msg, "denied the request"): // the API server's phrase; "denied" alone can be part of a webhook name
 		// Before PSA: a webhook such as Kyverno's podSecurity rule quotes the PSA text, but it decided.
 		return Outcome{report.Pass, "admission (webhook: " + between(msg, `admission webhook "`, `"`) + ")", from(msg, "admission webhook"), ""}
 	case decided && strings.Contains(msg, "violates PodSecurity"):
 		return Outcome{report.Pass, "admission (PSA)", from(msg, "violates PodSecurity"), ""}
-	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && slices.ContainsFunc(policyErrors, func(e string) bool { return strings.Contains(msg, e) }):
-		// A policy whose expression or binding fails also "denies" the request; it decided nothing (D84).
-		return Outcome{report.Error, "-", full, "the ValidatingAdmissionPolicy could not evaluate the probe, so it decides nothing; check the policy's expressions, parameters and binding"}
 	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && strings.Contains(msg, "denied request"):
 		return Outcome{report.Pass, "admission (policy: " + between(msg, "ValidatingAdmissionPolicy '", "'") + ")", from(msg, "ValidatingAdmissionPolicy"), ""}
 	case decided && (strings.Contains(msg, "does not support dry run") || strings.Contains(msg, "sideEffects")):

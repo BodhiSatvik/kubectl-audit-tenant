@@ -452,6 +452,25 @@ func TestAnInterruptedControlLeavesTheResultsToTheRunner(t *testing.T) {
 	}
 }
 
+// Added by the /ship pre-landing review, final pass (Phase 2).
+// Value: protects=once AT-04 finds a stored object (dryRun=All dropped), AT-05 sends no create at all (D101); fails_when=the latch is dropped and AT-05
+// sends its control Service through the same connection; why_new=each check stopped only itself; seam=none; no_claim=which proxies drop dryRun
+func TestAStoredObjectStopsEveryLaterCreate(t *testing.T) {
+	stored := testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-h0st1","resourceVersion":"4712"}}`)
+	ps := &probeServer{answers: map[string]http.HandlerFunc{"control": stored}}
+	ssar := &ssarServer{answers: map[string]string{"list nodes": denied, "create pods": allowed, "create services": allowed}}
+	got := Run(t.Context(), connectWith(t, ssar, ps.routes()), []Spec{at04Spec(), at05Spec()}, time.Minute)
+	at05 := got[len(got)-1]
+	if at05.ID != "AT-05" || at05.Verdict != report.Error || !strings.Contains(at05.Reason, "no further create") || at05.Hint == "" {
+		t.Errorf("AT-05 = %+v, want ERROR: no create after a stored object", at05)
+	}
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	if !slices.Equal(ps.sent, []string{"control"}) {
+		t.Errorf("sent %v, want only the control pod: AT-05 must not send its control Service", ps.sent)
+	}
+}
+
 func TestAT04StopsAResultAtItsFirstFail(t *testing.T) {
 	// D84(2): once a form is accepted, the FAIL is proven; the other form would be one more dangerous request.
 	ps := &probeServer{}

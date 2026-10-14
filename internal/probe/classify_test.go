@@ -183,7 +183,7 @@ func TestClassifyEveryTextRuleNeedsA4xx(t *testing.T) {
 		`services "audit-tenant-probe-x" is forbidden: exceeded quota: q, requested: services.nodeports=1, used: services.nodeports=0, limited: services.nodeports=0`,
 		// Added by the /ship test coverage audit, pass 1 (Phase 2).
 		// Value: protects=a 5xx quoting quota, LimitRange or dry-run text is ERROR (exit 2), never a SKIP (exit 0 without --fail-on-skip);
-		// fails_when=a 5xx reaches a SKIP rule (the D95 case or the 4xx guard is dropped); why_new=the rows above are PASS-rule texts only; seam=none; no_claim=the hint each ERROR carries
+		// fails_when=the D95 case is dropped, so a 5xx reaches a SKIP rule; why_new=the rows above are PASS-rule texts only; seam=none; no_claim=the hint each ERROR carries
 		`pods "audit-tenant-probe-x" is forbidden: exceeded quota: q, requested: limits.cpu=5, used: limits.cpu=0, limited: limits.cpu=1`,
 		`pods "audit-tenant-probe-x" is forbidden: minimum cpu usage per Container is 100m, but request is 1m`,
 		`admission webhook "side-effects.example.com" does not support dry run`,
@@ -206,6 +206,23 @@ func TestClassifyAPolicyMessageWithoutADenialDecidesNothing(t *testing.T) {
 	}
 }
 
+// Added by the /ship pre-landing review, final pass (Phase 2).
+// Value: protects=an error status with a code below 400 (a 2xx Status Failure body, or no code) decides nothing, whatever its text; fails_when=the 4xx
+// guard (decided) is dropped, so a non-API-server answer quoting PSA or a webhook reads as a PASS; why_new=the 4xx tests send 500, which D95 catches first;
+// seam=none; no_claim=which proxies send such answers
+func TestClassifyACodeBelow400DecidesNothing(t *testing.T) {
+	for _, code := range []int32{0, http.StatusCreated} {
+		for _, msg := range []string{
+			`pods "audit-tenant-probe-x" is forbidden: violates PodSecurity "restricted:latest": privileged`,
+			`admission webhook "validate.kyverno.svc-fail" denied the request: no`,
+		} {
+			if got := Classify(statusError(code, "", msg)); got.Verdict == report.Pass {
+				t.Errorf("HTTP %d %q = %+v, want no PASS: only a 4xx answer is a decision", code, msg, got)
+			}
+		}
+	}
+}
+
 func TestClassifyAPolicyThatCannotEvaluateIsAnError(t *testing.T) {
 	// D84(4): a ValidatingAdmissionPolicy expression or binding error also says "denied request" (HTTP 422).
 	for _, msg := range []string{
@@ -216,6 +233,8 @@ func TestClassifyAPolicyThatCannotEvaluateIsAnError(t *testing.T) {
 		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: compilation error: undeclared reference to 'objekt'`,
 		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: runtime cost could not be calculated for expression: x, no further expression will be run`,
 		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: unexpected internal error compiling expression`,
+		// D102: the error quotes the policy's expression, which may contain the PSA phrase; the policy still decided nothing.
+		`pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'no-privileged' with binding 'b' denied request: expression 'object.metadata.annotations['approval'] == 'violates PodSecurity'' resulted in error: no such key: approval`,
 	} {
 		if got := Classify(statusError(http.StatusUnprocessableEntity, "Invalid", msg)); got.Verdict != report.Error || !strings.Contains(got.Hint, "ValidatingAdmissionPolicy") {
 			t.Errorf("Classify(%q) = %+v, want ERROR with a policy hint, never a PASS", msg, got)

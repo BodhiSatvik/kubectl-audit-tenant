@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	authzv1 "k8s.io/api/authorization/v1"
@@ -50,6 +51,9 @@ type Client struct {
 	// that read returned (a 403 is kept for AT-09).
 	NamespaceObject *corev1.Namespace
 	NamespaceErr    error
+	// Stored is set when a dry-run create came back stored (dryRun=All was dropped on the way); no
+	// check sends a create after it (D101).
+	Stored atomic.Bool
 
 	firstSSAR   *authzv1.SelfSubjectAccessReview // startup answer, reused once by AT-01
 	anchorMu    sync.Mutex

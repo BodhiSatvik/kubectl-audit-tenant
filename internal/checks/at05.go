@@ -34,12 +34,15 @@ func at05(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 }
 
 func at05Probe(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result)) []report.Result {
+	if res := storedEarlier(c, spec); res != nil {
+		return res
+	}
 	services := c.Clientset.CoreV1().Services(c.Namespace)
 	control, err := services.Create(ctx, probe.ControlService(), dryRun)
 	if err != nil {
 		return controlFailed(ctx, spec, err, "Service", "the namespace rejects even a plain ClusterIP Service; fix that first")
 	}
-	if res := notDryRun(spec, control, "control Service"); res != nil {
+	if res := notDryRun(c, spec, control, "control Service"); res != nil {
 		return res
 	}
 	created, err := services.Create(ctx, probe.NodePortService(), dryRun)
@@ -47,7 +50,7 @@ func at05Probe(ctx context.Context, c *cluster.Client, spec Spec, prove func(rep
 		return nil
 	}
 	if err == nil {
-		if stored := notDryRun(spec, created, "probe Service"); stored != nil {
+		if stored := notDryRun(c, spec, created, "probe Service"); stored != nil {
 			return stored // D84
 		}
 	}

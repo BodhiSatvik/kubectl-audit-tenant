@@ -71,13 +71,16 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		}
 		return spec.all(report.Error, "-", "could not list limitranges to size the probes: "+err.Error(), hintRequestFailed)
 	}
+	if res := storedEarlier(c, spec); res != nil {
+		return res
+	}
 	size := probe.Size(ranges) // a 403 leaves ranges nil: 1m and 1Mi
 	pods := c.Clientset.CoreV1().Pods(ns)
 	control, err := pods.Create(ctx, probe.ControlPod(size), dryRun)
 	if err != nil {
 		return controlFailed(ctx, spec, err, "pod", "the namespace rejects even a compliant pod; fix that first")
 	}
-	if res := notDryRun(spec, control, "control pod"); res != nil {
+	if res := notDryRun(c, spec, control, "control pod"); res != nil {
 		return res
 	}
 	var out []report.Result
@@ -100,7 +103,7 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 			if err == nil {
 				rest := spec
 				rest.Results = spec.Results[i:]
-				if stored := notDryRun(rest, created, "probe pod"); stored != nil {
+				if stored := notDryRun(c, rest, created, "probe pod"); stored != nil {
 					return append(out, stored...) // no probe after one the server kept (D84)
 				}
 			}

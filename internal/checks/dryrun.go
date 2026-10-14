@@ -20,10 +20,23 @@ var dryRun = metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}}
 // hintNoRights explains an RBAC-only PASS refused because the identity has no rights at all.
 const hintNoRights = "check -n, --as and --as-group: the identity may be misspelled, miss its identity-provider prefix, or have no role in this namespace"
 
+// hintDryRunDropped explains a server that stored a dry-run create.
+const hintDryRunDropped = "something between you and the API server drops dryRun=All (a proxy or gateway); run against the API server directly"
+
+// storedEarlier stops a check before its first create when an earlier answer in this run was
+// stored: the connection does not honor dryRun=All, so any further create could be real (D101).
+func storedEarlier(c *cluster.Client, spec Spec) []report.Result {
+	if !c.Stored.Load() {
+		return nil
+	}
+	return spec.all(report.Error, "-", "not run: an earlier dry-run create was stored by the server, so no further create was sent", hintDryRunDropped)
+}
+
 // controlFailed turns a control probe that did not get through into the results of every
 // selected result: SKIP when admission, a quota or a LimitRange rejected it (the probes would
-// prove nothing), ERROR when the classifier calls it an API failure (5xx, 401, a malformed
-// control, an unknown answer, or no answer: DESIGN.md section 6, D65), nil when ctx ended.
+// prove nothing), ERROR for every answer the classifier calls ERROR (a 429 or 5xx, 401, a policy
+// that could not evaluate, a malformed control, an unknown answer, or no answer: DESIGN.md
+// section 6, D65, D95, D99), nil when ctx ended.
 func controlFailed(ctx context.Context, spec Spec, err error, what, hint string) []report.Result {
 	if ctx.Err() != nil {
 		return nil
@@ -36,14 +49,15 @@ func controlFailed(ctx context.Context, spec Spec, err error, what, hint string)
 }
 
 // notDryRun stops a check whose answer to a dry-run create shows the server stored the object (a
-// resourceVersion: dryRun=All was dropped on the way) or did not come from the API server (no
-// generated name). Every accepted answer is checked, the control's first (D79, D84); the results of
-// spec are those not decided yet.
-func notDryRun(spec Spec, m metav1.Object, what string) []report.Result {
+// resourceVersion: dryRun=All was dropped on the way; later checks then send no create, D101) or
+// did not come from the API server (no generated name). Every accepted answer is checked, the
+// control's first (D79, D84); the results of spec are those not decided yet.
+func notDryRun(c *cluster.Client, spec Spec, m metav1.Object, what string) []report.Result {
 	switch {
 	case m.GetResourceVersion() != "":
-		return spec.all(report.Error, "-", fmt.Sprintf("the server stored the %s %s: it did not honor dryRun=All, so the check stopped; delete that object", what, m.GetName()),
-			"something between you and the API server drops dryRun=All (a proxy or gateway); run against the API server directly")
+		c.Stored.Store(true)
+		return spec.all(report.Error, "-", fmt.Sprintf("the server stored the %s %s: it did not honor dryRun=All, so the run sends no further create; delete that object", what, m.GetName()),
+			hintDryRunDropped)
 	case !strings.HasPrefix(m.GetName(), probe.NamePrefix):
 		return spec.all(report.Error, "-", "the answer to the dry-run "+what+" has no generated name, so it did not come from the API server", hintNotAPIServer)
 	}
