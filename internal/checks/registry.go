@@ -31,6 +31,10 @@ type Spec struct {
 	Method   string          `json:"method"`
 	Results  []ResultSpec    `json:"results"`
 	Run      RunFunc         `json:"-"`
+
+	// earlier holds the results of the checks that ran before this one in the run; the runner
+	// sets it. AT-09 reads AT-04's (ADR 0007).
+	earlier []report.Result
 }
 
 // result builds one Result of this check.
@@ -81,10 +85,10 @@ var Registry = []Spec{
 		Results: one("AT-07", "LimitRange with defaults", "-"), Run: at07},
 	{ID: "AT-08", Name: "Default-deny NetworkPolicy", Kind: report.Config, Severity: report.Medium,
 		Method:  "LIST networkpolicies: an empty-selector deny for Ingress and one for Egress",
-		Results: one("AT-08", "Default-deny NetworkPolicy", "-")},
+		Results: one("AT-08", "Default-deny NetworkPolicy", "-"), Run: at08},
 	{ID: "AT-09", Name: "Pod Security Admission enforced", Kind: report.Config, Severity: report.High,
 		Method:  "GET namespace labels: pod-security.kubernetes.io/enforce is baseline or restricted",
-		Results: one("AT-09", "Pod Security Admission enforced", "-")},
+		Results: one("AT-09", "Pod Security Admission enforced", "-"), Run: at09},
 	{ID: "AT-10", Name: "Quota covers rollout peak", Kind: report.Computed, Severity: report.Low,
 		Method:  "LIST deployments, statefulsets, horizontalpodautoscalers, resourcequotas, limitranges; sum the rollout peak",
 		Results: one("AT-10", "Quota covers rollout peak", "-")},

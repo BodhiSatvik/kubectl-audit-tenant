@@ -51,11 +51,12 @@ func cluster(t *testing.T) *testutil.Server {
 	}))
 }
 
-// unreadable adds the LISTs of the configuration checks to routes, each refused with 403 as for a
-// tenant that may not read them: those checks SKIP, which leaves the exit code alone.
+// unreadable refuses with 403 every object the configuration checks read (the namespace and the
+// LISTs), as for a tenant that may not read them: those checks SKIP, which leaves the exit code alone.
 func unreadable(routes map[string]http.HandlerFunc) map[string]http.HandlerFunc {
-	for _, resource := range []string{"resourcequotas", "limitranges"} {
-		routes["GET /api/v1/namespaces/tenant-a/"+resource] = testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, resource+" is forbidden")
+	for _, path := range []string{"/api/v1/namespaces/tenant-a", "/api/v1/namespaces/tenant-a/resourcequotas", "/api/v1/namespaces/tenant-a/limitranges",
+		"/apis/networking.k8s.io/v1/namespaces/tenant-a/networkpolicies"} {
+		routes["GET "+path] = testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, path+" is forbidden")
 	}
 	return routes
 }

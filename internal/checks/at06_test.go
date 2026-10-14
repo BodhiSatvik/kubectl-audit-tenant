@@ -94,16 +94,16 @@ func TestAT06(t *testing.T) {
 	}
 }
 
-func TestAT06And07LeaveAFailedListToTheRunnerWhenTheRunEnded(t *testing.T) {
+func TestConfigListsLeaveAFailedListToTheRunnerWhenTheRunEnded(t *testing.T) {
 	// The cached LIST runs under the run's context; when that ends, the runner says timeout or interrupted.
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	broken := testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "context canceled")
-	c := configClient(t, map[string]http.HandlerFunc{quotasPath: broken, limitRangesPath: broken})
+	c := configClient(t, map[string]http.HandlerFunc{quotasPath: broken, limitRangesPath: broken, netpolPath: broken})
 	for _, tc := range []struct {
 		run  RunFunc
 		spec Spec
-	}{{at06, at06Spec()}, {at07, at07Spec()}} {
+	}{{at06, at06Spec()}, {at07, at07Spec()}, {at08, at08Spec()}} {
 		if got := tc.run(ctx, c, tc.spec, ignore); len(got) != 0 {
 			t.Errorf("%s = %+v; want no result, so the runner says why the run ended", tc.spec.ID, got)
 		}

@@ -47,8 +47,8 @@ type Client struct {
 	Server         string
 	Version        string
 	Identity       report.Identity
-	// NamespaceObject is the target namespace read once at startup; NamespaceErr is the error
-	// that read returned (a 403 is kept for AT-09).
+	// NamespaceObject is the target namespace read once at startup; NamespaceErr is the 403 that
+	// read returned, kept for AT-09 (any other error ends startup).
 	NamespaceObject *corev1.Namespace
 	NamespaceErr    error
 	// Unverified is set by the safety transport after the first create answer that is not a

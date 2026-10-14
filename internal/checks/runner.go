@@ -24,6 +24,7 @@ func Run(ctx context.Context, c *cluster.Client, specs []Spec, timeout time.Dura
 		var got []report.Result
 		var crashed any
 		if ctx.Err() == nil {
+			s.earlier = slices.Clone(out) // a copy: an abandoned check may still read it while out grows
 			got, crashed = runOne(ctx, c, s)
 		}
 		byID := map[string]report.Result{} // by ID, not count: a wrong or repeated ID must not hide a result

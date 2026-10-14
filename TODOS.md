@@ -86,7 +86,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: table tests for scoped-only quota, missing keys, aliases, several LimitRanges, 403.
   - Verify: `go test ./internal/checks/ -run 'AT06|AT07'`.
   - Depends on: B6. Files: `internal/checks/at06.go`, `internal/checks/at07.go`, tests.
-- [ ] **B18 AT-08 and AT-09.** AT-08: default-deny ingress and egress policies (empty podSelector, policyTypes, no rules; same or different objects), two-policy hint, network-plugin note; AT-09: PSA enforce label baseline or restricted from the cached namespace; cluster-default and policy-engine notes (ADR 0007); 403 → SKIP.
+- [x] **B18 AT-08 and AT-09.** AT-08: default-deny ingress and egress policies (empty podSelector, policyTypes, no rules; same or different objects), two-policy hint, network-plugin note; AT-09: PSA enforce label baseline or restricted from the cached namespace; cluster-default and policy-engine notes (ADR 0007); 403 → SKIP.
   - AC: table tests: two policies, one combined policy, inline-DNS egress (FAIL with the two-policy hint), privileged label, missing label with AT-04 admission note.
   - Verify: `go test ./internal/checks/ -run 'AT08|AT09'`.
   - Depends on: B6. Files: `internal/checks/at08.go`, `internal/checks/at09.go`, tests.
@@ -175,7 +175,7 @@ Found by the /ship verification round on 7e886d0, after the review's fix-cycle l
 Found by the /ship adversarial reviews and left for the phase that owns them. Each one names its card.
 - [ ] Verify every Registry MTB ID against kubectl-mtb before `-o wide` and `-o json` show them (B22): AT-04.2 and AT-05 both carry `MTB-PL1-BC-HI-1`.
 - [x] An SSAR answer without `status.allowed` reads as a denial; require the field when AT-02 and AT-03 reuse `can()` (B11). Done: an answer with no `allowed` field is ERROR with the not-the-API-server hint; the request carries no status, so a proxy that echoes it back is caught too (D64, Phase 2 review).
-- [ ] A namespace GET that fails with a 5xx lets the run continue; only a 403 should (B18, with AT-09).
+- [x] A namespace GET that fails with a 5xx lets the run continue; only a 403 should (B18, with AT-09). Done: any other error exits 2 "could not read namespace <n>: <error>" (DESIGN.md section 6).
 - [x] The runner abandons a check 100 ms after the deadline, so a grant held by a check stuck in a credential helper is lost; consider reporting grants as they are proven (B11). Done (D61): checks hand each proven FAIL to the runner, which keeps it when a check never returns or crashes.
 - [x] An interrupted run turns a proven FAIL (exit 1) into exit 2 (DESIGN.md section 8 already lists "interruption after a FAIL" for B16). Done (D63): a FAIL proven before the signal exits 1, as after --timeout.
 - [ ] `--as <user>` without `--as-group` tests the user without its identity-provider groups; warn in the header (B25).
@@ -199,7 +199,7 @@ Found by the end-of-phase review (specialists, red team, Claude and Codex advers
 - [ ] AT-04 probes test regular containers only; add an initContainers form, allowed hostPath prefixes, and a hostPort probe for AT-04.4's MTB ID, or narrow the MTB tags (B22 with the MTB ID check, D78).
 - [ ] Running as root (`runAsUser: 0`) left AT-04.5 in D78; decide whether it becomes its own result (B31 spec pass).
 - [ ] When the tenant may create pods, AT-04 does not ask about `pods/ephemeralcontainers`; a webhook or ValidatingAdmissionPolicy whose rules list `pods` does not match that subresource, so a policy PASS can leave privileged ephemeral containers open (PSA covers them). The AT-04.1 and AT-04.5 notes say so now; ask update/patch on the subresource on the probe branch and SKIP or note a non-PSA PASS when allowed (B22, D97; /ship review pass 2).
-- [ ] A tenant that may `update` or `patch` its own Namespace can remove the PSA label that made AT-04 PASS; AT-09 should ask it (B18, D81).
+- [x] A tenant that may `update` or `patch` its own Namespace can remove the PSA label that made AT-04 PASS; AT-09 should ask it (B18, D81). Done (D105 = note): an AT-09 PASS asks update, then patch, on the namespace object and notes either grant; the verdict stays.
 - [ ] A tenant bound to `admin` may delete namespaced Kyverno Policies (the chart aggregates that right) or create PolicyExceptions, so a webhook PASS can be liftable (B31 question-set pass, D81).
 - [ ] AT-03 does not ask about approving CertificateSigningRequests (`update certificatesigningrequests/approval`, `approve` on signers); add it to the B31 question-set pass.
 - [ ] Probes have one valid form where policies can demand another: the NodePort Service has no selector, the hostNetwork pod the default DNS policy. A policy that requires a selector or `ClusterFirstWithHostNet` rejects the probe for an unrelated reason and fakes a PASS; add those forms (Later, D87).

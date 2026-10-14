@@ -100,7 +100,7 @@ func TestSelectRejectsChecksNotInThisBuild(t *testing.T) {
 }
 
 func TestSelectRunsEveryBuiltCheck(t *testing.T) {
-	want := []string{"AT-01", "AT-02", "AT-03", "AT-04.1", "AT-04.2", "AT-04.3", "AT-04.4", "AT-04.5", "AT-05", "AT-06", "AT-07"} // grows as checks land
+	want := []string{"AT-01", "AT-02", "AT-03", "AT-04.1", "AT-04.2", "AT-04.3", "AT-04.4", "AT-04.5", "AT-05", "AT-06", "AT-07", "AT-08", "AT-09"} // grows as checks land
 	specs, err := Select(nil, nil)
 	if err != nil || !slices.Equal(ResultIDs(specs), want) {
 		t.Errorf("Select() = %v, %v; want every built check, %v", ResultIDs(specs), err, want)

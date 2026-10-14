@@ -61,9 +61,13 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 		return fmt.Errorf("namespace %s not found in context %s; check -n or --context", opts.Namespace, opts.Context)
 	case opts.fatal(ctx, c.NamespaceErr) != nil:
 		return opts.fatal(ctx, c.NamespaceErr)
+	case c.NamespaceErr != nil && !apierrors.IsForbidden(c.NamespaceErr):
+		// Only a 403 lets the run go on: after any other error the namespace may not exist, and every
+		// check would audit nothing.
+		return fmt.Errorf("could not read namespace %s: %w", opts.Namespace, c.NamespaceErr)
 	}
 	if c.NamespaceErr != nil {
-		c.NamespaceObject = nil // a 403 or another error is kept for AT-09
+		c.NamespaceObject = nil // a 403 is kept for AT-09
 	}
 
 	c.firstSSAR, err = c.SelfSubjectAccessReview(ctx, FirstQuestion)
