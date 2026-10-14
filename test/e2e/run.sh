@@ -2,8 +2,9 @@
 # run.sh: the kind end-to-end test (make e2e). It creates or reuses a kind cluster, installs
 # Kyverno with the restrict-nodeport policy in Enforce mode, applies the tenant-a and tenant-b
 # fixtures, builds the plugin and runs it as the four identities of DESIGN.md section 8.
-# It asserts the verdict of every result (test/e2e/expected/run<N>.txt), the deciding layer of
-# the behavioral checks, the exit codes, the header lines and a fix line under every non-PASS.
+# It asserts the verdict of all fourteen results (test/e2e/expected/run<N>.txt), the deciding
+# layer or reason of every check, the exit codes, the header lines, the notes that change a
+# reader's trust (D86, D105) and a fix line under every non-PASS.
 #
 # Environment: E2E_CLUSTER (default audit-tenant-e2e); E2E_DELETE=1 deletes the cluster at the end.
 # Outputs land in bin/ (git-ignored). The user's own kubeconfig is never changed.
@@ -87,6 +88,7 @@ kubectl --kubeconfig "$sa" config set-context tenant-a --cluster kind --user ten
 kubectl --kubeconfig "$sa" config use-context tenant-a >/dev/null
 run 2 0 --kubeconfig "$sa"
 expect 2 'groups: .*system:serviceaccounts:tenant-a'
+expect 2 '\(groups: system:serviceaccounts, system:serviceaccounts:tenant-a, system:authenticated\)' # both groups the API server adds
 
 run 3 1 -n tenant-b --as system:serviceaccount:tenant-b:tenant-b-dev
 count 3 '^FAIL +AT-04\.[1-5] +.* was accepted in a dry run$' 5 # no PSA label, and admin may create pods
@@ -102,5 +104,35 @@ for n in 1 2 3 4; do
   hints "$n"
 done
 
-say "e2e: all four runs match (verdicts AT-01 to AT-05, layers, exit codes, headers and hints)"
+# AT-01 to AT-03: decided by RBAC; the tenants hold no cluster-scoped rights, cluster-admin holds them all.
+for n in 1 2 3; do
+  count "$n" '^PASS +AT-01 .* RBAC denied all 4 actions$' 1
+  count "$n" '^PASS +AT-02 .* no general get, list or watch on secrets in kube-system$' 1
+  count "$n" '^PASS +AT-03 .* RBAC denied all 6 actions$' 1
+done
+count 4 '^FAIL +AT-0[1-3] .* RBAC allows ' 3
+
+# AT-06 to AT-10 on tenant-a (runs 1, 2 and 4): the fixture's quota, limits, policies, label and headroom.
+for n in 1 2 4; do
+  count "$n" '^PASS +AT-06 .* ResourceQuota tenant-a-quota has no scopes and sets ' 1
+  count "$n" '^PASS +AT-07 .* LimitRange tenant-a-limits gives containers default and defaultRequest ' 1
+  count "$n" '^PASS +AT-08 .* every pod is denied ingress by default-deny-ingress and egress by default-deny-egress' 1
+  count "$n" "^ +note +not tested: whether the cluster's network plugin enforces NetworkPolicy$" 1
+  count "$n" '^PASS +AT-09 .* pod-security\.kubernetes\.io/enforce=restricted on namespace tenant-a$' 1
+  count "$n" '^PASS +AT-10 .* estimate: active pods during a rollout' 1
+  count "$n" '^ +note +not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts$' 1
+done
+# D105: only cluster-admin may change the PSA label; the note says so, the verdict stays PASS.
+expect 4 '^ +note +this identity may update namespace tenant-a, so it can change or remove this label$'
+for n in 1 2; do absent "$n" 'may (update|patch) namespace'; done
+
+# AT-06 to AT-10 on tenant-b (run 3): an ungoverned namespace fails each with its own reason.
+count 3 '^FAIL +AT-06 .* no ResourceQuota in tenant-b$' 1
+count 3 '^FAIL +AT-07 .* no LimitRange in tenant-b$' 1
+count 3 '^FAIL +AT-08 .* no NetworkPolicy in tenant-b$' 1
+count 3 '^FAIL +AT-09 .* namespace tenant-b has no pod-security\.kubernetes\.io/enforce label$' 1 # no AT-04 admission note: AT-04 failed
+count 3 '^FAIL +AT-10 .* estimate: active pods during a rollout' 1
+count 3 '^ +fix +add a ResourceQuota with no scopes .* \(see AT-06\)$' 1 # AT-10: no quota to compare against
+
+say "e2e: all four runs match (verdicts AT-01 to AT-10, layers and reasons, notes, exit codes, headers and hints)"
 if [ "${E2E_DELETE:-}" = 1 ]; then kind delete cluster --name "$cluster"; fi

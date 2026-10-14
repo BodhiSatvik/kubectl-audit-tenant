@@ -45,7 +45,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B18 AT-08 and AT-09
 - [x] B19 Headroom math
 - [x] B20 AT-10
-- [ ] B21 e2e: all ten checks
+- [x] B21 e2e: all ten checks
 
 ### Checkpoint 3
 - [ ] Full verdict matrix green; `make check` under 90 s

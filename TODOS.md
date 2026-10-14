@@ -98,7 +98,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: unit cases for each edge; reason golden for the fixture.
   - Verify: `go test ./internal/checks/ -run AT10`.
   - Depends on: B19. Files: `internal/checks/at10.go`, tests.
-- [ ] **B21 e2e: all ten checks.** Assert the complete verdict table of DESIGN.md section 8 for runs 1 to 4, exit codes, header groups in run 2, hints on every non-PASS.
+- [x] **B21 e2e: all ten checks.** Assert the complete verdict table of DESIGN.md section 8 for runs 1 to 4, exit codes, header groups in run 2, hints on every non-PASS.
   - AC: e2e job green against the full table.
   - Verify: e2e workflow.
   - Depends on: B17, B18, B20. Files: `test/e2e/run.sh`, `test/e2e/expected/`.
@@ -159,6 +159,13 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - Depends on: B27, B28, B29, B30. Files: `CONSTRAINTS.md`, `TODOS.md`, release assets.
 
 **Checkpoint 6 (v0.1.0):** every acceptance criterion met; `evidence/` row in the lab for the first outside install when it happens.
+
+### Phase 3 follow-ups (build, 2026-10-14)
+
+Found while building B17 to B21; each names the card or decision that owns it.
+- [ ] The checklist cuts reasons near 120 columns off a terminal, and AT-10's required 104-character "estimate: ..." prefix fills most of that, so the peak numbers show only in `-o wide` and `-o json`. Decide whether the long caveat moves to the note and the reason keeps a short "estimate: " start (Checkpoint 3 question; ADR 0006 asks only that the reason start with "estimate").
+- [ ] The e2e asserts AT-10's verdict and note, not the fixture numbers (5 pods, 500m/640Mi, 2500m/2560Mi), because the checklist cuts them; assert them from `-o json` (B23). The unit golden and a kind run match today.
+- [ ] AT-06 needs one unscoped quota with all five keys (DESIGN.md section 5). Two unscoped quotas that split the keys (one for requests, one for limits and pods) bound the namespace just as well but FAIL today; decide whether AT-06 reads the union (Checkpoint 3 question).
 
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 
