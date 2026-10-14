@@ -44,7 +44,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B17 AT-06 and AT-07
 - [x] B18 AT-08 and AT-09
 - [x] B19 Headroom math
-- [ ] B20 AT-10
+- [x] B20 AT-10
 - [ ] B21 e2e: all ten checks
 
 ### Checkpoint 3

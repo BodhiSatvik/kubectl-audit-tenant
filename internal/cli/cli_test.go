@@ -55,7 +55,8 @@ func cluster(t *testing.T) *testutil.Server {
 // LISTs), as for a tenant that may not read them: those checks SKIP, which leaves the exit code alone.
 func unreadable(routes map[string]http.HandlerFunc) map[string]http.HandlerFunc {
 	for _, path := range []string{"/api/v1/namespaces/tenant-a", "/api/v1/namespaces/tenant-a/resourcequotas", "/api/v1/namespaces/tenant-a/limitranges",
-		"/apis/networking.k8s.io/v1/namespaces/tenant-a/networkpolicies"} {
+		"/apis/networking.k8s.io/v1/namespaces/tenant-a/networkpolicies", "/apis/apps/v1/namespaces/tenant-a/deployments",
+		"/apis/apps/v1/namespaces/tenant-a/statefulsets", "/apis/autoscaling/v2/namespaces/tenant-a/horizontalpodautoscalers"} {
 		routes["GET "+path] = testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, path+" is forbidden")
 	}
 	return routes

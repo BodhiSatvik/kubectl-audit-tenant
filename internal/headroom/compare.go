@@ -66,16 +66,27 @@ func (s Shortfall) String() string {
 	return fmt.Sprintf("%s: peak needs %s, hard is %s, short by %s", s.Key, s.Need.String(), s.Hard.String(), short.String())
 }
 
-// Compare returns each key of q that counts as one of the Keys and whose hard value total
-// exceeds, in Keys order, the canonical spelling before its alias. Other keys are not compared.
+// QuotaKeys returns the keys of q's hard that count as one of the Keys, as q spells them, in
+// Keys order, the canonical spelling before its alias. Other keys are not compared.
+func QuotaKeys(q corev1.ResourceQuota) []corev1.ResourceName {
+	var out []corev1.ResourceName
+	for _, k := range Keys {
+		for _, key := range spellings(k) {
+			if _, ok := q.Spec.Hard[key]; ok {
+				out = append(out, key)
+			}
+		}
+	}
+	return out
+}
+
+// Compare returns each of q's QuotaKeys whose hard value total exceeds.
 func Compare(q corev1.ResourceQuota, total corev1.ResourceList) []Shortfall {
 	var out []Shortfall
-	for _, k := range Keys {
-		need := total[k]
-		for _, key := range spellings(k) {
-			if hard, ok := q.Spec.Hard[key]; ok && need.Cmp(hard) > 0 {
-				out = append(out, Shortfall{Key: key, Need: need, Hard: hard})
-			}
+	for _, key := range QuotaKeys(q) {
+		k, _ := Canonical(key)
+		if need, hard := total[k], q.Spec.Hard[key]; need.Cmp(hard) > 0 {
+			out = append(out, Shortfall{Key: key, Need: need, Hard: hard})
 		}
 	}
 	return out

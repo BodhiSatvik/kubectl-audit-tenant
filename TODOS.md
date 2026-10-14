@@ -94,7 +94,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: table tests incl. the fixture (5 pods, 0.5 cpu / 640Mi requests, 2.5 cpu / 2.5Gi limits); percent rounding; sidecar overlap; limit-only; pod-level resources; coverage at least 80%.
   - Verify: `go test ./internal/headroom/...`.
   - Depends on: B1. Files: `internal/headroom/pod.go`, `internal/headroom/peak.go`, `internal/headroom/compare.go`, tests.
-- [ ] **B20 AT-10.** Lists deployments, statefulsets, HPAs (quota and limitranges from the cache); edge cases in DESIGN.md order (no unscoped quota → FAIL; no workloads → PASS; unreadable deployments/statefulsets/quota/HPAs → SKIP; unreadable LimitRange with unsized containers → SKIP; partial sum over hard → FAIL); every reason starts with "estimate: …"; `used` values and the not-counted kinds named.
+- [x] **B20 AT-10.** Lists deployments, statefulsets, HPAs (quota and limitranges from the cache); edge cases in DESIGN.md order (no unscoped quota → FAIL; no workloads → PASS; unreadable deployments/statefulsets/quota/HPAs → SKIP; unreadable LimitRange with unsized containers → SKIP; partial sum over hard → FAIL); every reason starts with "estimate: …"; `used` values and the not-counted kinds named.
   - AC: unit cases for each edge; reason golden for the fixture.
   - Verify: `go test ./internal/checks/ -run AT10`.
   - Depends on: B19. Files: `internal/checks/at10.go`, tests.

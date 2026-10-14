@@ -7,17 +7,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/headroom"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
-
-// quotaKeys are the five keys AT-06 requires, each with the alias the API also accepts.
-var quotaKeys = []struct{ key, alias corev1.ResourceName }{
-	{corev1.ResourceRequestsCPU, corev1.ResourceCPU},
-	{corev1.ResourceRequestsMemory, corev1.ResourceMemory},
-	{corev1.ResourceLimitsCPU, ""},
-	{corev1.ResourceLimitsMemory, ""},
-	{corev1.ResourcePods, "count/pods"},
-}
 
 // at06 reads the namespace's ResourceQuotas from the run's cache. It passes when one quota with
 // no scopes and no scopeSelector sets all five keys; a scoped quota covers only some pods.
@@ -32,14 +24,18 @@ func at06(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 			scopedNames = append(scopedNames, q.Name)
 			continue
 		}
+		spelled := map[corev1.ResourceName]string{} // each of the five keys, as this quota spells it
+		for _, key := range headroom.QuotaKeys(q) {
+			if k, _ := headroom.Canonical(key); spelled[k] == "" {
+				spelled[k] = string(key)
+			}
+		}
 		var set, missing []string
-		for _, k := range quotaKeys {
-			if _, ok := q.Spec.Hard[k.key]; ok {
-				set = append(set, string(k.key))
-			} else if _, ok := q.Spec.Hard[k.alias]; ok { // an empty alias is never a key
-				set = append(set, string(k.alias))
+		for _, k := range headroom.Keys {
+			if key, ok := spelled[k]; ok {
+				set = append(set, key)
 			} else {
-				missing = append(missing, string(k.key))
+				missing = append(missing, string(k))
 			}
 		}
 		if len(missing) == 0 {

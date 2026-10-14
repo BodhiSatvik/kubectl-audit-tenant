@@ -102,3 +102,24 @@ func TestCanonical(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaKeys(t *testing.T) {
+	hard := list("services", "1", "count/pods", "9", "limits.cpu", "2", "memory", "1Gi", "requests.memory", "2Gi", "cpu", "1")
+	got := QuotaKeys(quota(hard))
+	want := []corev1.ResourceName{"cpu", "requests.memory", "memory", "limits.cpu", "count/pods"}
+	if !slices.Equal(got, want) {
+		t.Errorf("QuotaKeys() = %v, want %v (Keys order, canonical spelling first, other keys left out)", got, want)
+	}
+}
+
+func TestTotalCountsAnUnsizedPodAsZero(t *testing.T) {
+	d := deployment("bare", replicas(2), appsv1.DeploymentStrategy{})
+	d.Spec.Template.Spec.Containers = []corev1.Container{{Name: "app"}}
+	total := Total([]Workload{Deployment(d, nil, Defaults{})})
+	if want := list("requests.cpu", "0", "requests.memory", "0", "limits.cpu", "0", "limits.memory", "0", "pods", "3"); !same(total, want) {
+		t.Errorf("Total() = %v, want %v", total, want)
+	}
+	if got := total[corev1.ResourceRequestsCPU]; got.String() != "0" {
+		t.Errorf("an unsized total reads %q, want 0", got.String())
+	}
+}

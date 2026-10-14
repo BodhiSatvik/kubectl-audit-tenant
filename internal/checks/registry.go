@@ -91,7 +91,7 @@ var Registry = []Spec{
 		Results: one("AT-09", "Pod Security Admission enforced", "-"), Run: at09},
 	{ID: "AT-10", Name: "Quota covers rollout peak", Kind: report.Computed, Severity: report.Low,
 		Method:  "LIST deployments, statefulsets, horizontalpodautoscalers, resourcequotas, limitranges; sum the rollout peak",
-		Results: one("AT-10", "Quota covers rollout peak", "-")},
+		Results: one("AT-10", "Quota covers rollout peak", "-"), Run: at10},
 }
 
 // ResultIDs flattens the result IDs of specs in order.
