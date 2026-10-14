@@ -22,14 +22,14 @@ var at04Probes = map[string]struct {
 	accepted, hint, limit string
 }{
 	"AT-04.1": {[]func(*corev1.Pod){probe.Privileged, probe.PrivilegedWithEscalation}, "a privileged container", hintPSA + "privileged containers",
-		"tested in a regular container only (not initContainers)"},
+		"tested in a regular container only (not initContainers or ephemeral containers)"},
 	"AT-04.2": {[]func(*corev1.Pod){probe.HostPath}, "a pod with a hostPath volume", hintPSA + "hostPath volumes",
 		"tested with a hostPath of / only (allowed path prefixes not tested)"},
 	"AT-04.3": {[]func(*corev1.Pod){probe.HostPID}, "a pod with hostPID", hintPSA + "hostPID", ""},
 	"AT-04.4": {[]func(*corev1.Pod){probe.HostNetwork}, "a pod with hostNetwork", hintPSA + "hostNetwork", "hostPort was not tested"},
 	"AT-04.5": {[]func(*corev1.Pod){probe.Escalation}, "a pod with allowPrivilegeEscalation: true",
 		"set the namespace label pod-security.kubernetes.io/enforce=restricted (baseline does not block this), or add a policy that forbids allowPrivilegeEscalation (Kyverno disallow-privilege-escalation, or a ValidatingAdmissionPolicy)",
-		"tested in a regular container only (not initContainers)"},
+		"tested in a regular container only (not initContainers or ephemeral containers)"},
 }
 
 // worse orders the verdicts of one result's probe forms: a proven FAIL wins, then ERROR, SKIP, PASS.
@@ -71,7 +71,7 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		}
 		return spec.all(report.Error, "-", "could not list limitranges to size the probes: "+err.Error(), hintRequestFailed)
 	}
-	size := probe.Size(ranges, err)
+	size := probe.Size(ranges) // a 403 leaves ranges nil: 1m and 1Mi
 	pods := c.Clientset.CoreV1().Pods(ns)
 	control, err := pods.Create(ctx, probe.ControlPod(size), dryRun)
 	if err != nil {

@@ -8,14 +8,11 @@ import (
 )
 
 // Size is the size every probe states (ADR 0005): 1m CPU and 1Mi memory for requests and limits,
-// raised to the highest LimitRange min, and 1m and 1Mi when the LimitRanges cannot be listed (err,
-// usually a 403). It never relies on LimitRange defaults: the API server copies max into default
+// raised to the highest LimitRange min; with no ranges (none, or a 403 on the list) 1m and 1Mi.
+// It never relies on LimitRange defaults: the API server copies max into default
 // and defaultRequest, so a probe without sizes would ask for the max (D85).
-func Size(ranges []corev1.LimitRange, err error) corev1.ResourceRequirements {
+func Size(ranges []corev1.LimitRange) corev1.ResourceRequirements {
 	size := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1m"), corev1.ResourceMemory: resource.MustParse("1Mi")}
-	if err != nil {
-		ranges = nil // cannot list (usually a 403): 1m and 1Mi
-	}
 	for _, lr := range ranges {
 		for _, item := range lr.Spec.Limits {
 			for name, floor := range size {

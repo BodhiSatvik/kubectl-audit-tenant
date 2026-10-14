@@ -92,7 +92,7 @@ func TestAT04AnAcceptedProbeIsAFailProvedAtOnce(t *testing.T) {
 	if h := got[4].Hint; !strings.Contains(h, "restricted") || !strings.Contains(h, "baseline does not block") || !strings.Contains(h, "allowPrivilegeEscalation") {
 		t.Errorf("AT-04.5 hint = %q, want both fixes: restricted, or a policy against escalation", h)
 	}
-	if !slices.Equal(slices.Compact(proven), at04IDs) { // AT-04.1 proves once per privileged form (D78)
+	if !slices.Equal(proven, at04IDs) { // each result proves once: AT-04.1 stops at its first accepted form (D84)
 		t.Errorf("proved %v, want every FAIL handed to the runner at once (D61)", proven)
 	}
 }
@@ -490,6 +490,44 @@ func TestAT04StopsAtAnAnswerThatWouldRepeat(t *testing.T) {
 		if want := []string{"control", "AT-04.1"}; !slices.Equal(ps.sent, want) {
 			t.Errorf("HTTP %d: sent %v, want %v: no probe after an answer that would repeat", code, ps.sent, want)
 		}
+	}
+}
+
+// Added by the /ship test coverage audit, pass 2 (Phase 2).
+// Value: protects=a stop on a failed send, a 500 or a second privileged form keeps the verdicts already decided and makes the rest ERROR (D78, D91);
+// fails_when=the stop drops earlier results, does not slice from the current one, misses non-StatusErrors or exactly 500; why_new=the test above stops at the
+// first probe with 429 and 503 only; seam=none; no_claim=the reason text of the ERRORs (the classifier's)
+func TestAT04AnUnavailableAnswerKeepsWhatWasDecided(t *testing.T) {
+	failedSend := func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) } // the connection drops: not a StatusError
+	for _, tt := range []struct {
+		name    string
+		answers map[string]http.HandlerFunc
+		want    []report.Verdict
+		sent    []string
+	}{
+		{"a failed send at AT-04.3", map[string]http.HandlerFunc{"AT-04.1": rejectProbe, "AT-04.2": rejectProbe, "AT-04.3": failedSend},
+			[]report.Verdict{report.Pass, report.Pass, report.Error, report.Error, report.Error}, []string{"control", "AT-04.1", "AT-04.1", "AT-04.2", "AT-04.3"}},
+		{"a 500 at AT-04.2", map[string]http.HandlerFunc{"AT-04.1": rejectProbe, "AT-04.2": testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "")},
+			[]report.Verdict{report.Pass, report.Error, report.Error, report.Error, report.Error}, []string{"control", "AT-04.1", "AT-04.1", "AT-04.2"}},
+		{"the second privileged form after a rejection", map[string]http.HandlerFunc{"AT-04.1": nth(rejectProbe, testutil.Status(http.StatusServiceUnavailable, metav1.StatusReasonServiceUnavailable, ""))},
+			[]report.Verdict{report.Error, report.Error, report.Error, report.Error, report.Error}, []string{"control", "AT-04.1", "AT-04.1"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &probeServer{answers: tt.answers}
+			got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), at04Spec(), ignore)
+			var verdicts []report.Verdict
+			for _, r := range got {
+				verdicts = append(verdicts, r.Verdict)
+				if r.Verdict == report.Error && r.Hint == "" {
+					t.Errorf("%s: ERROR without a hint", r.ID)
+				}
+			}
+			ps.mu.Lock() // an aborted connection writes no answer, so only the lock orders the handler's append before this read
+			defer ps.mu.Unlock()
+			if !slices.Equal(ids(got), at04IDs) || !slices.Equal(verdicts, tt.want) || !slices.Equal(ps.sent, tt.sent) {
+				t.Errorf("results %v %v, sent %v; want %v %v, sent %v", ids(got), verdicts, ps.sent, at04IDs, tt.want, tt.sent)
+			}
+		})
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,7 +23,7 @@ type Outcome struct {
 
 // Hints for answers that decide nothing.
 const (
-	hintQuota      = "a ResourceQuota stopped the probe before the security gates (quota full, or a resource it requires is missing from the probe); free quota, then re-run"
+	hintQuota      = "a ResourceQuota stopped the probe (quota full, or a resource it requires is missing from the probe); free quota, then re-run"
 	hintLimitRange = "a LimitRange min or max stopped the probe before the security gates; check the namespace's LimitRange, then re-run"
 	hintMalformed  = "a bug in audit-tenant: the cluster says the probe is malformed; please report it with --debug output"
 	hintUnknown    = "the cluster rejected the probe for a reason audit-tenant does not recognize, so it decides nothing; read the reason, or run with --debug and report it"
@@ -44,8 +45,11 @@ func Classify(err error) Outcome {
 	s := status.ErrStatus
 	msg := s.Message
 	full := cmp.Or(msg, strings.TrimSpace(fmt.Sprintf("HTTP %d %s", s.Code, s.Reason)))
-	decided := s.Code >= 400 && s.Code < 500 // every text rule needs a 4xx: a 5xx is a failing backend, not a decision (D82, D84)
+	decided := s.Code >= 400 && s.Code < 500 // every text rule needs a 4xx: a 5xx is a failing backend, not a decision (D82, D84); 429 is handled first (D95)
 	switch {
+	case s.Code == http.StatusTooManyRequests || s.Code >= http.StatusInternalServerError:
+		// A throttled or failing server decides nothing, whatever its text says; a webhook may deny with 429 (D95).
+		return Outcome{report.Error, "-", full, hintUnsent}
 	case decided && strings.Contains(msg, "admission webhook") && strings.Contains(msg, "denied the request"): // the API server's phrase; "denied" alone can be part of a webhook name
 		// Before PSA: a webhook such as Kyverno's podSecurity rule quotes the PSA text, but it decided.
 		return Outcome{report.Pass, "admission (webhook: " + between(msg, `admission webhook "`, `"`) + ")", from(msg, "admission webhook"), ""}

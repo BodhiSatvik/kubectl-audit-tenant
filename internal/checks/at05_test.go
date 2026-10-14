@@ -44,7 +44,7 @@ func TestAT05(t *testing.T) {
 			noted(result(report.Pass, "admission (quota: qa-nodeports)", nodeportQuota, ""), probedOnCreate), []string{"control-service", "AT-05"}},
 		{"a server error on the control", mayCreate,
 			map[string]http.HandlerFunc{"control-service": testutil.Status(http.StatusServiceUnavailable, metav1.StatusReasonServiceUnavailable, "etcdserver: leader changed")},
-			result(report.Error, "-", "etcdserver: leader changed", "the cluster rejected the probe for a reason audit-tenant does not recognize, so it decides nothing; read the reason, or run with --debug and report it"), []string{"control-service"}},
+			result(report.Error, "-", "etcdserver: leader changed", "re-run; if it repeats, run with --debug and report the server message"), []string{"control-service"}},
 		{"the control Service is rejected", mayCreate,
 			map[string]http.HandlerFunc{"control-service": testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid, `services "audit-tenant-probe-q5zgg" is forbidden: `+rejectAll)},
 			result(report.Skip, "-", "the compliant control Service was rejected, so the probes prove nothing: "+rejectAll, "the namespace rejects even a plain ClusterIP Service; fix that first"),

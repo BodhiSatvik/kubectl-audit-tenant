@@ -37,7 +37,7 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		}
 		return []report.Result{spec.result(r, report.Error, "-", err.Error(), hintFor(err))}
 	}
-	reason := fmt.Sprintf("RBAC denied all %d actions", len(questions)) + explicitNote(explicit)
+	reason := fmt.Sprintf("RBAC denied all %d actions", len(questions)) + explicitDenies(explicit)
 	if control.denied {
 		reason += "; the access path also denied create selfsubjectaccessreviews (an access proxy with its own roles?)"
 	}

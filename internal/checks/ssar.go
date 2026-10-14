@@ -135,8 +135,8 @@ func denials(ctx context.Context, c *cluster.Client, spec Spec, prove func(repor
 	return explicit, nil, false
 }
 
-// explicitNote is the PASS-reason suffix naming the actions an authorizer denied explicitly.
-func explicitNote(explicit []string) string {
+// explicitDenies is the PASS-reason suffix naming the actions an authorizer denied explicitly.
+func explicitDenies(explicit []string) string {
 	if len(explicit) == 0 {
 		return ""
 	}

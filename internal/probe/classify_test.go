@@ -155,6 +155,26 @@ func TestClassifyAnAdmissionDenialWithAServerErrorIsAnError(t *testing.T) {
 	}
 }
 
+// Added by the /ship pre-landing review, pass 2 (Phase 2).
+// Value: protects=a 429 or 5xx answer is ERROR with the re-run hint, even when it quotes a webhook denial (D95); fails_when=a 429 counts as a 4xx
+// decision again (a rate-limiting webhook's denial becomes a false PASS) or a 5xx gets the "report it" hint; why_new=no test sent a 429; seam=none;
+// no_claim=how client-go retries the request
+func TestClassifyAThrottledOrFailingServerDecidesNothing(t *testing.T) {
+	for _, tt := range []struct {
+		code int32
+		msg  string
+	}{
+		{http.StatusTooManyRequests, `admission webhook "rate.example.com" denied the request: too many creates`},
+		{http.StatusTooManyRequests, "Too many requests, please try again later."},
+		{http.StatusInternalServerError, ""},
+		{http.StatusServiceUnavailable, "etcdserver: leader changed"},
+	} {
+		if got := Classify(statusError(tt.code, "", tt.msg)); got.Verdict != report.Error || got.Hint != hintUnsent {
+			t.Errorf("HTTP %d %q = %+v, want ERROR with the re-run hint", tt.code, tt.msg, got)
+		}
+	}
+}
+
 func TestClassifyEveryTextRuleNeedsA4xx(t *testing.T) {
 	// D82, D84(5): a 5xx answer that quotes admission or quota text is a failure, not a fence.
 	for _, msg := range []string{
