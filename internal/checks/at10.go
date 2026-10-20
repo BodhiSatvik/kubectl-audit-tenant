@@ -23,9 +23,10 @@ const at10Estimate = "estimate: "
 
 // at10 sums the rollout peak of the namespace's Deployments and StatefulSets (internal/headroom)
 // and compares it with every unscoped ResourceQuota, edge cases in the DESIGN.md section 5 order:
-// no unscoped quota is FAIL; no workloads is PASS; a list this identity may not read (or the
-// LimitRanges while a container has no explicit size) is SKIP, unless the partial sum is
-// already over a hard value, which is FAIL.
+// no unscoped quota is FAIL; no workloads is PASS; a quota that refuses a workload's pods (a
+// tracked value left unset) is FAIL; a list this identity may not read (or the LimitRanges while
+// a tracked value is unset) is SKIP, unless the partial sum is already over a hard value, which
+// is FAIL.
 func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Result)) []report.Result {
 	ns := c.Namespace
 	note := "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
@@ -119,14 +120,35 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 			runtimeClass = append(runtimeClass, w.Name)
 		}
 	}
-	if rangesForbidden && unsized > 0 { // their LimitRange defaults are unknown
+	// Quota admission refuses a pod that leaves unset a cpu or memory value an unscoped quota
+	// tracks ("must specify"), whatever the peak (D111).
+	var refused []string
+	for _, q := range unscoped {
+		tracked := map[corev1.ResourceName]bool{}
+		for _, key := range headroom.QuotaKeys(q) {
+			tracked[headroom.Canonical(key)] = true
+		}
+		for _, w := range ws {
+			var keys []string
+			for _, k := range w.Pod.Unset {
+				if tracked[k] {
+					keys = append(keys, string(k))
+				}
+			}
+			if len(keys) > 0 {
+				refused = append(refused, q.Name+" refuses the pods of "+strings.ToLower(w.Kind)+" "+w.Name+": a container sets no "+strings.Join(keys, ", "))
+			}
+		}
+	}
+	if rangesForbidden && len(refused) > 0 { // unread LimitRange defaults may set those values
 		forbidden = append(forbidden, "limitranges")
+		refused = nil
 	}
 	if len(runtimeClass) > 0 {
 		note += "; pod overhead of a RuntimeClass (" + strings.Join(runtimeClass, ", ") + ")"
 	}
 	if unsized > 0 {
-		note += "; " + containers(unsized) + " had no request or limit; counted as 0"
+		note += "; " + containers(unsized) + " left a cpu or memory request or limit unset; counted as 0"
 	}
 
 	total := headroom.Total(ws)
@@ -165,14 +187,25 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	// A partial sum can only grow, so a shortfall is FAIL even with lists missing; not while the
 	// HPAs are unread, since an HPA's maxReplicas can be below spec.replicas (D110).
 	hpasUnread := slices.Contains(forbidden, "horizontalpodautoscalers")
+	proven := short
+	if hpasUnread {
+		proven = nil
+	}
 	switch {
-	case len(short) > 0 && !hpasUnread:
-		reason := strings.Join(short, "; ") + tail
+	case len(refused) > 0 || len(proven) > 0:
+		reason := strings.Join(slices.Concat(refused, proven), "; ") + tail
 		if len(forbidden) > 0 {
 			reason += "; partial: cannot list " + strings.Join(forbidden, ", ") + " (forbidden)"
 		}
-		return result(report.Fail, layerConfig, reason,
-			"raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once")
+		const raise = "raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once"
+		hint := raise
+		if len(refused) > 0 {
+			hint = "set cpu and memory requests and limits on every container, or give them defaults with a LimitRange (see AT-07)"
+			if len(proven) > 0 {
+				hint += "; " + raise
+			}
+		}
+		return result(report.Fail, layerConfig, reason, hint)
 	case len(forbidden) > 0:
 		partial := "the partial peak fits " + strings.Join(fits, "; ")
 		if len(short) > 0 {

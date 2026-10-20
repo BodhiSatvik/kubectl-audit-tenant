@@ -56,9 +56,10 @@ func fill(into, from corev1.ResourceList) bool {
 // Pod is one pod's cpu and memory as the quota counts them.
 type Pod struct {
 	Requests, Limits corev1.ResourceList
-	Unsized          int  // containers with a request or limit counted as 0: no value and no LimitRange default
-	Defaulted        int  // containers that took a value from the LimitRange defaults
-	RuntimeClass     bool // the pod names a RuntimeClass, whose overhead is not counted
+	Unset            []corev1.ResourceName // quota keys (requests.cpu ... limits.memory) a container leaves unset, in Keys order
+	Unsized          int                   // containers that leave a value unset: no value, no LimitRange default, no pod-level value
+	Defaulted        int                   // containers that took a value from the LimitRange defaults
+	RuntimeClass     bool                  // the pod names a RuntimeClass, whose overhead is not counted
 }
 
 // PodOf follows the Kubernetes rules. Pod-level spec.resources, where set, are the pod's values.
@@ -66,17 +67,18 @@ type Pod struct {
 // limit into a missing request), else the LimitRange defaultRequest, else 0; its limit is its
 // limit, else the LimitRange default, else 0. App containers and sidecars (init containers with
 // restartPolicy Always) add up; an init container runs with the sidecars declared before it; the
-// pod needs the larger of the two, per resource.
+// pod needs the larger of the two, per resource. A value left unset counts as 0 and is listed in
+// Unset, since a quota that tracks it refuses the pod (D111).
 func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 	var podLevel corev1.ResourceRequirements
 	if spec.Resources != nil {
 		podLevel = *spec.Resources
 	}
 	p := Pod{RuntimeClass: spec.RuntimeClassName != nil && *spec.RuntimeClassName != ""}
-	type sizes struct{ requests, limits corev1.ResourceList }
-	resolve := func(c corev1.Container) sizes {
-		s := sizes{corev1.ResourceList{}, corev1.ResourceList{}}
-		unsized, defaulted := false, false
+	unset := map[corev1.ResourceName]bool{}
+	resolve := func(c corev1.Container) (requests, limits corev1.ResourceList) {
+		requests, limits = corev1.ResourceList{}, corev1.ResourceList{}
+		gap, defaulted := false, false
 		for _, r := range sized {
 			_, podReq := podLevel.Requests[r]
 			_, podLim := podLevel.Limits[r]
@@ -94,37 +96,39 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 				defaulted = defaulted || !podLim
 			}
 			// A gap counts only where the pod-level value does not replace the container sum.
-			unsized = unsized || (!hasReq && !podReq && !podLim) || (!hasLim && !podLim)
-			s.requests[r], s.limits[r] = req, lim
+			if !hasReq && !podReq && !podLim {
+				unset["requests."+r], gap = true, true
+			}
+			if !hasLim && !podLim {
+				unset["limits."+r], gap = true, true
+			}
+			requests[r], limits[r] = req, lim
 		}
-		if unsized {
+		if gap {
 			p.Unsized++
 		}
 		if defaulted {
 			p.Defaulted++
 		}
-		return s
+		return requests, limits
 	}
-	var apps, inits []sizes
+	var appReq, appLim, initReq, initLim []corev1.ResourceList
 	var sidecar []bool
 	for _, c := range spec.Containers {
-		apps = append(apps, resolve(c))
+		req, lim := resolve(c)
+		appReq, appLim = append(appReq, req), append(appLim, lim)
 	}
 	for _, c := range spec.InitContainers {
-		inits = append(inits, resolve(c))
+		req, lim := resolve(c)
+		initReq, initLim = append(initReq, req), append(initLim, lim)
 		sidecar = append(sidecar, c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways)
 	}
-	pick := func(get func(sizes) corev1.ResourceList) corev1.ResourceList {
-		var a, i []corev1.ResourceList
-		for _, s := range apps {
-			a = append(a, get(s))
+	p.Requests, p.Limits = effective(appReq, initReq, sidecar), effective(appLim, initLim, sidecar)
+	for _, k := range Keys {
+		if unset[k] {
+			p.Unset = append(p.Unset, k)
 		}
-		for _, s := range inits {
-			i = append(i, get(s))
-		}
-		return effective(a, i, sidecar)
 	}
-	p.Requests, p.Limits = pick(func(s sizes) corev1.ResourceList { return s.requests }), pick(func(s sizes) corev1.ResourceList { return s.limits })
 	var explicit corev1.ResourceList // the containers' own requests, before LimitRange defaults
 	if len(podLevel.Limits) > 0 {
 		explicit = PodOf(corev1.PodSpec{Containers: spec.Containers, InitContainers: spec.InitContainers}, Defaults{}).Requests

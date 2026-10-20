@@ -26,6 +26,7 @@ const (
 	hpasPath         = "GET /apis/autoscaling/v2/namespaces/tenant-a/horizontalpodautoscalers"
 	estimate         = "estimate: "
 	notCounted       = "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
+	refusedHint      = "set cpu and memory requests and limits on every container, or give them defaults with a LimitRange (see AT-07)"
 	at10FailHint     = "raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once"
 )
 
@@ -104,6 +105,9 @@ func TestAT10(t *testing.T) {
 	}
 	unsized := api()
 	unsized.Spec.Template.Spec.Containers = append(unsized.Spec.Template.Spec.Containers, corev1.Container{Name: "sidecar"})
+	requestsOnly := api() // its second container sets requests, no limits
+	requestsOnly.Spec.Template.Spec.Containers = append(requestsOnly.Spec.Template.Spec.Containers,
+		corev1.Container{Name: "sidecar", Resources: corev1.ResourceRequirements{Requests: rl("cpu", "100m", "memory", "64Mi")}})
 	one := int32(1)
 	twoUnsized := appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "batch"}, Spec: appsv1.DeploymentSpec{Replicas: &one,
 		Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "a"}, {Name: "b"}}}}}}
@@ -150,16 +154,20 @@ func TestAT10(t *testing.T) {
 			configResult(spec, report.Skip, "-", estimate+"cannot list resourcequotas (forbidden), so there is nothing to compare against", "grant `list` on resourcequotas in tenant-a to this identity, or run with --as <admin>"), notCounted},
 		{"LimitRanges unreadable while a container has no sizes: SKIP", map[string]http.HandlerFunc{limitRangesPath: forbidden("limitranges"), deploymentsPath: listOf(unsized)},
 			configResult(spec, report.Skip, "-", estimate+"cannot list limitranges (forbidden), so the peak is incomplete; the partial peak fits tenant-a-quota: requests.cpu 500m of 4, requests.memory 640Mi of 8Gi, limits.cpu 2500m of 8, limits.memory 2560Mi of 16Gi, pods 5 of 20 (deployments: api 4->5 (HPA max)); used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3",
-				"grant `list` on limitranges in tenant-a to this identity, or run with --as <admin>"), notCounted + "; 1 container had no request or limit; counted as 0"},
+				"grant `list` on limitranges in tenant-a to this identity, or run with --as <admin>"), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+		{"LimitRanges unreadable while only values no quota tracks are unset: PASS (D111)", map[string]http.HandlerFunc{limitRangesPath: forbidden("limitranges"), deploymentsPath: listOf(requestsOnly), quotasPath: listOf(cpuCap("4"))},
+			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 1 of 4 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", ""), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"LimitRanges unreadable but every container is sized: PASS", map[string]http.HandlerFunc{limitRangesPath: forbidden("limitranges")},
 			configResult(spec, report.Pass, "config", estimate+"peak fits tenant-a-quota: requests.cpu 500m of 4, requests.memory 640Mi of 8Gi, limits.cpu 2500m of 8, limits.memory 2560Mi of 16Gi, pods 5 of 20 (deployments: api 4->5 (HPA max)); used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3", ""), notCounted},
 		{"defaults merged from two LimitRanges name both (D112)", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), quotasPath: listOf(cpuCap("8")),
 			limitRangesPath: listOf(limitRange("cpu-defaults", limitItem(corev1.LimitTypeContainer, "defaultRequest.cpu")), limitRange("mem-defaults", limitItem(corev1.LimitTypeContainer, "defaultRequest.memory")))},
-			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 5500m of 8 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRanges cpu-defaults and mem-defaults for 1 container", ""), notCounted + "; 1 container had no request or limit; counted as 0"},
+			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 5500m of 8 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRanges cpu-defaults and mem-defaults for 1 container", ""), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"LimitRange defaults are named", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), quotasPath: listOf(cpuCap("4"))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 1 of 4 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRange tenant-a-limits for 1 container", ""), notCounted},
-		{"no LimitRange defaults: unsized containers count as 0", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("4"))},
-			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 500m of 4 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", ""), notCounted + "; 1 container had no request or limit; counted as 0"},
+		{"no LimitRange defaults: a quota that tracks an unset value refuses the pods (D111)", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("4"))},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api: a container sets no requests.cpu (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", refusedHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+		{"a refused workload and a shortfall are both named", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("100m"))},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api: a container sets no requests.cpu; cpu-cap requests.cpu: peak needs 500m, hard is 100m, short by 400m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", refusedHint+"; "+at10FailHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"a RuntimeClass's overhead is not counted", map[string]http.HandlerFunc{deploymentsPath: listOf(gvisor), quotasPath: listOf(cpuCap("4"))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 500m of 4 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", ""), notCounted + "; pod overhead of a RuntimeClass (api)"},
 		{"StatefulSets count", map[string]http.HandlerFunc{statefulSetsPath: listOf(db), quotasPath: listOf(cpuCap("4"))},
@@ -171,7 +179,7 @@ func TestAT10(t *testing.T) {
 		{"a server error on the LimitRanges", map[string]http.HandlerFunc{limitRangesPath: testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcdserver: request timed out")},
 			configResult(spec, report.Error, "-", "could not list limitranges: etcdserver: request timed out", hintRequestFailed), ""},
 		{"several unsized containers", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized, twoUnsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("4"))},
-			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 500m of 4 (deployments: api 4->5 (HPA max), batch 1->2); used in cpu-cap: none reported", ""), notCounted + "; 3 containers had no request or limit; counted as 0"},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api: a container sets no requests.cpu; cpu-cap refuses the pods of deployment batch: a container sets no requests.cpu (deployments: api 4->5 (HPA max), batch 1->2); used in cpu-cap: none reported", refusedHint), notCounted + "; 3 containers left a cpu or memory request or limit unset; counted as 0"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

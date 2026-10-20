@@ -172,6 +172,7 @@ Found while building B17 to B21; each names the card or decision that owns it.
 Found by /ponytail-review, gstack /review (specialists, Red Team, Claude adversarial, Codex) and its kind QA smoke; decisions D110 to D115.
 - [x] D110: six wrong outputs. The headroom multiply wrapped int64 on a huge peak (now `Quantity.Mul`); AT-10 FAILed from a partial sum while HPAs were unreadable (now SKIP: an HPA can lower replicas); an empty `scopeSelector: {}` counted as scoped (reproduced on kind); a pod-level limit with no pod-level request counted as the request (now the containers' summed requests, as `SetDefaults_Pod`); AT-09 named AT-04 "blocking every probe" after a partial AT-04; AT-08's PASS said "every pod is denied" next to allow-all policies (now "default deny for ...", and the note names policies that select every pod and allow traffic).
 - [x] D112: AT-07 FAILed two LimitRanges that split the Container defaults, and AT-10 took defaults from the first range only, though LimitRanger fills each missing value from every range (reproduced on kind). Both now merge the ranges; each value comes from the first range by name that sets it.
+- [x] D111: AT-10 counted a value a container leaves unset as 0 and could PASS a rollout whose pods the quota refuses ("must specify", reproduced on kind). It now FAILs naming the quota, workload and keys; it SKIPs for unreadable LimitRanges only when such a tracked value is unset; the note says "left a cpu or memory request or limit unset".
 
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 

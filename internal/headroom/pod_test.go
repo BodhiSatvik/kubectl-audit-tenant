@@ -120,6 +120,31 @@ func TestPodOf(t *testing.T) {
 	}
 }
 
+func TestPodOfListsTheValuesLeftUnset(t *testing.T) {
+	// Quota admission refuses a pod that leaves unset a value the quota tracks (D111).
+	for _, tt := range []struct {
+		name     string
+		spec     corev1.PodSpec
+		defaults Defaults
+		want     []corev1.ResourceName
+	}{
+		{"requests only: both limits unset", corev1.PodSpec{Containers: []corev1.Container{container("app", list("cpu", "100m", "memory", "64Mi"), nil)}}, Defaults{},
+			[]corev1.ResourceName{"limits.cpu", "limits.memory"}},
+		{"no sizes and no defaults: all four unset", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil)}}, Defaults{},
+			[]corev1.ResourceName{"requests.cpu", "requests.memory", "limits.cpu", "limits.memory"}},
+		{"LimitRange defaults set every value", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil)}},
+			Defaults{Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}, nil},
+		{"a pod-level cpu limit sets the cpu values of every container", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", list("memory", "64Mi"), nil)}}, Defaults{},
+			[]corev1.ResourceName{"limits.memory"}},
+	} {
+		if got := PodOf(tt.spec, tt.defaults).Unset; !slices.Equal(got, tt.want) {
+			t.Errorf("%s: PodOf().Unset = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestPodOfNotesARuntimeClass(t *testing.T) {
 	gvisor := "gvisor"
 	if p := PodOf(corev1.PodSpec{RuntimeClassName: &gvisor}, Defaults{}); !p.RuntimeClass {
