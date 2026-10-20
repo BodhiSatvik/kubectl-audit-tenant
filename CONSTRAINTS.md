@@ -41,7 +41,7 @@ Every row names the command that produces the verdict. A dimension with a number
 |--------|-------|-----------|
 | Project statement coverage (all packages) | not measured yet (no code); record at the first green CI run | must not fall (0.5% tolerance) |
 | Binary size, linux/amd64 | record at v0.1.0 | must not grow more than 10% per minor release without a note in CHANGELOG |
-| `make check` wall time on the maintainer's Mac | record at the first green run | stays under 90 s |
+| `make check` wall time on the maintainer's Mac | 16.9 s (M1 Pro, 8 cores, test cache cleared; Phase 3 at 9d44fcb, 2026-10-20) | stays under 90 s |
 
 ## Stages and budgets
 

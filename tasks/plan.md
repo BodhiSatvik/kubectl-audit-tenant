@@ -48,7 +48,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B21 e2e: all ten checks
 
 ### Checkpoint 3
-- [ ] Full verdict matrix green; `make check` under 90 s
+- [x] Full verdict matrix green; `make check` under 90 s (2026-10-20 at 9d44fcb: real e2e with upstream Kyverno matches runs 1-4, 37/37/31/34 requests; `make check` 16.9 s with a cold cache; D117)
 
 ### Phase 4: output formats and flags
 - [ ] B22 `-o wide`
