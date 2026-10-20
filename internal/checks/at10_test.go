@@ -212,9 +212,38 @@ func TestAT10LeavesAnEndedRunToTheRunner(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	routes := at10Routes()
-	routes[deploymentsPath] = testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "context canceled")
 	routes[quotasPath] = testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "context canceled")
 	if got := at10(ctx, configClient(t, routes), at10Spec(), ignore); len(got) != 0 {
 		t.Errorf("at10() = %+v; want no result, so the runner says why the run ended", got)
+	}
+}
+
+func TestAT10LeavesARunEndedDuringTheWorkloadListsToTheRunner(t *testing.T) {
+	// In a default run AT-06 fills the quota cache first, so an interrupt lands on the deployments LIST.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	routes := at10Routes()
+	routes[deploymentsPath] = func(_ http.ResponseWriter, r *http.Request) { cancel(); <-r.Context().Done() }
+	if got := at10(ctx, configClient(t, routes), at10Spec(), ignore); len(got) != 0 {
+		t.Errorf("at10() = %+v; want no result when the run ends during the deployments LIST", got)
+	}
+}
+
+func TestAT10NamesAtMostThreeRuntimeClassWorkloads(t *testing.T) {
+	// Notes are never cut, so a namespace where every pod uses gVisor must not print every name (D114).
+	runtimeClass := "gvisor"
+	var ds []appsv1.Deployment
+	for _, name := range []string{"a", "b", "c", "d"} {
+		d := api()
+		d.Name = name
+		d.Spec.Template.Spec.RuntimeClassName = &runtimeClass
+		ds = append(ds, d)
+	}
+	routes := at10Routes()
+	routes[deploymentsPath] = listOf(ds...)
+	routes[hpasPath] = listOf[autoscalingv2.HorizontalPodAutoscaler]()
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	if want := notCounted + "; pod overhead of a RuntimeClass (a, b, c and 1 more)"; len(got) != 1 || got[0].Note != want {
+		t.Errorf("at10() = %+v;\nwant note %q", got, want)
 	}
 }

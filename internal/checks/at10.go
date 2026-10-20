@@ -17,8 +17,9 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
-// at10Estimate starts every AT-10 reason: the peak is an estimate, not a bound (ADR 0006). It is
-// short so the checklist shows the numbers; the note says what the estimate leaves out (D106).
+// at10Estimate starts every AT-10 PASS, FAIL and SKIP reason: the peak is an estimate, not a
+// bound (ADR 0006); an ERROR reports a failed request instead. It is short so the checklist shows
+// the numbers; the note says what the estimate leaves out (D106).
 const at10Estimate = "estimate: "
 
 // at10 sums the rollout peak of the namespace's Deployments and StatefulSets (internal/headroom)
@@ -145,7 +146,11 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		refused = nil
 	}
 	if len(runtimeClass) > 0 {
-		note += "; pod overhead of a RuntimeClass (" + strings.Join(runtimeClass, ", ") + ")"
+		names := strings.Join(runtimeClass, ", ")
+		if more := len(runtimeClass) - 3; more > 0 { // the note is never cut, so it names three (D114)
+			names = fmt.Sprintf("%s and %d more", strings.Join(runtimeClass[:3], ", "), more)
+		}
+		note += "; pod overhead of a RuntimeClass (" + names + ")"
 	}
 	if unsized > 0 {
 		note += "; " + containers(unsized) + " left a cpu or memory request or limit unset; counted as 0"

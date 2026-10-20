@@ -11,8 +11,8 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
-// implemented gives every registry entry a Run for the duration of the test, so selection can
-// be tested over all ten checks before their tasks land.
+// implemented gives every registry entry a no-op Run for the duration of the test, so selection
+// is tested apart from what the checks do.
 func implemented(t *testing.T) {
 	t.Helper()
 	saved := Registry

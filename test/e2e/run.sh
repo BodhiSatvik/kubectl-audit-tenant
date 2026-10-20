@@ -56,16 +56,19 @@ echo "$out"
 say "build"
 go build -o "$bin" ./cmd/kubectl-audit_tenant
 
-# run NAME WANT_EXIT ARGS...: runs the plugin with --debug, prints its report, checks the exit code.
+# run NAME WANT_EXIT ARGS...: runs the plugin with --debug, prints its report, checks the exit code
+# and the request budget (CONSTRAINTS.md: no e2e run makes more than 40 API requests).
 run() {
-  local name=$1 want=$2 code start end; shift 2
+  local name=$1 want=$2 code start end requests; shift 2
   say "run $name: kubectl audit-tenant $*"
   start=$(now)
   set +e; "$bin" "$@" --debug >"bin/e2e-$name.out" 2>"bin/e2e-$name.err"; code=$?; set -e
   end=$(now)
   cat "bin/e2e-$name.out"
-  printf 'exit %d; %s requests; %.2f s wall\n' "$code" "$(grep -c '^[A-Z]* /' "bin/e2e-$name.err" || true)" "$(echo "$end - $start" | bc)"
+  requests=$(grep -c '^[A-Z]* /' "bin/e2e-$name.err" || true)
+  printf 'exit %d; %s requests; %.2f s wall\n' "$code" "$requests" "$(echo "$end - $start" | bc)"
   [ "$code" = "$want" ] || fail "run $name exited $code, want $want; stderr: $(cat "bin/e2e-$name.err")"
+  [ "$requests" -le 40 ] || fail "run $name made $requests API requests, over the budget of 40 (CONSTRAINTS.md)"
 }
 expect() { grep -qE "$2" "bin/e2e-$1.out" || fail "run $1: expected /$2/ in the output above"; }
 absent() { ! grep -qE "$2" "bin/e2e-$1.out" || fail "run $1: /$2/ must not appear in the output above"; }
