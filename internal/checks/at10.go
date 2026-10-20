@@ -16,8 +16,9 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
-// at10Estimate starts every AT-10 reason: the peak is an estimate, not a bound (ADR 0006).
-const at10Estimate = "estimate: active pods during a rollout; terminating pods and uncounted kinds can add to usage; see used. "
+// at10Estimate starts every AT-10 reason: the peak is an estimate, not a bound (ADR 0006). It is
+// short so the checklist shows the numbers; the note says what the estimate leaves out (D106).
+const at10Estimate = "estimate: "
 
 // at10 sums the rollout peak of the namespace's Deployments and StatefulSets (internal/headroom)
 // and compares it with every unscoped ResourceQuota, edge cases in the DESIGN.md section 5 order:
@@ -26,7 +27,7 @@ const at10Estimate = "estimate: active pods during a rollout; terminating pods a
 // already over a hard value, which is FAIL.
 func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Result)) []report.Result {
 	ns := c.Namespace
-	note := "not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
+	note := "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
 	result := func(v report.Verdict, layer, reason, hint string) []report.Result {
 		res := spec.result(spec.Results[0], v, layer, at10Estimate+reason, hint)
 		res.Note = note

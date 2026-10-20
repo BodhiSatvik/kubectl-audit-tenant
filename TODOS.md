@@ -163,7 +163,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 ### Phase 3 follow-ups (build, 2026-10-14)
 
 Found while building B17 to B21; each names the card or decision that owns it.
-- [ ] The checklist cuts reasons near 120 columns off a terminal, and AT-10's required 104-character "estimate: ..." prefix fills most of that, so the peak numbers show only in `-o wide` and `-o json`. Decide whether the long caveat moves to the note and the reason keeps a short "estimate: " start (Checkpoint 3 question; ADR 0006 asks only that the reason start with "estimate").
+- [x] The checklist cuts reasons near 120 columns off a terminal, and AT-10's required 104-character "estimate: ..." prefix fills most of that, so the peak numbers show only in `-o wide` and `-o json`. Decide whether the long caveat moves to the note and the reason keeps a short "estimate: " start (Checkpoint 3 question; ADR 0006 asks only that the reason start with "estimate"). Done (D106 = short start): the reason starts "estimate: " and the note carries the caveat with the kinds not counted.
 - [ ] The e2e asserts AT-10's verdict and note, not the fixture numbers (5 pods, 500m/640Mi, 2500m/2560Mi), because the checklist cuts them; assert them from `-o json` (B23). The unit golden and a kind run match today.
 - [x] AT-06 needs one unscoped quota with all five keys (DESIGN.md section 5). Two unscoped quotas that split the keys (one for requests, one for limits and pods) bound the namespace just as well but FAIL today; decide whether AT-06 reads the union (Checkpoint 3 question). Done (D107 = union): AT-06 passes when the unscoped quotas together set the five keys and names which quota sets which; a quota that sets all five alone is named alone.
 

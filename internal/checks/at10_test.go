@@ -24,8 +24,8 @@ const (
 	deploymentsPath  = "GET /apis/apps/v1/namespaces/tenant-a/deployments"
 	statefulSetsPath = "GET /apis/apps/v1/namespaces/tenant-a/statefulsets"
 	hpasPath         = "GET /apis/autoscaling/v2/namespaces/tenant-a/horizontalpodautoscalers"
-	estimate         = "estimate: active pods during a rollout; terminating pods and uncounted kinds can add to usage; see used. "
-	notCounted       = "not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
+	estimate         = "estimate: "
+	notCounted       = "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
 	at10FailHint     = "raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once"
 )
 

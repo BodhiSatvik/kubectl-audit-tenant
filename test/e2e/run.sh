@@ -119,8 +119,8 @@ for n in 1 2 4; do
   count "$n" '^PASS +AT-08 .* every pod is denied ingress by default-deny-ingress and egress by default-deny-egress' 1
   count "$n" "^ +note +not tested: whether the cluster's network plugin enforces NetworkPolicy$" 1
   count "$n" '^PASS +AT-09 .* pod-security\.kubernetes\.io/enforce=restricted on namespace tenant-a$' 1
-  count "$n" '^PASS +AT-10 .* estimate: active pods during a rollout' 1
-  count "$n" '^ +note +not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts$' 1
+  count "$n" '^PASS +AT-10 .* estimate: peak fits tenant-a-quota: requests.cpu 500m of 4' 1
+  count "$n" '^ +note +the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts$' 1
 done
 # D105: only cluster-admin may change the PSA label; the note says so, the verdict stays PASS.
 expect 4 '^ +note +this identity may update namespace tenant-a, so it can change or remove this label$'
@@ -131,7 +131,7 @@ count 3 '^FAIL +AT-06 .* no ResourceQuota in tenant-b$' 1
 count 3 '^FAIL +AT-07 .* no LimitRange in tenant-b$' 1
 count 3 '^FAIL +AT-08 .* no NetworkPolicy in tenant-b$' 1
 count 3 '^FAIL +AT-09 .* namespace tenant-b has no pod-security\.kubernetes\.io/enforce label$' 1 # no AT-04 admission note: AT-04 failed
-count 3 '^FAIL +AT-10 .* estimate: active pods during a rollout' 1
+count 3 '^FAIL +AT-10 .* estimate: no ResourceQuota to compare against$' 1
 count 3 '^ +fix +add a ResourceQuota with no scopes .* \(see AT-06\)$' 1 # AT-10: no quota to compare against
 
 say "e2e: all four runs match (verdicts AT-01 to AT-10, layers and reasons, notes, exit codes, headers and hints)"
