@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -66,7 +67,8 @@ func TestClassifyEveryRuleOnARealServerString(t *testing.T) {
 		{"quota-must-specify", report.Skip, "-", `pods "audit-tenant-probe-b6zp4" is forbidden: failed quota`, "ResourceQuota"},
 		{"limitrange-min", report.Skip, "-", `pods "audit-tenant-probe-vxbn5" is forbidden: minimum cpu`, "LimitRange"},
 		{"limitrange-max", report.Skip, "-", `pods "audit-tenant-probe-688lv" is forbidden: maximum memory`, "LimitRange"},
-		{"invalid", report.Error, "-", `Pod "audit-tenant-probe-8f4bk" is invalid`, "a bug in audit-tenant"},
+		{"allow-privileged", report.Pass, "API server (allow-privileged=false)", "spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy", ""},
+		{"privileged-escalation-false", report.Skip, "-", `Pod "audit-tenant-probe-8f4bk" is invalid`, "set allowPrivilegeEscalation: false"},
 		{"bad-request", report.Error, "-", `Pod in version "v1" cannot be handled as a Pod`, "a bug in audit-tenant"},
 		{"other", report.Error, "-", `pods is forbidden: User "system:serviceaccount:tenant-a:default" cannot create resource "pods"`, "does not recognize"},
 	}
@@ -87,6 +89,18 @@ func TestClassifyEveryRuleOnARealServerString(t *testing.T) {
 				t.Errorf("hint = %q, want one containing %q (empty only on PASS)", got.Hint, tt.hint)
 			}
 		})
+	}
+}
+
+// layers is the deciding-layer vocabulary of DESIGN.md section 6, which -o wide prints; the checks
+// themselves set only RBAC, config and -.
+var layers = regexp.MustCompile(`^(RBAC|config|-|admission \((PSA|(webhook|policy|quota): [^()]+)\)|API server \(allow-privileged=false\))$`)
+
+func TestClassifyLayersAreInTheVocabulary(t *testing.T) {
+	for id, err := range messages(t) {
+		if l := Classify(err).Layer; !layers.MatchString(l) {
+			t.Errorf("%s: layer %q is not in the DESIGN.md section 6 vocabulary", id, l)
+		}
 	}
 }
 

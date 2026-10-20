@@ -408,7 +408,37 @@ var (
 	acceptProbe = testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"}}`)
 	rejectProbe = testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, psaDenial)
 	mayPods     = map[string]string{"list nodes": denied, "create pods": allowed}
+	// mutatedProbe is the API server's answer to a privileged probe that a mutating policy gave allowPrivilegeEscalation: false.
+	mutatedProbe = testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-x7k2p" is invalid: spec.containers[0].securityContext: Invalid value: {"Privileged":true,"AllowPrivilegeEscalation":false}: cannot set `+"`allowPrivilegeEscalation` to false and `privileged` to true")
 )
+
+func TestAT04PrivilegedFormsReadTheTwoValidationAnswers(t *testing.T) {
+	noPrivileged := testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-xtfqk" is invalid: spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy`)
+	specs, err := Select([]string{"AT-04.1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name          string
+		first, second http.HandlerFunc
+		want          report.Verdict
+		layer, hint   string
+	}{
+		{"an API server with --allow-privileged=false", noPrivileged, noPrivileged, report.Pass, "API server (allow-privileged=false)", ""},
+		{"a mutation, then PSA", mutatedProbe, rejectProbe, report.Pass, "admission (PSA)", ""},
+		{"a mutation in both forms", mutatedProbe, mutatedProbe, report.Skip, "-", "set allowPrivilegeEscalation: false"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": nth(tt.first, tt.second)}}
+			got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), specs[0], ignore)
+			if len(got) != 1 || got[0].Verdict != tt.want || got[0].Layer != tt.layer || (tt.hint == "") != (got[0].Hint == "") || !strings.Contains(got[0].Hint, tt.hint) {
+				t.Errorf("AT-04.1 = %+v, want %s on layer %q with a hint containing %q", got, tt.want, tt.layer, tt.hint)
+			}
+		})
+	}
+}
 
 func TestAT04InterruptAfterTheFirstPrivilegedFormKeepsTheFail(t *testing.T) {
 	// D84(1), D61, D63: the first form was accepted; Ctrl-C arrives while the second is in flight.
@@ -561,6 +591,12 @@ func TestAT04OneResultTakesTheWorstOfItsForms(t *testing.T) {
 		// Added by the /ship pre-landing review (Phase 2): the two orders the rows above miss, a FAIL over a SKIP and an ERROR over a SKIP.
 		{"a webhook that cannot dry-run, then accepted", noDryRun, acceptProbe, report.Fail},
 		{"a webhook that cannot dry-run, then unreadable", noDryRun, unread, report.Error},
+		// B22: a privileged form that a mutating policy made invalid decides nothing; the other form decides.
+		{"mutated, then rejected", mutatedProbe, rejectProbe, report.Pass},
+		{"mutated, then accepted", mutatedProbe, acceptProbe, report.Fail},
+		{"rejected, then mutated", rejectProbe, mutatedProbe, report.Pass},
+		{"mutated, then unreadable", mutatedProbe, unread, report.Error},
+		{"mutated in both forms", mutatedProbe, mutatedProbe, report.Skip},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": nth(tt.first, tt.second)}}

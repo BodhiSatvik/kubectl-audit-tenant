@@ -30,6 +30,9 @@ const (
 	hintUnknown    = "the cluster rejected the probe for a reason audit-tenant does not recognize, so it decides nothing; read the reason, or run with --debug and report it"
 )
 
+// HintMutated is the hint of a privileged probe that a mutating policy made invalid; AT-04 lets the other form decide.
+const HintMutated = "a mutating webhook or policy set allowPrivilegeEscalation: false on the privileged probe, so the API server refused it as invalid before any security gate ran, and it decides nothing; check which mutation changes privileged pods"
+
 // HintRetry is the one hint for a request that failed or met a throttled or failing server; the checks use it too.
 const HintRetry = "re-run; if it repeats, run with --debug and report the server message"
 
@@ -88,6 +91,12 @@ func Classify(err error) Outcome {
 		return Outcome{report.Skip, "-", full, hintQuota}
 	case decided && (strings.Contains(msg, " usage per Container is ") || strings.Contains(msg, " usage per Pod is ")): // LimitRanger, one violation or several in brackets
 		return Outcome{report.Skip, "-", full, hintLimitRange}
+	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, "privileged: Forbidden: disallowed by cluster policy"):
+		// kube-apiserver --allow-privileged=false refuses every privileged container at validation, for every identity.
+		return Outcome{report.Pass, "API server (allow-privileged=false)", from(msg, "spec."), ""}
+	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, "cannot set `allowPrivilegeEscalation` to false and `privileged` to true"):
+		// No probe sends this pair (D78), so a mutating policy set the field; validation refused the probe before admission.
+		return Outcome{report.Skip, "-", full, HintMutated}
 	case s.Code == 400 || s.Code == 422:
 		return Outcome{report.Error, "-", full, hintMalformed}
 	}
@@ -95,10 +104,12 @@ func Classify(err error) Outcome {
 }
 
 // from returns msg from the first key on, dropping the "pods "audit-tenant-probe-x7k2p" is
-// forbidden: " prefix that names only the generated probe.
+// forbidden: " prefix that names only the generated probe; msg itself when key is missing.
 func from(msg, key string) string {
-	_, rest, _ := strings.Cut(msg, key)
-	return key + rest
+	if _, rest, ok := strings.Cut(msg, key); ok {
+		return key + rest
+	}
+	return msg
 }
 
 // between returns the text after start up to the next end, or "" when start is missing.

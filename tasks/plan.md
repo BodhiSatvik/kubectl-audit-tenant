@@ -51,7 +51,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] Full verdict matrix green; `make check` under 90 s (2026-10-20 at 9d44fcb: real e2e with upstream Kyverno matches runs 1-4, 37/37/31/34 requests; `make check` 16.9 s with a cold cache; D117)
 
 ### Phase 4: output formats and flags
-- [ ] B22 `-o wide`
+- [x] B22 `-o wide`
 - [ ] B23 `-o json` and schema
 - [ ] B24 `-o policyreport`
 - [ ] B25 `--debug` and `--fail-on-skip`

@@ -221,3 +221,57 @@ func TestChecklistPrintsANoteUnderItsResult(t *testing.T) {
 		t.Errorf("checklist:\n%s\nwant the note lines %q, a fix line before a note", out.String(), want)
 	}
 }
+
+// wideSample has one result per deciding layer of DESIGN.md section 6, in ID order.
+func wideSample() Report {
+	r := sample()
+	long := "estimate: tenant-a-quota requests.cpu: peak needs 6, hard is 4, short by 2 (deployments: api 3->4, worker 2->3); tenant-a-quota pods: peak needs 24, hard is 20, short by 4"
+	r.Results = []Result{
+		{ID: "AT-01", Name: "No cluster-scoped access", MTB: "MTB-PL1-CC-CPI-1", Verdict: Pass, Layer: "RBAC", Reason: "RBAC denied all 4 actions"},
+		{ID: "AT-04.1", Name: "Privileged container blocked", MTB: "MTB-PL1-BC-CPI-5", Verdict: Pass, Layer: "API server (allow-privileged=false)",
+			Reason: "spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy", Note: "tested in a regular container only (not initContainers or ephemeral containers)"},
+		{ID: "AT-04.2", Name: "hostPath volume blocked", MTB: "MTB-PL1-BC-HI-1", Verdict: Pass, Layer: "admission (PSA)", Reason: `violates PodSecurity "restricted:latest": hostPath volumes (volume "host")`},
+		{ID: "AT-04.3", Name: "hostPID blocked", MTB: "MTB-PL1-BC-HI-4", Verdict: Pass, Layer: "admission (webhook: validate.kyverno.svc-fail)", Reason: `admission webhook "validate.kyverno.svc-fail" denied the request: host namespaces are not allowed`},
+		{ID: "AT-04.4", Name: "hostNetwork blocked", MTB: "MTB-PL1-BC-HI-3", Verdict: Pass, Layer: "admission (policy: deny-host-network)", Reason: "ValidatingAdmissionPolicy 'deny-host-network' with binding 'b' denied request: no host network"},
+		{ID: "AT-05", Name: "NodePort services blocked", MTB: "MTB-PL1-BC-HI-1", Verdict: Pass, Layer: "admission (quota: no-nodeports)", Reason: "exceeded quota: no-nodeports, requested: services.nodeports=1, used: services.nodeports=0, limited: services.nodeports=0"},
+		{ID: "AT-06", Name: "ResourceQuota present and complete", MTB: "MTB-PL1-CC-FNS-1", Verdict: Pass, Layer: "config", Reason: "ResourceQuota tenant-a-quota has no scopes and sets all five keys"},
+		{ID: "AT-09", Name: "Pod Security Admission enforced", MTB: "-", Verdict: Skip, Layer: "-", Reason: "cannot read namespace labels (forbidden)", Hint: "grant `get` on namespace team-a to this identity, or run with --as <admin>"},
+		{ID: "AT-10", Name: "Quota covers rollout peak", MTB: "-", Verdict: Fail, Layer: "config", Reason: long, Hint: "raise the quota, or lower replicas or maxSurge"},
+	}
+	r.Summary = Summarize(r.Results, false)
+	return r
+}
+
+func TestWideShowsMTBAndLayerAndTheFullReason(t *testing.T) {
+	r := wideSample()
+	out := render(t, Checklist{Wide: true, Width: 80}, r)
+	golden(t, "wide-sample", out)
+	if !strings.Contains(out, r.Results[8].Reason+"\n") {
+		t.Error("-o wide never cuts a reason, even on a narrow terminal")
+	}
+	if strings.Contains(out, "…") || strings.Contains(out, "full reasons") || strings.Contains(out, "MTB IDs and layers: -o wide") {
+		t.Errorf("-o wide has no cut reasons and no pointer to itself:\n%s", out)
+	}
+	if !strings.Contains(out, "\nmachine output: -o json, -o policyreport\n") {
+		t.Errorf("-o wide still names the machine outputs:\n%s", out)
+	}
+	for _, line := range strings.Split(out, "\n") { // MTB and layer are the two columns after the ID
+		if strings.HasPrefix(line, "PASS  AT-04.3") && !strings.HasPrefix(line, "PASS  AT-04.3  MTB-PL1-BC-HI-4   admission (webhook: validate.kyverno.svc-fail)  hostPID blocked") {
+			t.Errorf("wide line = %q, want verdict, ID, MTB, layer, name", line)
+		}
+	}
+}
+
+func TestWideSanitizesLayerAndReasonAndStaysASCIIWhenPlain(t *testing.T) {
+	r := wideSample()
+	r.Results[3].Layer = "admission (webhook: evil\x1b[2K.example.com)" // the webhook name is server text
+	r.Results[3].Reason = "line one\nline \x1b[31mtwo\x1b[0m\x07"
+	out := render(t, Checklist{Wide: true, Plain: true}, r)
+	golden(t, "wide-plain-ansi", out)
+	if strings.ContainsAny(out, "\x1b\x07·…") {
+		t.Errorf("-o wide --plain must be sanitized ASCII:\n%q", out)
+	}
+	if !strings.Contains(out, "admission (webhook: evil.example.com)") || !strings.Contains(out, "line one; line two\n") {
+		t.Errorf("layer and reason must be sanitized:\n%s", out)
+	}
+}

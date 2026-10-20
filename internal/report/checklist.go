@@ -8,16 +8,17 @@ import (
 
 // Checklist is the default printer: a header, one line per result, a fix line under every
 // non-PASS, a note line under a result that names what it did not test, and a summary
-// (DESIGN.md section 6).
+// (DESIGN.md section 6). With Wide it is -o wide.
 type Checklist struct {
 	Out   io.Writer
 	Color bool // the caller decides with WantColor
 	Plain bool // ASCII only: no color, no "·", no "…"
 	Width int  // terminal columns; 0 when Out is not a terminal
+	Wide  bool // -o wide: MTB ID and deciding layer after the ID; reasons never cut
 }
 
-// Print writes the report. Server text is sanitized and capped; a cut reason adds the
-// "full reasons" footer.
+// Print writes the report. Server text is sanitized and, except in -o wide, capped; a cut
+// reason adds the "full reasons" footer.
 func (p Checklist) Print(r Report) error {
 	dot, ellipsis := " · ", "…"
 	if p.Plain {
@@ -30,16 +31,22 @@ func (p Checklist) Print(r Report) error {
 	}
 	b.WriteString("\n")
 
-	vw, iw, nw := 0, 0, 0 // column widths: verdict, ID, name
+	vw, iw, nw, mw, lw := 0, 0, 0, 0, 0 // column widths: verdict, ID, name, MTB, layer
 	for _, res := range r.Results {
 		vw, iw, nw = max(vw, len(res.Verdict)), max(iw, len(res.ID)), max(nw, len(res.Name))
+		mw, lw = max(mw, len(res.MTB)), max(lw, len(Sanitize(res.Layer)))
 	}
 	limit := p.reasonWidth(vw + 2 + iw + 2 + nw + 2)
 	cut := false
 	for _, res := range r.Results {
-		reason, c := clip(Sanitize(res.Reason), limit, ellipsis)
+		reason, wide, c := Sanitize(res.Reason), "", false
+		if p.Wide {
+			wide = fmt.Sprintf("%-*s  %-*s  ", mw, res.MTB, lw, Sanitize(res.Layer))
+		} else {
+			reason, c = clip(reason, limit, ellipsis)
+		}
 		cut = cut || c
-		fmt.Fprintf(&b, "%s  %-*s  %-*s  %s\n", p.verdict(res.Verdict, vw), iw, res.ID, nw, res.Name, reason)
+		fmt.Fprintf(&b, "%s  %-*s  %s%-*s  %s\n", p.verdict(res.Verdict, vw), iw, res.ID, wide, nw, res.Name, reason)
 		if res.Verdict != Pass {
 			fmt.Fprintf(&b, "%*s  %-*s  %s\n", vw, "", iw, "fix", Sanitize(res.Hint))
 		}
@@ -48,7 +55,10 @@ func (p Checklist) Print(r Report) error {
 		}
 	}
 	b.WriteString("\n" + summaryLine(r, dot) + "\n")
-	b.WriteString("MTB IDs and layers: -o wide" + dot + "machine output: -o json, -o policyreport\n")
+	if !p.Wide {
+		b.WriteString("MTB IDs and layers: -o wide" + dot)
+	}
+	b.WriteString("machine output: -o json, -o policyreport\n")
 	if cut {
 		b.WriteString("full reasons: -o wide or -o json\n")
 	}

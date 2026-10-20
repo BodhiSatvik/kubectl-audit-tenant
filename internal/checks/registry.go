@@ -54,7 +54,8 @@ func (s Spec) all(verdict report.Verdict, layer, reason, hint string) []report.R
 
 func one(id, name, mtb string) []ResultSpec { return []ResultSpec{{ID: id, Name: name, MTB: mtb}} }
 
-// Registry lists the ten checks in run order (DESIGN.md section 5).
+// Registry lists the ten checks in run order (DESIGN.md section 5). The MTB IDs match kubectl-mtb's
+// benchmark configs (kubernetes-sigs/multi-tenancy 44dad58); upstream gives hostPath and NodePort one ID.
 var Registry = []Spec{
 	{ID: "AT-01", Name: "No cluster-scoped access", Kind: report.Behavioral, Severity: report.High,
 		Method:  "SSAR with no namespace: list nodes, create namespaces, create clusterrolebindings, create persistentvolumes; before a PASS, a control: create selfsubjectaccessreviews must be allowed",

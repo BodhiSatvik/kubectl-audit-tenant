@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -304,6 +305,14 @@ func TestPlainFlagReachesThePrinter(t *testing.T) {
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--plain")
 	if code != 0 || !strings.Contains(stdout, "namespace tenant-a | as ") || strings.Contains(stdout, "·") {
 		t.Errorf("exit %d, stderr %q; want ASCII separators only:\n%s", code, stderr, stdout)
+	}
+}
+
+func TestWideFlagReachesThePrinter(t *testing.T) {
+	srv := cluster(t) // every "may I?" denied: AT-01 is a PASS by RBAC
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "wide", "--checks", "AT-01")
+	if code != 0 || !regexp.MustCompile(`(?m)^PASS  AT-01  MTB-PL1-CC-CPI-1  RBAC  No cluster-scoped access  RBAC denied all 4 actions$`).MatchString(stdout) {
+		t.Errorf("exit %d, stderr %q; want the MTB ID and layer columns:\n%s", code, stderr, stdout)
 	}
 }
 
