@@ -104,6 +104,16 @@ func TestPodOf(t *testing.T) {
 			Containers: []corev1.Container{container("app", nil, list("memory", "64Mi"))}},
 			Defaults{Request: list("cpu", "100m")},
 			list("cpu", "2", "memory", "64Mi"), list("cpu", "2", "memory", "64Mi"), 0, 0},
+		// Value: protects=a container request of 0 is the default pod-level request, not the limit (D132); fails_when=the defaulting tests the summed request with IsZero; why_new=every pod-level row requests a non-zero value or none; seam=none; no_claim=init containers
+		{"a container request of 0 is the pod-level request, not the pod-level limit (D132)", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "1")},
+			Containers: []corev1.Container{container("app", list("cpu", "0", "memory", "64Mi"), list("memory", "64Mi"))}}, Defaults{},
+			list("cpu", "0", "memory", "64Mi"), list("cpu", "1", "memory", "64Mi"), 0, 0},
+		// Value: protects=a container limit counts as its request before pod-level defaulting (D132); fails_when=requested() ignores limits; why_new=no row pairs a pod-level limit with a limit-only container; seam=none; no_claim=init containers
+		{"a container limit with no request is the pod-level request, not the pod-level limit (D132)", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", list("memory", "64Mi"), list("cpu", "500m", "memory", "64Mi"))}}, Defaults{},
+			list("cpu", "500m", "memory", "64Mi"), list("cpu", "2", "memory", "64Mi"), 0, 0},
 		// Value: protects=a LimitRange limit default that a pod-level limit replaces is not credited (D121); fails_when=the limit-side !podLim guard goes; why_new=no row sets Defaults.Limit with pod-level limits; seam=none; no_claim=none beyond protects
 		{"a pod-level limit replaces a LimitRange limit default, which is not credited", corev1.PodSpec{
 			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2", "memory", "1Gi")},
@@ -140,10 +150,10 @@ func TestPodOfListsTheValuesLeftUnset(t *testing.T) {
 			[]corev1.ResourceName{"requests.cpu", "requests.memory", "limits.cpu", "limits.memory"}},
 		{"LimitRange defaults set every value", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil)}},
 			Defaults{Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}, nil},
-		{"a pod-level cpu limit sets the cpu values of every container", corev1.PodSpec{
+		// Value: protects=quota admission skips its "must specify" check when the pod sets any pod-level value (D132); fails_when=Unset lists limits.memory, which no pod-level value covers; why_new=this row wanted limits.memory before D132; seam=none; no_claim=hugepages
+		{"any pod-level value skips the quota's check, so nothing is unset (D132)", corev1.PodSpec{
 			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
-			Containers: []corev1.Container{container("app", list("memory", "64Mi"), nil)}}, Defaults{},
-			[]corev1.ResourceName{"limits.memory"}},
+			Containers: []corev1.Container{container("app", list("memory", "64Mi"), nil)}}, Defaults{}, nil},
 	} {
 		if got := PodOf(tt.spec, tt.defaults).Unset; !slices.Equal(got, tt.want) {
 			t.Errorf("%s: PodOf().Unset = %v, want %v", tt.name, got, tt.want)

@@ -53,7 +53,7 @@ func fill(into corev1.ResourceList, from map[corev1.ResourceName]string, values 
 // Pod is one pod's cpu and memory as the quota counts them.
 type Pod struct {
 	Requests, Limits corev1.ResourceList
-	Unset            []corev1.ResourceName // quota keys (requests.cpu ... limits.memory) a container leaves unset, in Keys order
+	Unset            []corev1.ResourceName // quota keys (requests.cpu ... limits.memory) a container leaves unset, in Keys order; none with pod-level values (D132)
 	Unsized          int                   // containers that leave a value unset: no value, no LimitRange default, no pod-level value
 	Defaulted        int                   // containers that took a value from the LimitRange defaults
 	DefaultedFrom    []string              // the LimitRanges those values came from, by name (D121)
@@ -66,7 +66,8 @@ type Pod struct {
 // limit, else the LimitRange default, else 0. App containers and sidecars (init containers with
 // restartPolicy Always) add up; an init container runs with the sidecars declared before it; the
 // pod needs the larger of the two, per resource. A value left unset counts as 0 and is listed in
-// Unset, since a quota that tracks it refuses the pod (D111).
+// Unset, since a quota that tracks it refuses the pod (D111), unless the pod sets any pod-level
+// value: quota admission then skips that check (D132).
 func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 	var podLevel corev1.ResourceRequirements
 	if spec.Resources != nil {
@@ -127,8 +128,10 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 		sidecar = append(sidecar, c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways)
 	}
 	p.Requests, p.Limits = effective(appReq, initReq, sidecar), effective(appLim, initLim, sidecar)
+	// Quota admission skips "must specify" for a pod with any pod-level value; the API server
+	// accepts only cpu, memory and hugepages there (D132).
 	for _, k := range Keys {
-		if unset[k] {
+		if unset[k] && len(podLevel.Requests)+len(podLevel.Limits) == 0 {
 			p.Unset = append(p.Unset, k)
 		}
 	}
@@ -141,10 +144,10 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 	for _, r := range sized {
 		if v, ok := podLevel.Limits[r]; ok {
 			// SetDefaults_Pod: a missing pod-level request is the containers' summed requests, or the
-			// limit when no container requests the resource (D110).
+			// limit when no container requests the resource (D110); a request of 0 counts (D132).
 			p.Requests[r], p.Limits[r] = v, v
-			if q := explicit[r]; !q.IsZero() {
-				p.Requests[r] = q
+			if requested(spec, r) {
+				p.Requests[r] = explicit[r]
 			}
 		}
 		if v, ok := podLevel.Requests[r]; ok {
@@ -152,6 +155,16 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 		}
 	}
 	return p
+}
+
+// requested reports whether a container of spec requests r; a limit counts, as the API server copies
+// it into a missing request.
+func requested(spec corev1.PodSpec, r corev1.ResourceName) bool {
+	return slices.ContainsFunc(slices.Concat(spec.Containers, spec.InitContainers), func(c corev1.Container) bool {
+		_, req := c.Resources.Requests[r]
+		_, lim := c.Resources.Limits[r]
+		return req || lim
+	})
 }
 
 // effective is the Kubernetes rule for one pod's value of each resource: app containers and
