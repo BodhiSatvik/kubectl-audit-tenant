@@ -1,6 +1,7 @@
 package headroom
 
 import (
+	"slices"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -35,6 +36,12 @@ func hpa(name, apiVersion, kind, target string, maxReplicas int32) autoscalingv2
 		ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: apiVersion, Kind: kind, Name: target}, MaxReplicas: maxReplicas}}
 }
 
+// withMin sets h's minReplicas.
+func withMin(h autoscalingv2.HorizontalPodAutoscaler, n int32) autoscalingv2.HorizontalPodAutoscaler {
+	h.Spec.MinReplicas = &n
+	return h
+}
+
 func TestDeploymentPeak(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -60,8 +67,10 @@ func TestDeploymentPeak(t *testing.T) {
 		{"an HPA for another kind, group or name does not match", deployment("api", replicas(3), rolling(intstr.FromString("25%"))),
 			[]autoscalingv2.HorizontalPodAutoscaler{
 				hpa("sts", "apps/v1", "StatefulSet", "api", 9), hpa("rollout", "argoproj.io/v1alpha1", "Deployment", "api", 9), hpa("web", "apps/v1", "Deployment", "web", 9)}, 3, 4, ""},
-		{"several HPAs: the largest maxReplicas", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
-			[]autoscalingv2.HorizontalPodAutoscaler{hpa("a", "apps/v1", "Deployment", "api", 6), hpa("b", "apps/v1", "Deployment", "api", 8)}, 8, 9, "b"},
+		{"several HPAs: the controller scales none, so spec.replicas stays (AmbiguousSelector, D126)", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
+			[]autoscalingv2.HorizontalPodAutoscaler{hpa("a", "apps/v1", "Deployment", "api", 6), hpa("b", "apps/v1", "Deployment", "api", 8)}, 3, 4, ""},
+		{"several HPAs still hold replicas at the largest minReplicas", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
+			[]autoscalingv2.HorizontalPodAutoscaler{withMin(hpa("a", "apps/v1", "Deployment", "api", 6), 5), withMin(hpa("b", "apps/v1", "Deployment", "api", 8), 2)}, 5, 6, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -107,5 +116,18 @@ func TestDeploymentPeakDoesNotWrapOnAHugeSurgePercent(t *testing.T) {
 	}
 	if p := Total([]Workload{w, w})[corev1.ResourcePods]; p.Sign() < 0 {
 		t.Errorf("pods total %s is negative", p.String())
+	}
+	// Value: protects=the peak never wraps on a surge that scales inside int64 on every arch; fails_when=the clamp narrows to extra < 0 (9e18% above takes that arm on amd64 CI only); why_new=the 9e18% case is arch-defined; seam=none; no_claim=none beyond protects
+	w = Deployment(deployment("api", replicas(2000), rolling(intstr.FromString("461168601842738739%"))), nil, Defaults{})
+	if w.Peak < w.Replicas {
+		t.Errorf("peak %d is below replicas %d: a surge inside int64 still wrapped the sum", w.Peak, w.Replicas)
+	}
+}
+
+func TestSeveralHPAsAreNamedForTheNote(t *testing.T) {
+	w := Deployment(deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
+		[]autoscalingv2.HorizontalPodAutoscaler{hpa("b", "apps/v1", "Deployment", "api", 8), hpa("a", "apps/v1", "Deployment", "api", 6), hpa("other", "apps/v1", "Deployment", "web", 9)}, Defaults{})
+	if !slices.Equal(w.ConflictingHPAs, []string{"a", "b"}) {
+		t.Errorf("ConflictingHPAs = %v, want [a b]: the HPAs that target api, by name", w.ConflictingHPAs)
 	}
 }

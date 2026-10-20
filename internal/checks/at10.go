@@ -122,6 +122,9 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		for _, name := range w.Pod.DefaultedFrom {
 			defaultedFrom[name] = true
 		}
+		if len(w.ConflictingHPAs) > 0 { // D126
+			note += "; several HPAs target " + strings.ToLower(w.Kind) + " " + w.Name + " (" + strings.Join(w.ConflictingHPAs, ", ") + "); the HPA controller scales none of them (AmbiguousSelector)"
+		}
 		if w.Pod.RuntimeClass {
 			runtimeClass = append(runtimeClass, w.Name)
 		}

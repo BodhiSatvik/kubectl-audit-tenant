@@ -104,6 +104,12 @@ func TestPodOf(t *testing.T) {
 			Containers: []corev1.Container{container("app", nil, list("memory", "64Mi"))}},
 			Defaults{Request: list("cpu", "100m")},
 			list("cpu", "2", "memory", "64Mi"), list("cpu", "2", "memory", "64Mi"), 0, 0},
+		// Value: protects=a LimitRange limit default that a pod-level limit replaces is not credited (D121); fails_when=the limit-side !podLim guard goes; why_new=no row sets Defaults.Limit with pod-level limits; seam=none; no_claim=none beyond protects
+		{"a pod-level limit replaces a LimitRange limit default, which is not credited", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2", "memory", "1Gi")},
+			Containers: []corev1.Container{container("app", list("cpu", "100m", "memory", "128Mi"), nil)}},
+			Defaults{Limit: list("cpu", "500m", "memory", "512Mi")},
+			list("cpu", "100m", "memory", "128Mi"), list("cpu", "2", "memory", "1Gi"), 0, 0},
 		{"pod-level requests only: limits still add up the containers", corev1.PodSpec{
 			Resources:  &corev1.ResourceRequirements{Requests: list("cpu", "1")},
 			Containers: []corev1.Container{sized, container("no-cpu-limit", list("cpu", "200m", "memory", "64Mi"), list("memory", "64Mi"))}}, Defaults{},

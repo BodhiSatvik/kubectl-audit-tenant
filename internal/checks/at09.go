@@ -31,6 +31,17 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	level, labeled := c.NamespaceObject.Labels[psaEnforce]
 	if level == "baseline" || level == "restricted" {
 		pass := spec.result(r, report.Pass, layerConfig, psaEnforce+"="+level+" on namespace "+ns, "")
+		var notes []string
+		if v, ok := c.NamespaceObject.Labels[psaEnforce+"-version"]; ok && v != "latest" { // an old pin turns off later checks (proven on kind, D125)
+			notes = append(notes, "pinned to "+psaEnforce+"-version="+v+": PSA checks added after that release are not enforced")
+		}
+		noted := func(note string) []report.Result {
+			if note != "" {
+				notes = append(notes, note)
+			}
+			pass.Note = strings.Join(notes, "; ")
+			return []report.Result{pass}
+		}
 		// The status and finalize subresources change labels too (proven on kind, D119).
 		for _, q := range []question{
 			{verb: "update", resource: "namespaces", name: ns, namespace: ns, label: "update namespace " + ns},
@@ -44,14 +55,12 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 			case err != nil && ctx.Err() != nil:
 				return nil
 			case err != nil:
-				pass.Note = "not tested: whether this identity may change this label: " + err.Error()
-				return []report.Result{pass}
+				return noted("not tested: whether this identity may change this label: " + err.Error())
 			case may.allowed:
-				pass.Note = "this identity may " + q.label + ", so it can change or remove this label"
-				return []report.Result{pass}
+				return noted("this identity may " + q.label + ", so it can change or remove this label")
 			}
 		}
-		return []report.Result{pass}
+		return noted("")
 	}
 	reason := "namespace " + ns + " has no " + psaEnforce + " label"
 	if labeled {

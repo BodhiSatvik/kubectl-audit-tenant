@@ -9,9 +9,11 @@ import (
 	"testing"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/probe"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
 )
@@ -59,7 +61,7 @@ func TestAT09(t *testing.T) {
 		{"restricted", `{"pod-security.kubernetes.io/enforce":"restricted"}`, denyBoth, nil,
 			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", "")},
 		{"baseline", `{"pod-security.kubernetes.io/enforce":"baseline","pod-security.kubernetes.io/enforce-version":"v1.37"}`, denyBoth, nil,
-			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=baseline on namespace tenant-a", "", "")},
+			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=baseline on namespace tenant-a", "", "pinned to pod-security.kubernetes.io/enforce-version=v1.37: PSA checks added after that release are not enforced")},
 		{"privileged", `{"pod-security.kubernetes.io/enforce":"privileged"}`, denyBoth, nil,
 			result(report.Fail, "config", "pod-security.kubernetes.io/enforce=privileged on namespace tenant-a; only baseline or restricted blocks dangerous pods", failHint, "")},
 		{"warn and audit labels only", `{"pod-security.kubernetes.io/warn":"restricted","pod-security.kubernetes.io/audit":"restricted"}`, denyBoth, nil,
@@ -82,6 +84,13 @@ func TestAT09(t *testing.T) {
 			result(report.Fail, "config", missing+"; AT-04 shows admission (PSA), admission (webhook: validate.kyverno.svc-fail) blocking every probe anyway, so a cluster-wide default level applies; the label is what states the level on the namespace", failHint, "")},
 		{"missing label, AT-04 partly skipped cannot speak for every probe (D110)", `{}`, denyBoth, at04Passed("admission (PSA)")[:4],
 			result(report.Fail, "config", missing, failHint, "")},
+		{"restricted pinned to an old version: the note says checks added later are not enforced (D125)", `{"pod-security.kubernetes.io/enforce":"restricted","pod-security.kubernetes.io/enforce-version":"v1.7"}`, denyBoth, nil,
+			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", "pinned to pod-security.kubernetes.io/enforce-version=v1.7: PSA checks added after that release are not enforced")},
+		{"enforce-version=latest adds no note", `{"pod-security.kubernetes.io/enforce":"restricted","pod-security.kubernetes.io/enforce-version":"latest"}`, denyBoth, nil,
+			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", "")},
+		{"a pinned version and an update grant both reach the note", `{"pod-security.kubernetes.io/enforce":"baseline","pod-security.kubernetes.io/enforce-version":"v1.7"}`,
+			map[string]string{"list nodes": denied, "update namespaces": allowed}, nil,
+			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=baseline on namespace tenant-a", "", "pinned to pod-security.kubernetes.io/enforce-version=v1.7: PSA checks added after that release are not enforced; "+mayUpdateNote)},
 		{"restricted, but the identity may update its namespace (D105)", `{"pod-security.kubernetes.io/enforce":"restricted"}`,
 			map[string]string{"list nodes": denied, "update namespaces": allowed}, nil,
 			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", mayUpdateNote)},
@@ -173,5 +182,23 @@ func TestTheRunnerHandsEachCheckTheResultsBeforeIt(t *testing.T) {
 	Run(t.Context(), nil, []Spec{record("AT-01"), record("AT-04"), record("AT-09")}, time.Minute)
 	if want := [][]string{nil, {"AT-01"}, {"AT-01", "AT-04"}}; !slices.EqualFunc(seen, want, slices.Equal) {
 		t.Errorf("earlier results = %v, want %v", seen, want)
+	}
+}
+
+func TestAT04AdmissionReadsEveryClassifyAdmissionLayer(t *testing.T) {
+	// Value: protects=AT-09 reads the admission layers probe.Classify really builds; fails_when=Classify renames a layer and AT-09 drops its AT-04 note; why_new=AT-09 tests use hand-written layers; seam=none; no_claim=none beyond protects
+	for _, msg := range []string{
+		`pods "p" is forbidden: violates PodSecurity "restricted:latest": privileged`,
+		`admission webhook "validate.kyverno.svc-fail" denied the request: blocked`,
+		`ValidatingAdmissionPolicy 'no-priv' with binding 'b' denied request: blocked`,
+	} {
+		o := probe.Classify(&apierrors.StatusError{ErrStatus: metav1.Status{Code: http.StatusForbidden, Message: msg}})
+		var earlier []report.Result
+		for _, r := range at04Results {
+			earlier = append(earlier, report.Result{ID: r.ID, Verdict: o.Verdict, Layer: o.Layer})
+		}
+		if got := at04Admission(earlier); !slices.Equal(got, []string{o.Layer}) {
+			t.Errorf("at04Admission(layer %q) = %v; want it read as an admission layer", o.Layer, got)
+		}
 	}
 }

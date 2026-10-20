@@ -2,6 +2,7 @@ package headroom
 
 import (
 	"math"
+	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -15,8 +16,10 @@ type Workload struct {
 	Name     string
 	Replicas int    // spec.replicas (default 1), or the maxReplicas of an HPA that targets it
 	HPA      string // that HPA, or empty
-	Peak     int    // pods while it rolls out
-	Pod      Pod
+	// ConflictingHPAs are the HPAs, by name, when several target this workload; none scales it.
+	ConflictingHPAs []string
+	Peak            int // pods while it rolls out
+	Pod             Pod
 }
 
 // defaultSurge is the maxSurge the API server sets on a Deployment that names none.
@@ -54,23 +57,34 @@ func StatefulSet(s appsv1.StatefulSet, hpas []autoscalingv2.HorizontalPodAutosca
 	return w
 }
 
-// workload sets the replica count: spec.replicas (default 1), or the largest maxReplicas of the
-// HPAs whose scaleTargetRef names this workload by API group (apps), kind and name.
+// workload sets the replica count: spec.replicas (default 1), or the maxReplicas of the one HPA
+// whose scaleTargetRef names this workload by API group (apps), kind and name. When several HPAs
+// target it, the HPA controller scales none of them (AmbiguousSelector, proven on kind, D126): the
+// count is spec.replicas raised to their largest minReplicas, and ConflictingHPAs names them.
 func workload(kind, name string, replicas *int32, hpas []autoscalingv2.HorizontalPodAutoscaler) Workload {
 	w := Workload{Kind: kind, Name: name, Replicas: 1}
 	if replicas != nil {
 		w.Replicas = int(*replicas)
 	}
-	found := false
+	var matched []autoscalingv2.HorizontalPodAutoscaler
 	for _, h := range hpas {
 		ref := h.Spec.ScaleTargetRef
-		gv, err := schema.ParseGroupVersion(ref.APIVersion)
-		if err != nil || gv.Group != appsv1.GroupName || ref.Kind != kind || ref.Name != name {
-			continue
+		if gv, err := schema.ParseGroupVersion(ref.APIVersion); err == nil && gv.Group == appsv1.GroupName && ref.Kind == kind && ref.Name == name {
+			matched = append(matched, h)
 		}
-		if maxReplicas := int(h.Spec.MaxReplicas); !found || maxReplicas > w.Replicas {
-			w.Replicas, w.HPA, found = maxReplicas, h.Name, true
+	}
+	switch len(matched) {
+	case 0:
+	case 1:
+		w.Replicas, w.HPA = int(matched[0].Spec.MaxReplicas), matched[0].Name
+	default:
+		for _, h := range matched {
+			if h.Spec.MinReplicas != nil && int(*h.Spec.MinReplicas) > w.Replicas {
+				w.Replicas = int(*h.Spec.MinReplicas)
+			}
+			w.ConflictingHPAs = append(w.ConflictingHPAs, h.Name)
 		}
+		slices.Sort(w.ConflictingHPAs)
 	}
 	return w
 }
