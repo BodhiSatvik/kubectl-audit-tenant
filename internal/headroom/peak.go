@@ -1,6 +1,8 @@
 package headroom
 
 import (
+	"math"
+
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -33,8 +35,13 @@ func Deployment(d appsv1.Deployment, hpas []autoscalingv2.HorizontalPodAutoscale
 	if ru := d.Spec.Strategy.RollingUpdate; ru != nil && ru.MaxSurge != nil {
 		surge = *ru.MaxSurge
 	}
-	// An invalid value cannot be stored (API validation), so the error is never set.
+	// An invalid value cannot be stored (API validation), so the error is never set. The API
+	// bounds no maxSurge percent, and a huge one scales out of int range; any surge past
+	// MaxInt32 is far over every quota, so it is clamped there and the peak cannot wrap.
 	extra, _ := intstr.GetScaledValueFromIntOrPercent(&surge, w.Replicas, true)
+	if extra < 0 || extra > math.MaxInt32 {
+		extra = math.MaxInt32
+	}
 	w.Peak += extra
 	return w
 }

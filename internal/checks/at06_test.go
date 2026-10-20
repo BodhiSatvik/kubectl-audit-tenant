@@ -75,6 +75,9 @@ func TestAT06(t *testing.T) {
 			configResult(spec, report.Pass, "config", "ResourceQuota tenant-a-quota has no scopes and sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods", "")},
 		{"the aliases cpu, memory and count/pods count", listOf(quota("short", "cpu", "memory", "limits.cpu", "limits.memory", "count/pods")),
 			configResult(spec, report.Pass, "config", "ResourceQuota short has no scopes and sets cpu, memory, limits.cpu, limits.memory and count/pods", "")},
+		// Value: protects=a quota that spells requests.cpu twice (cpu too) and lacks pods FAILs; fails_when=the per-quota dedupe goes, so 5 spellings read as 5 keys and it PASSes; why_new=no row sets both spellings in one quota; seam=none; no_claim=cross-quota alias credit
+		{"a key spelled twice counts once", listOf(quota("dup", "cpu", "requests.cpu", "requests.memory", "limits.cpu", "limits.memory")),
+			configResult(spec, report.Fail, "config", "no ResourceQuota without scopes sets pods; dup sets requests.cpu, requests.memory, limits.cpu and limits.memory", failHint)},
 		{"no quota", listOf[corev1.ResourceQuota](),
 			configResult(spec, report.Fail, "config", "no ResourceQuota in tenant-a", failHint)},
 		{"scoped quotas only", listOf(notTerminating(quota("long-running", fiveKeys...)), selected(quota("high-priority", fiveKeys...))),

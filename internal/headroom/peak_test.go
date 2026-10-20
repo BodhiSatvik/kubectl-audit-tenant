@@ -54,6 +54,9 @@ func TestDeploymentPeak(t *testing.T) {
 		{"scaled to zero has no rollout", deployment("api", replicas(0), rolling(intstr.FromInt32(2))), nil, 0, 0, ""},
 		{"an HPA's maxReplicas replaces replicas", deployment("api", replicas(3), rolling(intstr.FromString("25%"))),
 			[]autoscalingv2.HorizontalPodAutoscaler{hpa("api", "apps/v1", "Deployment", "api", 4)}, 4, 5, "api"},
+		// Value: protects=an HPA maxReplicas below spec.replicas lowers the count (ADR 0006, D110); fails_when=the !found guard goes and only a larger max replaces replicas; why_new=every HPA row has max above replicas; seam=none; no_claim=replicas 0 with an HPA (TODOS)
+		{"an HPA's maxReplicas below replicas lowers them", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
+			[]autoscalingv2.HorizontalPodAutoscaler{hpa("api", "apps/v1", "Deployment", "api", 2)}, 2, 3, "api"},
 		{"an HPA for another kind, group or name does not match", deployment("api", replicas(3), rolling(intstr.FromString("25%"))),
 			[]autoscalingv2.HorizontalPodAutoscaler{
 				hpa("sts", "apps/v1", "StatefulSet", "api", 9), hpa("rollout", "argoproj.io/v1alpha1", "Deployment", "api", 9), hpa("web", "apps/v1", "Deployment", "web", 9)}, 3, 4, ""},
@@ -87,10 +90,22 @@ func TestStatefulSetPeakIsItsReplicas(t *testing.T) {
 }
 
 func TestWorkloadsCarryTheirPod(t *testing.T) {
-	d := Defaults{Names: []string{"limits"}, Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}
+	d := Defaults{Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}
 	s := statefulSet(replicas(1))
 	s.Spec.Template.Spec.Containers = append(s.Spec.Template.Spec.Containers, container("unsized", nil, nil))
 	if w := StatefulSet(s, nil, d); !same(w.Pod.Requests, list("cpu", "1100m", "memory", "1152Mi")) || w.Pod.Defaulted != 1 {
 		t.Errorf("StatefulSet() pod = %+v; want the LimitRange defaults applied to the unsized container", w.Pod)
+	}
+}
+
+func TestDeploymentPeakDoesNotWrapOnAHugeSurgePercent(t *testing.T) {
+	// The API stores any maxSurge percent (reproduced on kind); scaling 9e18% overflows int and
+	// AT-10 printed "pods -9223372036854774809 of 20" as a PASS.
+	w := Deployment(deployment("api", replicas(1000), rolling(intstr.FromString("9000000000000000000%"))), nil, Defaults{})
+	if w.Peak < w.Replicas {
+		t.Fatalf("peak %d is below replicas %d: the surge wrapped negative", w.Peak, w.Replicas)
+	}
+	if p := Total([]Workload{w, w})[corev1.ResourcePods]; p.Sign() < 0 {
+		t.Errorf("pods total %s is negative", p.String())
 	}
 }

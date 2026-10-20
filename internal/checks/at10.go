@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -27,7 +28,7 @@ const at10Estimate = "estimate: "
 // no unscoped quota is FAIL; no workloads is PASS; a quota that refuses a workload's pods (a
 // tracked value left unset) is FAIL; a list this identity may not read (or the LimitRanges while
 // a tracked value is unset) is SKIP, unless the partial sum is already over a hard value, which
-// is FAIL.
+// is FAIL; not while the HPAs are unread, since an HPA can lower replicas (D110).
 func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Result)) []report.Result {
 	ns := c.Namespace
 	note := "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
@@ -114,9 +115,13 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	unsized, defaulted := 0, 0
 	var runtimeClass []string
+	defaultedFrom := map[string]bool{}
 	for _, w := range ws {
 		unsized += w.Pod.Unsized
 		defaulted += w.Pod.Defaulted
+		for _, name := range w.Pod.DefaultedFrom {
+			defaultedFrom[name] = true
+		}
 		if w.Pod.RuntimeClass {
 			runtimeClass = append(runtimeClass, w.Name)
 		}
@@ -183,11 +188,12 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	tail := " (" + breakdown + "); " + strings.Join(used, "; ")
 	if defaulted > 0 {
-		ranges := "LimitRange "
-		if len(defaults.Names) > 1 {
-			ranges = "LimitRanges "
+		names := slices.Sorted(maps.Keys(defaultedFrom)) // only the ranges a container took a value from (D121)
+		noun := "LimitRange "
+		if len(names) > 1 {
+			noun = "LimitRanges "
 		}
-		tail += "; defaults from " + ranges + andList(defaults.Names) + " for " + containers(defaulted)
+		tail += "; defaults from " + noun + andList(names) + " for " + containers(defaulted)
 	}
 	// A partial sum can only grow, so a shortfall is FAIL even with lists missing; not while the
 	// HPAs are unread, since an HPA's maxReplicas can be below spec.replicas (D110).
@@ -205,7 +211,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		const raise = "raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once"
 		hint := raise
 		if len(refused) > 0 {
-			hint = "set cpu and memory requests and limits on every container, or give them defaults with a LimitRange (see AT-07)"
+			hint = "set cpu and memory requests and limits on every container, or give them defaults with a LimitRange (see AT-07); a webhook that sets them only on pods, not in the template, is not seen"
 			if len(proven) > 0 {
 				hint += "; " + raise
 			}

@@ -74,6 +74,10 @@ func TestAT08(t *testing.T) {
 			configResult(spec, report.Fail, "config", "no NetworkPolicy in tenant-a", failHint)},
 		{"ingress only", listOf(denyIn),
 			configResult(spec, report.Fail, "config", "no default deny for egress", failHint)},
+		// Value: protects=a FAIL reason names only allows of the direction with no deny (D110); fails_when=allows of both directions are joined again; why_new=no FAIL row has a deny plus an allow in one direction; seam=none; no_claim=PASS note content
+		{"an ingress allow next to the ingress deny does not explain the missing egress deny (D110)",
+			listOf(denyIn, netpol("allow-web", []networkingv1.PolicyType{ingress}, []networkingv1.NetworkPolicyIngressRule{fromAPI}, nil)),
+			configResult(spec, report.Fail, "config", "no default deny for egress", failHint)},
 		{"a deny that selects some pods only", listOf(selecting(denyIn), selecting(denyOut)),
 			configResult(spec, report.Fail, "config", "no default deny for ingress or egress", failHint)},
 		{"allow rules in both directions", listOf(netpol("allow-some", []networkingv1.PolicyType{ingress, egress}, []networkingv1.NetworkPolicyIngressRule{fromAPI}, []networkingv1.NetworkPolicyEgressRule{dns})),

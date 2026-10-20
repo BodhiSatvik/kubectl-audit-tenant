@@ -26,7 +26,7 @@ const (
 	hpasPath         = "GET /apis/autoscaling/v2/namespaces/tenant-a/horizontalpodautoscalers"
 	estimate         = "estimate: "
 	notCounted       = "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
-	refusedHint      = "set cpu and memory requests and limits on every container, or give them defaults with a LimitRange (see AT-07)"
+	refusedHint      = "set cpu and memory requests and limits on every container, or give them defaults with a LimitRange (see AT-07); a webhook that sets them only on pods, not in the template, is not seen"
 	at10FailHint     = "raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once"
 )
 
@@ -105,6 +105,8 @@ func TestAT10(t *testing.T) {
 	}
 	unsized := api()
 	unsized.Spec.Template.Spec.Containers = append(unsized.Spec.Template.Spec.Containers, corev1.Container{Name: "sidecar"})
+	memoryOnly := api() // its container sets memory only, so cpu comes from a LimitRange
+	memoryOnly.Spec.Template.Spec.Containers[0].Resources = corev1.ResourceRequirements{Requests: rl("memory", "128Mi"), Limits: rl("memory", "512Mi")}
 	requestsOnly := api() // its second container sets requests, no limits
 	requestsOnly.Spec.Template.Spec.Containers = append(requestsOnly.Spec.Template.Spec.Containers,
 		corev1.Container{Name: "sidecar", Resources: corev1.ResourceRequirements{Requests: rl("cpu", "100m", "memory", "64Mi")}})
@@ -145,6 +147,9 @@ func TestAT10(t *testing.T) {
 		{"HPAs unreadable and the partial peak is over: SKIP, since an HPA can lower replicas (D110)", map[string]http.HandlerFunc{hpasPath: forbidden("horizontalpodautoscalers"), quotasPath: listOf(cpuCap("300m"))},
 			configResult(spec, report.Skip, "-", estimate+"cannot list horizontalpodautoscalers (forbidden), so the peak is incomplete; an HPA can lower replicas, so the partial shortfall is not proven: cpu-cap requests.cpu: peak needs 400m, hard is 300m, short by 100m (deployments: api 3->4); used in cpu-cap: none reported",
 				"grant `list` on horizontalpodautoscalers in tenant-a to this identity, or run with --as <admin>"), notCounted},
+		// Value: protects=a partial peak over hard is FAIL while LimitRanges are unreadable (DESIGN.md s5); fails_when=an unset tracked value with unread LimitRanges SKIPs before the shortfall; why_new=every forbidden-LimitRange row fits; seam=none; no_claim=none beyond protects
+		{"LimitRanges unreadable but the partial peak is already over: FAIL", map[string]http.HandlerFunc{limitRangesPath: forbidden("limitranges"), deploymentsPath: listOf(unsized), quotasPath: listOf(cpuCap("300m"))},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu: peak needs 500m, hard is 300m, short by 200m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; partial: cannot list limitranges (forbidden)", at10FailHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"StatefulSets unreadable but the partial peak is already over: FAIL", map[string]http.HandlerFunc{statefulSetsPath: forbidden("statefulsets"), quotasPath: listOf(cpuCap("300m"))},
 			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu: peak needs 500m, hard is 300m, short by 200m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; partial: cannot list statefulsets (forbidden)", at10FailHint), notCounted},
 		{"deployments unreadable and no StatefulSets is not 'no workloads'", map[string]http.HandlerFunc{deploymentsPath: forbidden("deployments")},
@@ -162,10 +167,19 @@ func TestAT10(t *testing.T) {
 		{"defaults merged from two LimitRanges name both (D112)", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), quotasPath: listOf(cpuCap("8")),
 			limitRangesPath: listOf(limitRange("cpu-defaults", limitItem(corev1.LimitTypeContainer, "defaultRequest.cpu")), limitRange("mem-defaults", limitItem(corev1.LimitTypeContainer, "defaultRequest.memory")))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 5500m of 8 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRanges cpu-defaults and mem-defaults for 1 container", ""), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+		{"only the LimitRange a container took a default from is named (D121)", map[string]http.HandlerFunc{deploymentsPath: listOf(memoryOnly), quotasPath: listOf(cpuCap("8")),
+			limitRangesPath: listOf(limitRange("a-cpu", limitItem(corev1.LimitTypeContainer, "defaultRequest.cpu")), limitRange("b-mem", limitItem(corev1.LimitTypeContainer, "defaultRequest.memory")))},
+			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 5 of 8 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRange a-cpu for 1 container", ""), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"LimitRange defaults are named", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), quotasPath: listOf(cpuCap("4"))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 1 of 4 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRange tenant-a-limits for 1 container", ""), notCounted},
 		{"no LimitRange defaults: a quota that tracks an unset value refuses the pods (D111)", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("4"))},
 			configResult(spec, report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api: a container sets no requests.cpu (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", refusedHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+		// Value: protects=a quota spelling cpu (alias) refuses pods with no cpu request (D111); fails_when=tracked keys skip Canonical, so the alias tracks nothing and AT-10 PASSes; why_new=refusal rows use requests.cpu only; seam=none; no_claim=memory alias
+		{"a quota that spells cpu refuses the pods too", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(tight)},
+			configResult(spec, report.Fail, "config", estimate+"tenant-a-quota refuses the pods of deployment api: a container sets no requests.cpu (deployments: api 4->5 (HPA max)); used in tenant-a-quota: cpu 300m", refusedHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+		// Value: protects=a refusal is FAIL while HPAs are unreadable: quota refuses each pod whatever the replicas; fails_when=unread HPAs turn every FAIL into SKIP; why_new=no row joins a refusal with a forbidden list; seam=none; no_claim=shortfall with unread HPAs (covered)
+		{"HPAs unreadable: a refusal is still FAIL", map[string]http.HandlerFunc{hpasPath: forbidden("horizontalpodautoscalers"), deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("4"))},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api: a container sets no requests.cpu (deployments: api 3->4); used in cpu-cap: none reported; partial: cannot list horizontalpodautoscalers (forbidden)", refusedHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"a refused workload and a shortfall are both named", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("100m"))},
 			configResult(spec, report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api: a container sets no requests.cpu; cpu-cap requests.cpu: peak needs 500m, hard is 100m, short by 400m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", refusedHint+"; "+at10FailHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"a RuntimeClass's overhead is not counted", map[string]http.HandlerFunc{deploymentsPath: listOf(gvisor), quotasPath: listOf(cpuCap("4"))},

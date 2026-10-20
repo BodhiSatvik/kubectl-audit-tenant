@@ -180,6 +180,16 @@ Found by /ponytail-review, gstack /review (specialists, Red Team, Claude adversa
 - [ ] AT-10 compares only unscoped quotas; a scoped quota that matches every counted pod (NotTerminating, NotBestEffort, a matching PriorityClass) can be tighter and block the rollout. Evaluate scopes against the pod templates, or note the skipped scoped quotas (Red Team; v0.2 with Argo Rollouts).
 - [ ] AT-10 counts a Deployment scaled to 0 with an HPA at maxReplicas plus surge, though the HPA does not scale a target at 0 (Claude adversarial; KEDA scales such targets back up, so decide with B27).
 
+### Phase 3 /ship review (2026-10-20)
+
+Found by the /ship re-review (specialists, Red Team, kind QA smoke); decisions D119 to D124.
+- [x] A huge maxSurge percent (the API bounds none) wrapped the AT-10 peak negative: "pods -9223372036854774809 of 20" as a PASS on kind. The scaled surge is clamped at MaxInt32 (D110 class).
+- [x] D119: namespaces/status and namespaces/finalize both change labels (proven on kind); AT-09's D105 note asks them too. Tenant e2e runs now use 40 of the 40-request budget until B27.
+- [x] D120: D111's refusal FAIL keeps; the hint and DESIGN.md say a webhook that sets sizes only on pods is not seen. Kyverno's autogen writes the template and is seen (proven on kind).
+- [x] D121: AT-10 names only the LimitRanges a container took a default from.
+- [x] D122: AT-09 treats any PSA layer among AT-04's admission layers as a cluster default.
+- [x] Small: the AT-04 probe count comes from `at04Results`; the PSA layer is `probe.LayerPSA`; the e2e budget gate also fails when it counts no requests; comment and doc fixes.
+
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 
 Found by the /ship verification round on 7e886d0, after the review's fix-cycle limit. The PR stays a draft until the first two are fixed.
@@ -244,7 +254,7 @@ Found by the end-of-phase review (specialists, red team, Claude and Codex advers
 - [ ] Many namespaces or clusters in one run
 - [ ] `--baseline` file: pick checks and severities (v0.2)
 - [ ] DaemonSets, Jobs, CronJobs and bare Pods in AT-10
-- [ ] Argo Rollouts in AT-10 (v0.2): read as unstructured objects when the CRD exists; blueGreen = replicas + (previewReplicaCount else replicas); canary = replicas + maxSurge, or 2 × replicas when `trafficRouting` is set and `dynamicStableScale` is not (deferred in the CEO review, 2026-10-10)
+- [ ] Argo Rollouts in AT-10 (v0.2): read as unstructured objects when the CRD exists; blueGreen = replicas + (previewReplicaCount else replicas); canary = replicas + maxSurge, or 2 × replicas when `trafficRouting` is set and `dynamicStableScale` is not (deferred in the CEO review, 2026-10-10) Also extend the kind list in `headroom.Breakdown`, which names only Deployment and StatefulSet, so a Rollout shows in the reason (D124).
 - [ ] `--as-serviceaccount ns/name` shortcut; cloud identity lookups
 - [ ] Detect whether the network plugin enforces NetworkPolicy
 - [ ] Weekly CI run against the oldest supported server (1.28)

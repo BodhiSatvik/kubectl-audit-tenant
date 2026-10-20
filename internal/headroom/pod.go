@@ -4,6 +4,7 @@
 package headroom
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -16,41 +17,37 @@ var sized = []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
 
 // Defaults are the Container defaults the math uses, merged from every LimitRange.
 type Defaults struct {
-	Names   []string            // the LimitRanges that gave a value, by name
 	Limit   corev1.ResourceList // default
 	Request corev1.ResourceList // defaultRequest
+	// limitFrom and requestFrom name the LimitRange that gave each value.
+	limitFrom, requestFrom map[corev1.ResourceName]string
 }
 
 // DefaultsOf merges the Container defaults of every LimitRange: LimitRanger fills each missing
 // value from every LimitRange, so each value here comes from the first by name that sets it
 // (D112; the API server walks its cache, so two ranges that disagree make this an estimate).
 func DefaultsOf(ranges []corev1.LimitRange) Defaults {
-	d := Defaults{Limit: corev1.ResourceList{}, Request: corev1.ResourceList{}}
+	d := Defaults{Limit: corev1.ResourceList{}, Request: corev1.ResourceList{},
+		limitFrom: map[corev1.ResourceName]string{}, requestFrom: map[corev1.ResourceName]string{}}
 	ranges = slices.SortedFunc(slices.Values(ranges), func(a, b corev1.LimitRange) int { return strings.Compare(a.Name, b.Name) })
 	for _, lr := range ranges {
-		gave := false
 		for _, item := range lr.Spec.Limits {
 			if item.Type == corev1.LimitTypeContainer {
-				gave = fill(d.Limit, item.Default) || gave
-				gave = fill(d.Request, item.DefaultRequest) || gave
+				fill(d.Limit, d.limitFrom, item.Default, lr.Name)
+				fill(d.Request, d.requestFrom, item.DefaultRequest, lr.Name)
 			}
-		}
-		if gave {
-			d.Names = append(d.Names, lr.Name)
 		}
 	}
 	return d
 }
 
-// fill copies into into each value of from that into lacks, and reports whether it copied one.
-func fill(into, from corev1.ResourceList) bool {
-	copied := false
-	for k, v := range from {
+// fill copies into into each value of values that into lacks, noting in from that name gave it.
+func fill(into corev1.ResourceList, from map[corev1.ResourceName]string, values corev1.ResourceList, name string) {
+	for k, v := range values {
 		if _, ok := into[k]; !ok {
-			into[k], copied = v, true
+			into[k], from[k] = v, name
 		}
 	}
-	return copied
 }
 
 // Pod is one pod's cpu and memory as the quota counts them.
@@ -59,6 +56,7 @@ type Pod struct {
 	Unset            []corev1.ResourceName // quota keys (requests.cpu ... limits.memory) a container leaves unset, in Keys order
 	Unsized          int                   // containers that leave a value unset: no value, no LimitRange default, no pod-level value
 	Defaulted        int                   // containers that took a value from the LimitRange defaults
+	DefaultedFrom    []string              // the LimitRanges those values came from, by name (D121)
 	RuntimeClass     bool                  // the pod names a RuntimeClass, whose overhead is not counted
 }
 
@@ -76,6 +74,7 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 	}
 	p := Pod{RuntimeClass: spec.RuntimeClassName != nil && *spec.RuntimeClassName != ""}
 	unset := map[corev1.ResourceName]bool{}
+	from := map[string]bool{} // the LimitRanges whose defaults a container took
 	resolve := func(c corev1.Container) (requests, limits corev1.ResourceList) {
 		requests, limits = corev1.ResourceList{}, corev1.ResourceList{}
 		gap, defaulted := false, false
@@ -89,11 +88,15 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 			}
 			if v, ok := d.Request[r]; !hasReq && ok {
 				req, hasReq = v, true
-				defaulted = defaulted || (!podReq && !podLim)
+				if !podReq && !podLim {
+					defaulted, from[d.requestFrom[r]] = true, true
+				}
 			}
 			if v, ok := d.Limit[r]; !hasLim && ok {
 				lim, hasLim = v, true
-				defaulted = defaulted || !podLim
+				if !podLim {
+					defaulted, from[d.limitFrom[r]] = true, true
+				}
 			}
 			// A gap counts only where the pod-level value does not replace the container sum.
 			if !hasReq && !podReq && !podLim {
@@ -129,6 +132,8 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 			p.Unset = append(p.Unset, k)
 		}
 	}
+	delete(from, "") // a Defaults built by hand names no range
+	p.DefaultedFrom = slices.Sorted(maps.Keys(from))
 	var explicit corev1.ResourceList // the containers' own requests, before LimitRange defaults
 	if len(podLevel.Limits) > 0 {
 		explicit = PodOf(corev1.PodSpec{Containers: spec.Containers, InitContainers: spec.InitContainers}, Defaults{}).Requests

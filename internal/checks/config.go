@@ -13,7 +13,7 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
-// layerConfig is the deciding layer of a verdict read from stored objects (AT-06 to AT-09).
+// layerConfig is the deciding layer of a verdict read from stored objects (AT-06 to AT-10).
 const layerConfig = "config"
 
 // listFailed is the result of a check whose LIST failed. A 403 is a fact about the identity, so

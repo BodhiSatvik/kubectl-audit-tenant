@@ -45,6 +45,8 @@ func TestAT09(t *testing.T) {
 		r.Note = note
 		return r
 	}
+	psaAndPolicy := at04Passed("admission (PSA)") // a baseline default blocks four probes; Kyverno blocks privilege escalation
+	psaAndPolicy[4].Layer = "admission (webhook: validate.kyverno.svc-fail)"
 	mixed := at04Passed("admission (PSA)")
 	mixed[2].Verdict = report.Fail
 	tests := []struct {
@@ -76,6 +78,8 @@ func TestAT09(t *testing.T) {
 			result(report.Fail, "config", missing, failHint, "")},
 		{"missing label, an RBAC-only AT-04 PASS says nothing about AT-04", `{}`, denyBoth, at04Passed("RBAC"),
 			result(report.Fail, "config", missing, failHint, "")},
+		{"missing label, AT-04 shows PSA and a policy engine together: PSA proves a cluster default (D122)", `{}`, denyBoth, psaAndPolicy,
+			result(report.Fail, "config", missing+"; AT-04 shows admission (PSA), admission (webhook: validate.kyverno.svc-fail) blocking every probe anyway, so a cluster-wide default level applies; the label is what states the level on the namespace", failHint, "")},
 		{"missing label, AT-04 partly skipped cannot speak for every probe (D110)", `{}`, denyBoth, at04Passed("admission (PSA)")[:4],
 			result(report.Fail, "config", missing, failHint, "")},
 		{"restricted, but the identity may update its namespace (D105)", `{"pod-security.kubernetes.io/enforce":"restricted"}`,
@@ -84,6 +88,12 @@ func TestAT09(t *testing.T) {
 		{"restricted, but the identity may patch its namespace (D105)", `{"pod-security.kubernetes.io/enforce":"restricted"}`,
 			map[string]string{"list nodes": denied, "update namespaces": denied, "patch namespaces": allowed}, nil,
 			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", "this identity may patch namespace tenant-a, so it can change or remove this label")},
+		{"restricted, but the identity may patch its namespace's status, which changes labels too (D119)", `{"pod-security.kubernetes.io/enforce":"restricted"}`,
+			map[string]string{"list nodes": denied, "update namespaces": denied, "patch namespaces": denied, "patch namespaces/status": allowed}, nil,
+			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", "this identity may patch namespace tenant-a/status, so it can change or remove this label")},
+		{"restricted, but the identity may update its namespace through finalize (D119)", `{"pod-security.kubernetes.io/enforce":"restricted"}`,
+			map[string]string{"list nodes": denied, "update namespaces": denied, "patch namespaces": denied, "update namespaces/finalize": allowed}, nil,
+			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", "this identity may update namespace tenant-a/finalize, so it can change or remove this label")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -102,9 +112,12 @@ func TestAT09AsksAboutTheNamespaceObjectByName(t *testing.T) {
 	// resourceNames [tenant-a] can grant it; the question names the object to catch that grant.
 	ssar := &ssarServer{answers: map[string]string{"list nodes": denied, "update namespaces": denied, "patch namespaces": denied}}
 	at09(t.Context(), connectWith(t, ssar, namespaceWith(`{"pod-security.kubernetes.io/enforce":"restricted"}`)), at09Spec(), ignore)
-	want := []cluster.Attributes{
+	want := []cluster.Attributes{ // the status and finalize subresources can change labels too (proven on kind, D119)
 		{Verb: "update", Resource: "namespaces", Name: "tenant-a", Namespace: "tenant-a"},
 		{Verb: "patch", Resource: "namespaces", Name: "tenant-a", Namespace: "tenant-a"},
+		{Verb: "update", Resource: "namespaces", Subresource: "status", Name: "tenant-a", Namespace: "tenant-a"},
+		{Verb: "patch", Resource: "namespaces", Subresource: "status", Name: "tenant-a", Namespace: "tenant-a"},
+		{Verb: "update", Resource: "namespaces", Subresource: "finalize", Name: "tenant-a", Namespace: "tenant-a"},
 	}
 	if got := ssar.asked[1:]; !slices.Equal(got, want) { // asked[0] is startup's question
 		t.Errorf("asked %+v, want %+v", got, want)

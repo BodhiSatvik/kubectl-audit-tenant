@@ -68,6 +68,7 @@ run() {
   requests=$(grep -c '^[A-Z]* /' "bin/e2e-$name.err" || true)
   printf 'exit %d; %s requests; %.2f s wall\n' "$code" "$requests" "$(echo "$end - $start" | bc)"
   [ "$code" = "$want" ] || fail "run $name exited $code, want $want; stderr: $(cat "bin/e2e-$name.err")"
+  [ "$requests" -gt 0 ] || fail "run $name: no API requests found in the --debug output, so the budget cannot be checked"
   [ "$requests" -le 40 ] || fail "run $name made $requests API requests, over the budget of 40 (CONSTRAINTS.md)"
 }
 expect() { grep -qE "$2" "bin/e2e-$1.out" || fail "run $1: expected /$2/ in the output above"; }

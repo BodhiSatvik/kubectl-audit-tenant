@@ -46,7 +46,10 @@ func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.asked = append(s.asked, a)
 	s.mu.Unlock()
-	body, ok := s.answers[a.Verb+" "+a.Resource]
+	body, ok := s.answers[a.Verb+" "+a.Resource+"/"+a.Subresource] // a subresource answer, when a test gives one
+	if !ok {
+		body, ok = s.answers[a.Verb+" "+a.Resource]
+	}
 	if !ok && a.Verb+" "+a.Resource == "create selfsubjectaccessreviews" {
 		body, ok = allowed, true // AT-01's positive control: a real API server always says yes
 	}

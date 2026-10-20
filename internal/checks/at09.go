@@ -8,6 +8,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/probe"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
@@ -15,8 +16,9 @@ const psaEnforce = "pod-security.kubernetes.io/enforce"
 
 // at09 reads the PSA enforce label from the namespace startup fetched. Only baseline or restricted
 // passes, even when another gate blocks dangerous pods (ADR 0007): the FAIL reason then says what
-// AT-04 showed. A PASS asks whether the identity may update or patch its namespace, which would
-// let it remove the label; the answer is a note, not a verdict (D105).
+// AT-04 showed. A PASS asks whether the identity may update or patch its namespace, or its status
+// or finalize subresource, which would let it remove the label; the answer is a note, not a
+// verdict (D105, D119).
 func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Result)) []report.Result {
 	ns := c.Namespace
 	switch {
@@ -29,8 +31,15 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	level, labeled := c.NamespaceObject.Labels[psaEnforce]
 	if level == "baseline" || level == "restricted" {
 		pass := spec.result(r, report.Pass, layerConfig, psaEnforce+"="+level+" on namespace "+ns, "")
-		for _, verb := range []string{"update", "patch"} {
-			may, err := can(ctx, c, question{verb: verb, resource: "namespaces", name: ns, namespace: ns, label: verb + " namespace " + ns})
+		// The status and finalize subresources change labels too (proven on kind, D119).
+		for _, q := range []question{
+			{verb: "update", resource: "namespaces", name: ns, namespace: ns, label: "update namespace " + ns},
+			{verb: "patch", resource: "namespaces", name: ns, namespace: ns, label: "patch namespace " + ns},
+			{verb: "update", resource: "namespaces", subresource: "status", name: ns, namespace: ns, label: "update namespace " + ns + "/status"},
+			{verb: "patch", resource: "namespaces", subresource: "status", name: ns, namespace: ns, label: "patch namespace " + ns + "/status"},
+			{verb: "update", resource: "namespaces", subresource: "finalize", name: ns, namespace: ns, label: "update namespace " + ns + "/finalize"},
+		} {
+			may, err := can(ctx, c, q)
 			switch {
 			case err != nil && ctx.Err() != nil:
 				return nil
@@ -38,7 +47,7 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 				pass.Note = "not tested: whether this identity may change this label: " + err.Error()
 				return []report.Result{pass}
 			case may.allowed:
-				pass.Note = "this identity may " + verb + " namespace " + ns + ", so it can change or remove this label"
+				pass.Note = "this identity may " + q.label + ", so it can change or remove this label"
 				return []report.Result{pass}
 			}
 		}
@@ -49,8 +58,12 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		reason = psaEnforce + "=" + level + " on namespace " + ns + "; only baseline or restricted blocks dangerous pods"
 	}
 	switch layers := at04Admission(spec.earlier); {
-	case len(layers) == 1 && layers[0] == "admission (PSA)":
-		reason += "; AT-04 shows PSA blocking every probe anyway, so a cluster-wide default level applies; the label is what states the level on the namespace"
+	case slices.Contains(layers, probe.LayerPSA): // PSA rejecting any probe without the label proves a cluster default (D122)
+		shows := "PSA"
+		if len(layers) > 1 {
+			shows = strings.Join(layers, ", ")
+		}
+		reason += "; AT-04 shows " + shows + " blocking every probe anyway, so a cluster-wide default level applies; the label is what states the level on the namespace"
 	case len(layers) > 0:
 		reason += "; AT-04 shows " + strings.Join(layers, ", ") + " blocking every probe anyway, so the gap is the label: the built-in gate as a second fence"
 	}
@@ -58,7 +71,7 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		"kubectl label --overwrite namespace "+ns+" "+psaEnforce+"=restricted (baseline also passes, but does not block AT-04.5)")}
 }
 
-// at04Admission returns the layers of AT-04's results when admission rejected all five probes
+// at04Admission returns the layers of AT-04's results when admission rejected every AT-04 probe
 // (each result a PASS by an admission layer), in order and without repeats; otherwise nil. A run
 // that skipped some of AT-04 cannot speak for every probe (D110).
 func at04Admission(earlier []report.Result) []string {
@@ -76,7 +89,7 @@ func at04Admission(earlier []report.Result) []string {
 			layers = append(layers, r.Layer)
 		}
 	}
-	if probes < 5 { // AT-04.1 to AT-04.5
+	if probes < len(at04Results) {
 		return nil
 	}
 	return layers
