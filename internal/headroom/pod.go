@@ -53,7 +53,8 @@ func fill(into corev1.ResourceList, from map[corev1.ResourceName]string, values 
 // Pod is one pod's cpu and memory as the quota counts them.
 type Pod struct {
 	Requests, Limits corev1.ResourceList
-	Unset            []corev1.ResourceName // quota keys (requests.cpu ... limits.memory) a container leaves unset, in Keys order; none with pod-level values (D132)
+	Unset            []corev1.ResourceName // quota keys (requests.cpu ... limits.memory) a container leaves unset, in Keys order
+	PodLevel         bool                  // the pod sets a pod-level request or limit, so quota admission skips "must specify" (D132)
 	Unsized          int                   // containers that leave a value unset: no value, no LimitRange default, no pod-level value
 	Defaulted        int                   // containers that took a value from the LimitRange defaults
 	DefaultedFrom    []string              // the LimitRanges those values came from, by name (D121)
@@ -66,8 +67,8 @@ type Pod struct {
 // limit, else the LimitRange default, else 0. App containers and sidecars (init containers with
 // restartPolicy Always) add up; an init container runs with the sidecars declared before it; the
 // pod needs the larger of the two, per resource. A value left unset counts as 0 and is listed in
-// Unset, since a quota that tracks it refuses the pod (D111), unless the pod sets any pod-level
-// value: quota admission then skips that check (D132).
+// Unset, since a quota that tracks it refuses the pod (D111) unless PodLevel (D132), and an unread
+// LimitRange default can set it.
 func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 	var podLevel corev1.ResourceRequirements
 	if spec.Resources != nil {
@@ -128,13 +129,13 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 		sidecar = append(sidecar, c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways)
 	}
 	p.Requests, p.Limits = effective(appReq, initReq, sidecar), effective(appLim, initLim, sidecar)
-	// Quota admission skips "must specify" for a pod with any pod-level value; the API server
-	// accepts only cpu, memory and hugepages there (D132).
 	for _, k := range Keys {
-		if unset[k] && len(podLevel.Requests)+len(podLevel.Limits) == 0 {
+		if unset[k] {
 			p.Unset = append(p.Unset, k)
 		}
 	}
+	// The API server accepts only cpu, memory and hugepages at pod level, so any key counts.
+	p.PodLevel = len(podLevel.Requests)+len(podLevel.Limits) > 0
 	delete(from, "") // a Defaults built by hand names no range
 	p.DefaultedFrom = slices.Sorted(maps.Keys(from))
 	var explicit corev1.ResourceList // the containers' own requests, before LimitRange defaults

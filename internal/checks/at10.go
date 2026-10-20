@@ -131,8 +131,10 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		}
 	}
 	// Quota admission refuses a pod that leaves unset a cpu or memory value an unscoped quota
-	// tracks ("must specify"), whatever the peak (D111).
+	// tracks ("must specify"), whatever the peak (D111), unless the pod sets a pod-level value
+	// (D132). LimitRanger fills such values in either case, so unread LimitRanges SKIP.
 	var refused []string
+	unsetTracked := false
 	for _, q := range unscoped {
 		tracked := map[corev1.ResourceName]bool{}
 		for _, key := range headroom.QuotaKeys(q) {
@@ -146,11 +148,14 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 				}
 			}
 			if len(keys) > 0 {
-				refused = append(refused, q.Name+" refuses the pods of "+strings.ToLower(w.Kind)+" "+w.Name+": a container sets no "+strings.Join(keys, ", "))
+				unsetTracked = true
+				if !w.Pod.PodLevel {
+					refused = append(refused, q.Name+" refuses the pods of "+strings.ToLower(w.Kind)+" "+w.Name+": a container sets no "+strings.Join(keys, ", "))
+				}
 			}
 		}
 	}
-	if rangesForbidden && len(refused) > 0 { // unread LimitRange defaults may set those values
+	if rangesForbidden && unsetTracked { // unread LimitRange defaults may set those values
 		forbidden = append(forbidden, "limitranges")
 		refused = nil
 	}

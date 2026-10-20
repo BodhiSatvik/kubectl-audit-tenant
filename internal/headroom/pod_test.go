@@ -150,10 +150,10 @@ func TestPodOfListsTheValuesLeftUnset(t *testing.T) {
 			[]corev1.ResourceName{"requests.cpu", "requests.memory", "limits.cpu", "limits.memory"}},
 		{"LimitRange defaults set every value", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil)}},
 			Defaults{Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}, nil},
-		// Value: protects=quota admission skips its "must specify" check when the pod sets any pod-level value (D132); fails_when=Unset lists limits.memory, which no pod-level value covers; why_new=this row wanted limits.memory before D132; seam=none; no_claim=hugepages
-		{"any pod-level value skips the quota's check, so nothing is unset (D132)", corev1.PodSpec{
+		{"a pod-level cpu limit sets the cpu values of every container", corev1.PodSpec{
 			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
-			Containers: []corev1.Container{container("app", list("memory", "64Mi"), nil)}}, Defaults{}, nil},
+			Containers: []corev1.Container{container("app", list("memory", "64Mi"), nil)}}, Defaults{},
+			[]corev1.ResourceName{"limits.memory"}},
 	} {
 		if got := PodOf(tt.spec, tt.defaults).Unset; !slices.Equal(got, tt.want) {
 			t.Errorf("%s: PodOf().Unset = %v, want %v", tt.name, got, tt.want)
