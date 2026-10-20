@@ -111,7 +111,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: golden files; layer vocabulary test.
   - Verify: `go test ./internal/report/ -run Wide`.
   - Depends on: B8. Files: `internal/report/wide.go`, goldens.
-- [ ] **B23 `-o json` and schema.** JSON report per DESIGN.md section 6; `docs/report.schema.json`; unit test validates the printer output against the schema; e2e run 1 validates too.
+- [x] **B23 `-o json` and schema.** JSON report per DESIGN.md section 6; `docs/report.schema.json`; unit test validates the printer output against the schema; e2e run 1 validates too.
   - AC: schema validation passes in unit and e2e; `summary` counts are per result.
   - Verify: `go test ./internal/report/ -run JSON`; e2e workflow.
   - Depends on: B8. Files: `internal/report/json.go`, `docs/report.schema.json`, tests, `test/e2e/run.sh`.
@@ -164,7 +164,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 Found while building B17 to B21; each names the card or decision that owns it.
 - [x] The checklist cuts reasons near 120 columns off a terminal, and AT-10's required 104-character "estimate: ..." prefix fills most of that, so the peak numbers show only in `-o wide` and `-o json`. Decide whether the long caveat moves to the note and the reason keeps a short "estimate: " start (Checkpoint 3 question; ADR 0006 asks only that the reason start with "estimate"). Done (D106 = short start): the reason starts "estimate: " and the note carries the caveat with the kinds not counted.
-- [ ] The e2e asserts AT-10's verdict and note, not the fixture numbers (5 pods, 500m/640Mi, 2500m/2560Mi), because the checklist cuts them; assert them from `-o json` (B23). The unit golden and a kind run match today.
+- [x] The e2e asserts AT-10's verdict and note, not the fixture numbers (5 pods, 500m/640Mi, 2500m/2560Mi), because the checklist cuts them; assert them from `-o json` (B23). The unit golden and a kind run match today. Done: the e2e's `-o json` run asserts each number from AT-10's full reason.
 - [x] AT-06 needs one unscoped quota with all five keys (DESIGN.md section 5). Two unscoped quotas that split the keys (one for requests, one for limits and pods) bound the namespace just as well but FAIL today; decide whether AT-06 reads the union (Checkpoint 3 question). Done (D107 = union): AT-06 passes when the unscoped quotas together set the five keys and names which quota sets which; a quota that sets all five alone is named alone.
 
 ### Phase 3 /review (2026-10-20)
@@ -247,7 +247,7 @@ Found by the end-of-phase review (specialists, red team, Claude and Codex advers
 - [ ] A misspelled `--other-namespace` gives a silent AT-02 PASS; a tenant cannot tell a missing namespace from a forbidden one. Warn when the name differs from common system namespaces, or document it (B25, D87).
 - [ ] The no-rights anchor (D80) passes for a misspelled `--as` user when a cluster grants `list pods` to `system:authenticated` (B25 identity warnings, D87).
 - [ ] Exemptions keyed on fields the tenant controls (PSA `exemptions.runtimeClasses`, Gatekeeper `exemptImages`, Kyverno exclusions by label or name) make a probe's rejection unrepresentative (B31 question-set pass, D87).
-- [ ] `-o json` and the B23 schema must carry each result's `note` (what it did not test, D86).
+- [x] `-o json` and the B23 schema must carry each result's `note` (what it did not test, D86). Done: `note` is in the schema and the JSON golden.
 - [ ] Unverified (red team, confidence 3/10): a policy engine whose own rule errors under failurePolicy Fail may also answer "admission webhook ... denied the request", which rule 1 reads as a PASS, as D99 handles for ValidatingAdmissionPolicy. Confirm Kyverno's and Gatekeeper's error-rejection texts and add them as ERROR before rule 1, or close this item (B31 spec pass; /ship review pass 3).
 - [ ] AT-03 asks no cluster-scope `escalate`/`bind` on namespaced `roles` and no cluster-scope `create serviceaccounts/token`; a ClusterRoleBinding granting either is cluster-wide escalation, and AT-03 still PASSes (D62 dropped only the in-namespace questions). Add the three questions with no namespace, update the DESIGN.md row and the PASS note (B31 question-set pass; /ship final review, red team).
 - [ ] A stored dangerous probe (dryRun=All dropped) is ERROR (exit 2), not FAIL, although admission accepted the object; decide whether it becomes FAIL with the stored-object warning (B31; /ship final review, Claude adversarial).

@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -89,6 +90,27 @@ func TestFailOnSkipTurnsASkipIntoExitOne(t *testing.T) {
 		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05"}, tt.flags...)...)
 		if code != tt.want || !regexp.MustCompile(`(?m)^SKIP +AT-05 `).MatchString(stdout) {
 			t.Errorf("flags %v: exit %d, stderr %q; want exit %d with AT-05 SKIP:\n%s", tt.flags, code, stderr, tt.want, stdout)
+		}
+	}
+}
+
+func TestJSONReportsTheExitCodeTheProcessReturns(t *testing.T) {
+	for _, tt := range []struct {
+		flags []string
+		want  int
+	}{{nil, 0}, {[]string{"--fail-on-skip"}, 1}} {
+		// As above: AT-05 is SKIP.
+		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
+		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05", "-o", "json"}, tt.flags...)...)
+		var rep struct {
+			APIVersion string `json:"apiVersion"`
+			Summary    struct {
+				Skip     int `json:"skip"`
+				ExitCode int `json:"exitCode"`
+			} `json:"summary"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &rep); err != nil || code != tt.want || rep.Summary.ExitCode != tt.want || rep.Summary.Skip != 1 || rep.APIVersion != "audit-tenant.dev/v1alpha1" {
+			t.Errorf("flags %v: exit %d, err %v, stderr %q; want exit %d and the same exitCode in the JSON summary:\n%s", tt.flags, code, err, stderr, tt.want, stdout)
 		}
 	}
 }

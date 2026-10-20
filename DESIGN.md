@@ -202,7 +202,7 @@ Rules: counts are per result, not per check family (ten checks produce fourteen 
 }
 ```
 
-`verdict` is one of `PASS`, `FAIL`, `SKIP`, `ERROR`. `mtb` is `"-"` when none. The `audit-tenant.dev` domain in `apiVersion` and in the probe annotation is owned by the project: Satvik registered it on 2026-10-11 (CEO review, D20). The key is one-way after release. A JSON Schema at `docs/report.schema.json` is checked in and the e2e validates against it.
+`verdict` is one of `PASS`, `FAIL`, `SKIP`, `ERROR`. `mtb` is `"-"` when none. The `audit-tenant.dev` domain in `apiVersion` and in the probe annotation is owned by the project: Satvik registered it on 2026-10-11 (CEO review, D20). The key is one-way after release. A JSON Schema at `docs/report.schema.json` is checked in and the e2e validates against it; it requires a non-empty `hint` on every result that is not PASS (acceptance criterion 6). A result carries `note` only when it names what it did not test (D86). `identity.groups` is always an array. Server text is kept whole: JSON escapes its control characters, so `-o json` needs no sanitizing.
 
 ### PolicyReport (`-o policyreport`), ADR 0008
 
@@ -240,7 +240,7 @@ Expected verdicts (every row is asserted by the e2e script, with exit code):
 | 3 | cluster-admin `--as system:serviceaccount:tenant-b:tenant-b-dev`, `-n tenant-b` | PASS (RBAC) | FAIL (no PSA label, `admin` may create pods) | PASS (admission, webhook) | FAIL | FAIL (no quota) | 1 |
 | 4 | cluster-admin, no `--as`, `-n tenant-a` | FAIL (cluster rights) with the admin hint in the header | PASS (PSA applies to admins too) | PASS (webhook) | PASS | PASS | 1 |
 
-Run 1 also validates `-o json` against `docs/report.schema.json` and `-o policyreport` with `kubectl apply --dry-run=server`. Run 2 asserts the header shows groups `system:serviceaccounts` and `system:serviceaccounts:tenant-a`, which the API server adds to an impersonated or token-authenticated service account.
+A fifth run, as run 1's identity with `-o json`, is validated against `docs/report.schema.json` (with the `jv` CLI pinned in `versions.env`), must show run 1's verdicts, and carries AT-10's fixture numbers (5 pods, 500m/640Mi requests, 2500m/2560Mi limits), which the checklist cuts. Run 1 also validates `-o policyreport` with `kubectl apply --dry-run=server`. Run 2 asserts the header shows groups `system:serviceaccounts` and `system:serviceaccounts:tenant-a`, which the API server adds to an impersonated or token-authenticated service account.
 
 ## 9. Release
 

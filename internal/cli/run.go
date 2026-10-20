@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -35,7 +36,7 @@ func addRun(root *cobra.Command, streams genericiooptions.IOStreams, info BuildI
 	o := &runOptions{flags: genericclioptions.NewConfigFlags(true)}
 	o.flags.AddFlags(root.Flags())
 	f := root.Flags()
-	f.StringVarP(&o.output, "output", "o", "checklist", "output format: checklist or wide (adds MTB IDs and deciding layers, never cuts a reason)")
+	f.StringVarP(&o.output, "output", "o", "checklist", "output format: checklist, wide (adds MTB IDs and deciding layers, never cuts a reason) or json")
 	f.BoolVar(&o.plain, "plain", false, "ASCII only: no color, no special characters")
 	f.BoolVar(&o.noColor, "no-color", false, "no color (NO_COLOR in the environment does the same)")
 	f.StringSliceVar(&o.checks, "checks", nil, "run only these check IDs (AT-04 selects its sub-checks; AT-04.2 one of them)")
@@ -48,8 +49,8 @@ func addRun(root *cobra.Command, streams genericiooptions.IOStreams, info BuildI
 }
 
 func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams, info BuildInfo) error {
-	if o.output != "checklist" && o.output != "wide" {
-		return exit2("unknown output format %q (choose checklist or wide)", o.output)
+	if !slices.Contains([]string{"checklist", "wide", "json"}, o.output) {
+		return exit2("unknown output format %q (choose checklist, wide or json)", o.output)
 	}
 	if o.timeout <= 0 {
 		return exit2("--timeout must be longer than 0")
@@ -136,8 +137,12 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		AdminHint:  c.Identity.Mode == report.ModeSelf && checks.LooksLikeAdmin(results),
 	}
 	rep.Summary = report.Summarize(results, o.failOnSkip) // an interrupted run's unfinished checks are ERROR; a proven FAIL still wins (D63)
-	printer := report.Checklist{Out: streams.Out, Color: report.WantColor(streams.Out, o.noColor), Plain: o.plain, Width: report.Width(streams.Out), Wide: o.output == "wide"}
-	if err := printer.Print(rep); err != nil {
+	if o.output == "json" {
+		err = report.JSON(streams.Out, rep)
+	} else {
+		err = report.Checklist{Out: streams.Out, Color: report.WantColor(streams.Out, o.noColor), Plain: o.plain, Width: report.Width(streams.Out), Wide: o.output == "wide"}.Print(rep)
+	}
+	if err != nil {
 		return exit2("cannot write the report: %v", err)
 	}
 	if rep.Summary.ExitCode == 0 {

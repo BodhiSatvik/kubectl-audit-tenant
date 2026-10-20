@@ -52,7 +52,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 
 ### Phase 4: output formats and flags
 - [x] B22 `-o wide`
-- [ ] B23 `-o json` and schema
+- [x] B23 `-o json` and schema
 - [ ] B24 `-o policyreport`
 - [ ] B25 `--debug` and `--fail-on-skip`
 
