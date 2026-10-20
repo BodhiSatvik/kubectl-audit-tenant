@@ -109,6 +109,7 @@ absent 2 'looks like a cluster admin' # self mode as a tenant: no hint
 
 for n in 1 2 4; do count "$n" '^PASS +AT-04\.[1-5] .* violates PodSecurity "restricted:latest"' 5; done # PSA applies to admins too
 for n in 1 2 3 4; do
+  absent "$n" '^warning: ' # D141: service accounts and the default --other-namespace need no warning
   verdicts "$n"
   count "$n" '^PASS +AT-05 .* admission webhook "validate\.kyverno\.svc-fail" denied' 1
   hints "$n"

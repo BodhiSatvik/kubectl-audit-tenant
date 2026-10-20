@@ -82,6 +82,7 @@ type Report struct {
 	Namespace      string    `json:"namespace"`
 	OtherNamespace string    `json:"otherNamespace"`
 	Identity       Identity  `json:"identity"`
+	Warnings       []string  `json:"warnings,omitempty"` // what the identity or flags leave untested (D141); under the header
 	Timestamp      time.Time `json:"timestamp"`
 	Results        []Result  `json:"results"`
 	Summary        Summary   `json:"summary"`

@@ -83,9 +83,13 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 			if err = errors.Join(readErr, resp.Body.Close()); err == nil {
 				resp.Body = io.NopCloser(bytes.NewReader(body))
-				r.Body = string(body)
-				if strings.HasSuffix(req.URL.Path, selfSubjectReviews) {
+				switch {
+				case strings.HasSuffix(req.URL.Path, selfSubjectReviews):
 					r.Body = withoutExtra(body)
+				case create && resp.StatusCode >= 200 && resp.StatusCode <= 299:
+					r.Body = onlyMetadata(body)
+				default:
+					r.Body = string(body)
 				}
 				verified = create && dryRunAnswer(resp.StatusCode, body)
 			}
@@ -145,6 +149,28 @@ func withoutExtra(body []byte) string {
 		return hidden
 	}
 	return string(out)
+}
+
+// onlyMetadata keeps the kind and the metadata a dry-run check needs (name, namespace,
+// resourceVersion, uid) of an accepted create before --debug can print it: a mutating webhook can
+// inject values (env, tokens) into the rest, and users paste --debug output into issues (D140).
+func onlyMetadata(body []byte) string {
+	var obj map[string]any // a map: a resourceVersion that is not a string must still show
+	if json.Unmarshal(body, &obj) != nil {
+		return "(create answer not shown: not a JSON object)"
+	}
+	meta, _ := obj["metadata"].(map[string]any)
+	kept := map[string]any{}
+	for _, k := range []string{"name", "namespace", "resourceVersion", "uid"} {
+		if v, ok := meta[k]; ok {
+			kept[k] = v
+		}
+	}
+	out, err := json.Marshal(map[string]any{"kind": obj["kind"], "metadata": kept})
+	if err != nil {
+		return "(create answer not shown)"
+	}
+	return string(out) + " (spec and status not shown: a webhook may have injected values)"
 }
 
 // allowed reports whether req is on the allowlist, and whether it is a create (a pods or services POST).

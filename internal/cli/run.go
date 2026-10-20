@@ -3,9 +3,11 @@ package cli
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +21,9 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/safety"
 )
+
+// defaultOtherNamespace exists on every cluster; any other --other-namespace gets a warning (D141).
+const defaultOtherNamespace = "kube-system"
 
 type runOptions struct {
 	flags          *genericclioptions.ConfigFlags
@@ -41,7 +46,7 @@ func addRun(root *cobra.Command, streams genericiooptions.IOStreams, info BuildI
 	f.BoolVar(&o.noColor, "no-color", false, "no color (NO_COLOR in the environment does the same)")
 	f.StringSliceVar(&o.checks, "checks", nil, "run only these check IDs (AT-04 selects its sub-checks; AT-04.2 one of them)")
 	f.StringSliceVar(&o.skip, "skip", nil, "skip these check IDs")
-	f.StringVar(&o.otherNamespace, "other-namespace", "kube-system", "a namespace the tenant must not reach (AT-02)")
+	f.StringVar(&o.otherNamespace, "other-namespace", defaultOtherNamespace, "a namespace the tenant must not reach (AT-02)")
 	f.DurationVar(&o.timeout, "timeout", 30*time.Second, "deadline for the whole run")
 	f.BoolVar(&o.failOnSkip, "fail-on-skip", false, "exit 1 when any check is SKIP (for pipelines that must not accept an unproven namespace)")
 	f.BoolVar(&o.debug, "debug", false, "write every API request to stderr (never request headers)")
@@ -94,19 +99,40 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	// The effective impersonation: the --as flags or the kubeconfig's as and as-groups entries
 	// (clientcmd already refuses groups without a user there).
 	as, asGroups := cfg.Impersonate.UserName, cfg.Impersonate.Groups
+	var warnings []string // D141: what the flags leave untested; no request needed
+	if as != "" && len(asGroups) == 0 && !strings.HasPrefix(as, "system:serviceaccount:") {
+		warnings = append(warnings, "--as "+as+" has no --as-group: the run tests the user without the groups an identity provider adds, and the API server does not check that the user exists")
+	}
+	if o.otherNamespace != defaultOtherNamespace {
+		warnings = append(warnings, "--other-namespace "+o.otherNamespace+" is not checked: AT-02 cannot tell a missing namespace from a forbidden one, so a misspelled name passes")
+	}
+	impersonation := "no impersonation"
+	if as != "" {
+		impersonation = fmt.Sprintf("impersonating %s (groups: %s)", as, cmp.Or(strings.Join(asGroups, ", "), "none"))
+	}
 
 	cfg.UserAgent = "audit-tenant/" + info.Version // what the API audit log shows
 	rec := &safety.Recorder{}
-	trace := func() { // --debug: one line per request, never headers; bodies of the POST answers indented
+	var c *cluster.Client
+	trace := func() { // --debug: the identity steps and one line per request, never headers; bodies of the POST answers indented
 		if !o.debug {
 			return
 		}
+		cmd.PrintErrln("identity: " + report.Sanitize(fmt.Sprintf("context %s, kubeconfig user %s, %s", contextName, user, impersonation)))
 		for _, r := range rec.Requests() {
 			cmd.PrintErrf("%s %s %d %s\n", r.Method, report.Sanitize(r.Path), r.Status, r.Duration.Round(time.Millisecond))
 			if r.Body != "" {
 				cmd.PrintErrf("  %s\n", report.Sanitize(r.Body))
 			}
 		}
+		if c == nil {
+			return // startup failed; the error line says why
+		}
+		resolved := "no SelfSubjectReview answer named the identity, so the header shows " + c.Identity.Username + " from the kubeconfig and --as, marked unverified"
+		if c.Identity.Verified {
+			resolved = fmt.Sprintf("the SelfSubjectReview names %s (groups: %s), shown as verified", c.Identity.Username, cmp.Or(strings.Join(c.Identity.Groups, ", "), "none"))
+		}
+		cmd.PrintErrln("identity: " + report.Sanitize(resolved))
 	}
 	defer trace()
 	ctx, cancel := context.WithTimeout(cmd.Context(), o.timeout)
@@ -115,7 +141,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	defer stop()
 	context.AfterFunc(ctx, stop) // after the first signal, a second one gets Go's default: exit at once
 
-	c, err := cluster.Connect(ctx, cfg, cluster.Options{
+	c, err = cluster.Connect(ctx, cfg, cluster.Options{
 		Namespace: namespace, OtherNamespace: o.otherNamespace, Context: contextName, User: user,
 		As: as, AsGroups: asGroups, Timeout: o.timeout, Recorder: rec,
 	})
@@ -131,6 +157,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		Cluster:   report.Cluster{Context: contextName, Server: c.Server, Version: c.Version},
 		Namespace: namespace, OtherNamespace: o.otherNamespace,
 		Identity:   c.Identity,
+		Warnings:   warnings,
 		Timestamp:  time.Now().UTC(),
 		Results:    results,
 		FailOnSkip: o.failOnSkip,

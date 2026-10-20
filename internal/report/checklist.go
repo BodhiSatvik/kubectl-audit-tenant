@@ -29,6 +29,9 @@ func (p Checklist) Print(r Report) error {
 	if r.AdminHint {
 		b.WriteString("this identity looks like a cluster admin; add --as to test a tenant\n")
 	}
+	for _, w := range r.Warnings {
+		b.WriteString("warning: " + Sanitize(w) + "\n") // flag values are user text
+	}
 	b.WriteString("\n")
 
 	vw, iw, nw, mw, lw := 0, 0, 0, 0, 0 // column widths: verdict, ID, name, MTB, layer

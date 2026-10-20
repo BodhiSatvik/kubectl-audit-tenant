@@ -131,6 +131,16 @@ func TestChecklistAdminHintAndUnverifiedSelf(t *testing.T) {
 	}
 }
 
+func TestChecklistPrintsWarningsUnderTheHeader(t *testing.T) {
+	r := sample()
+	r.Warnings = []string{"--as alice has no --as-group: ...", "--other-namespace \x1b[2Kprod is not checked"} // flag values are user text
+	out := render(t, Checklist{}, r)
+	golden(t, "checklist-warnings", out)
+	if !strings.Contains(out, "cluster kind-dev\nwarning: --as alice has no --as-group: ...\nwarning: --other-namespace prod is not checked\n\n") {
+		t.Errorf("warnings follow the header, sanitized:\n%s", out)
+	}
+}
+
 func TestChecklistSummaryListsThreeIDsThenMore(t *testing.T) {
 	r := sample()
 	r.Results = nil

@@ -38,6 +38,10 @@ func TestJSONMatchesTheSchema(t *testing.T) {
 	r.Results[0].Note = "not tested: grants limited to named objects (resourceNames)" // D86: the note travels with the result
 	out := printJSON(t, r)
 	golden(t, "json-sample", string(out))
+	r.Warnings = []string{"--other-namespace prod is not checked"}
+	if err := validate(printJSON(t, r)); err != nil {
+		t.Errorf("a report with warnings does not match the schema: %v", err)
+	}
 	if err := validate(out); err != nil {
 		t.Fatalf("-o json does not match docs/report.schema.json: %v", err)
 	}
@@ -81,6 +85,7 @@ func TestTheSchemaRejectsWhatTheContractForbids(t *testing.T) {
 		"another apiVersion":        func(m map[string]any) { m["apiVersion"] = "audit-tenant.dev/v1" },
 		"an empty note":             func(m map[string]any) { result(m)["note"] = "" },
 		"a result with no severity": func(m map[string]any) { delete(result(m), "severity") },
+		"an empty warnings list":    func(m map[string]any) { m["warnings"] = []any{} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			var m map[string]any

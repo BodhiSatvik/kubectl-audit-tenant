@@ -451,3 +451,53 @@ func TestSafetySendsEachCreateOnce(t *testing.T) {
 		}
 	}
 }
+
+// D140: a mutating webhook can inject values (env, tokens) into an accepted object, and users paste
+// --debug output into public issues, so the trace keeps only the metadata of an accepted create.
+func TestSafetyShowsOnlyTheMetadataOfAnAcceptedCreate(t *testing.T) {
+	accepted := `{"kind":"Pod","apiVersion":"v1","metadata":{"name":"audit-tenant-probe-x7k2p","namespace":"tenant-a","uid":"u-1",` +
+		`"annotations":{"vault.example/token":"SENTINEL-ANNOTATION"}},"spec":{"containers":[{"name":"probe","env":[{"name":"TOKEN","value":"SENTINEL-ENV"}]}]},"status":{"phase":"Pending"}}`
+	for _, tt := range []struct {
+		name         string
+		status       int
+		body         string
+		want, hidden []string
+	}{
+		{"an accepted dry run", http.StatusCreated, accepted,
+			[]string{`"name":"audit-tenant-probe-x7k2p"`, `"uid":"u-1"`, `"kind":"Pod"`, "spec and status not shown"}, []string{"SENTINEL", "Pending"}},
+		{"a stored object whose resourceVersion is a number", http.StatusCreated, `{"kind":"Pod","metadata":{"name":"x","resourceVersion":4711},"spec":{"x":"SENTINEL"}}`,
+			[]string{`"resourceVersion":4711`}, []string{"SENTINEL"}},
+		{"an accepted answer that is not JSON", http.StatusOK, "SENTINEL plain text", []string{"not shown"}, []string{"SENTINEL"}},
+		{"a rejection", http.StatusForbidden, `{"kind":"Status","message":"pods \"audit-tenant-probe-x\" is forbidden: violates PodSecurity"}`,
+			[]string{"violates PodSecurity"}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := testutil.NewServer(t, map[string]http.HandlerFunc{"POST /api/v1/namespaces/tenant-a/pods": func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = io.WriteString(w, tt.body)
+			}})
+			base, _ := url.Parse(srv.URL)
+			rec := &safety.Recorder{}
+			client := &http.Client{Transport: &safety.Transport{Namespace: ns, Base: base, Next: http.DefaultTransport, Recorder: rec, Unverified: &atomic.Bool{}}}
+			resp, err := client.Post(srv.URL+"/api/v1/namespaces/tenant-a/pods?dryRun=All", "application/json", strings.NewReader("{}"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, _ := io.ReadAll(resp.Body); string(got) != tt.body {
+				t.Errorf("the client must still get the whole answer; got %q", got)
+			}
+			_ = resp.Body.Close()
+			reqs := rec.Requests()
+			for _, w := range tt.want {
+				if !strings.Contains(reqs[0].Body, w) {
+					t.Errorf("trace body %q lacks %q", reqs[0].Body, w)
+				}
+			}
+			for _, h := range tt.hidden {
+				if strings.Contains(reqs[0].Body, h) {
+					t.Errorf("trace body %q shows %q", reqs[0].Body, h)
+				}
+			}
+		})
+	}
+}

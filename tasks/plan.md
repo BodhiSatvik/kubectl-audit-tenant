@@ -54,7 +54,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B22 `-o wide`
 - [x] B23 `-o json` and schema
 - [x] B24 `-o policyreport`
-- [ ] B25 `--debug` and `--fail-on-skip`
+- [x] B25 `--debug` and `--fail-on-skip`
 
 ### Checkpoint 4
 - [ ] Five printers golden-tested; schema and PolicyReport pass in e2e
