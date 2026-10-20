@@ -16,6 +16,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
+	"sigs.k8s.io/yaml"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/checks"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cli"
@@ -313,6 +314,25 @@ func TestWideFlagReachesThePrinter(t *testing.T) {
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "wide", "--checks", "AT-01")
 	if code != 0 || !regexp.MustCompile(`(?m)^PASS  AT-01  MTB-PL1-CC-CPI-1  RBAC  No cluster-scoped access  RBAC denied all 4 actions$`).MatchString(stdout) {
 		t.Errorf("exit %d, stderr %q; want the MTB ID and layer columns:\n%s", code, stderr, stdout)
+	}
+}
+
+func TestPolicyReportFlagPrintsAPolicyReportAndKeepsTheExitCode(t *testing.T) {
+	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":true}`)) // AT-01 FAIL: exit 1
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport", "--checks", "AT-01")
+	var pr struct {
+		Kind     string `json:"kind"`
+		Metadata struct {
+			Name      string `json:"name"`
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+		Results []struct {
+			Result string `json:"result"`
+		} `json:"results"`
+	}
+	if err := yaml.Unmarshal([]byte(stdout), &pr); err != nil || code != 1 || pr.Kind != "PolicyReport" || pr.Metadata.Name != "audit-tenant-kind-dev" ||
+		pr.Metadata.Namespace != "tenant-a" || len(pr.Results) != 1 || pr.Results[0].Result != "fail" {
+		t.Errorf("exit %d, err %v, stderr %q; want exit 1 and a PolicyReport with one fail:\n%s", code, err, stderr, stdout)
 	}
 }
 

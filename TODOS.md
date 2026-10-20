@@ -115,7 +115,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: schema validation passes in unit and e2e; `summary` counts are per result.
   - Verify: `go test ./internal/report/ -run JSON`; e2e workflow.
   - Depends on: B8. Files: `internal/report/json.go`, `docs/report.schema.json`, tests, `test/e2e/run.sh`.
-- [ ] **B24 `-o policyreport`.** `wgpolicyk8s.io/v1alpha2` with the per-identity name (slug plus hash when truncated), identity annotations, result mapping, severity, properties incl. identity; e2e installs the CRD and runs `kubectl apply --dry-run=server`.
+- [x] **B24 `-o policyreport`.** `wgpolicyk8s.io/v1alpha2` with the per-identity name (slug plus hash when truncated), identity annotations, result mapping, severity, properties incl. identity; e2e installs the CRD and runs `kubectl apply --dry-run=server`.
   - AC: slug tests (service account, long identity); apply succeeds in e2e run 1.
   - Verify: `go test ./internal/report/ -run PolicyReport`; e2e workflow.
   - Depends on: B8. Files: `internal/report/policyreport.go`, tests, `test/e2e/run.sh`, `test/e2e/versions.env`.
