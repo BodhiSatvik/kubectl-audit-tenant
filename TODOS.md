@@ -182,7 +182,7 @@ Found by /ponytail-review, gstack /review (specialists, Red Team, Claude adversa
 
 ### Phase 3 /ship review (2026-10-20)
 
-Found by the /ship re-review (specialists, Red Team, kind QA smoke) and its Step 11 adversarial pass (Claude, Codex); decisions D119 to D133.
+Found by the /ship re-review (specialists, Red Team, kind QA smoke) and its Step 11 adversarial passes (Claude, Codex); decisions D119 to D135.
 - [x] A huge maxSurge percent (the API bounds none) wrapped the AT-10 peak negative: "pods -9223372036854774809 of 20" as a PASS on kind. The scaled surge is clamped at MaxInt32 (D110 class).
 - [x] D119: namespaces/status and namespaces/finalize both change labels (proven on kind); AT-09's D105 note asks them too. Tenant e2e runs now use 40 of the 40-request budget until B27.
 - [x] D120: D111's refusal FAIL keeps; the hint and DESIGN.md say a webhook that sets sizes only on pods is not seen. Kyverno's autogen writes the template and is seen (proven on kind).
@@ -199,6 +199,7 @@ Found by the /ship re-review (specialists, Red Team, kind QA smoke) and its Step
 - [ ] D133: a ValidatingAdmissionPolicy whose message quotes "violates PodSecurity" is classified as PSA, because that rule comes before the policy rule in `probe/classify.go`; AT-09's FAIL then names a PSA cluster default that does not exist (Claude adversarial; D102 class).
 - [ ] D133: AT-10's reason names every refused workload and quota with no cap; use `firstThree` with "and N more", as the HPA and RuntimeClass clauses do (D114 rule; Claude adversarial).
 - [ ] D133: the D126 note says the HPA controller "scales none" of the HPAs that target one workload, but kind showed it still clamps the replicas to `maxReplicas`; reword the note (Claude adversarial, cycle 3 kind check).
+- [ ] D135: a maxSurge percent of 2^63 or more passes API validation but does not fit in 64 bits; `intstr.GetScaledValueFromIntOrPercent` returns an error, AT-10 counts surge 0, and the comment in `headroom/peak.go` says the error is never set. The Deployment controller fails every sync for such a value, so the quota does not block it; report the bad maxSurge instead (Codex adversarial re-run).
 
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 

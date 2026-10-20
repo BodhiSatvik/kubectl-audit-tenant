@@ -65,7 +65,7 @@ A NetworkPolicy that selects every pod in the target namespace and opens no door
 _Avoid_: Deny-all, zero-trust policy, lockdown
 
 **Rollout peak**:
-The largest number of pods a workload can run at one moment during a rollout, and their summed resource requests.
+The largest number of pods a workload can run at one moment during a rollout, and their summed resource requests and limits.
 _Avoid_: Surge, max replicas, burst
 
 **Headroom**:
