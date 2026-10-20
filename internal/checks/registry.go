@@ -81,7 +81,7 @@ var Registry = []Spec{
 		Method:  "LIST resourcequotas: the unscoped quotas together set requests.cpu, requests.memory, limits.cpu, limits.memory, pods",
 		Results: one("AT-06", "ResourceQuota present and complete", "MTB-PL1-CC-FNS-1"), Run: at06},
 	{ID: "AT-07", Name: "LimitRange with defaults", Kind: report.Config, Severity: report.Low,
-		Method:  "LIST limitranges: a Container item with default and defaultRequest for cpu and memory",
+		Method:  "LIST limitranges: the Container items together set default and defaultRequest for cpu and memory",
 		Results: one("AT-07", "LimitRange with defaults", "-"), Run: at07},
 	{ID: "AT-08", Name: "Default-deny NetworkPolicy", Kind: report.Config, Severity: report.Medium,
 		Method:  "LIST networkpolicies: an empty-selector deny for Ingress and one for Egress",

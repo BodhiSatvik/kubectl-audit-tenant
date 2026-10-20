@@ -59,10 +59,10 @@ func TestPodOf(t *testing.T) {
 		{"no sizes and no LimitRange defaults count as 0", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil), sized}}, Defaults{},
 			list("cpu", "100m", "memory", "128Mi"), list("cpu", "500m", "memory", "512Mi"), 1, 0},
 		{"LimitRange defaults fill what is missing", corev1.PodSpec{Containers: []corev1.Container{container("app", list("cpu", "50m"), nil)}},
-			Defaults{Name: "limits", Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")},
+			Defaults{Names: []string{"limits"}, Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")},
 			list("cpu", "50m", "memory", "128Mi"), list("cpu", "500m", "memory", "512Mi"), 0, 1},
 		{"an explicit limit beats defaultRequest for the request", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, list("cpu", "2"))}},
-			Defaults{Name: "limits", Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")},
+			Defaults{Names: []string{"limits"}, Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")},
 			list("cpu", "2", "memory", "128Mi"), list("cpu", "2", "memory", "512Mi"), 0, 1},
 		{"a plain init container runs alone: the larger side wins per resource", corev1.PodSpec{
 			InitContainers: []corev1.Container{container("migrate", list("cpu", "1", "memory", "64Mi"), list("cpu", "1", "memory", "64Mi"))},
@@ -102,7 +102,7 @@ func TestPodOf(t *testing.T) {
 		{"a pod-level limit alone is the request when no container requests that resource", corev1.PodSpec{
 			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
 			Containers: []corev1.Container{container("app", nil, list("memory", "64Mi"))}},
-			Defaults{Name: "limits", Request: list("cpu", "100m")},
+			Defaults{Names: []string{"limits"}, Request: list("cpu", "100m")},
 			list("cpu", "2", "memory", "64Mi"), list("cpu", "2", "memory", "64Mi"), 0, 0},
 		{"pod-level requests only: limits still add up the containers", corev1.PodSpec{
 			Resources:  &corev1.ResourceRequirements{Requests: list("cpu", "1")},
@@ -138,10 +138,11 @@ func TestDefaultsOf(t *testing.T) {
 	b := corev1.LimitRangeItem{Type: corev1.LimitTypeContainer, Default: list("cpu", "1"), DefaultRequest: list("cpu", "500m")}
 	a := corev1.LimitRangeItem{Type: corev1.LimitTypeContainer, Default: list("cpu", "2")}
 	got := DefaultsOf([]corev1.LimitRange{lr("b-defaults", b), lr("pod-only", podMax), lr("a-defaults", podMax, a)})
-	if got.Name != "a-defaults" || !same(got.Limit, a.Default) || len(got.Request) != 0 {
-		t.Errorf("DefaultsOf() = %+v; want the first by name with Container defaults, a-defaults", got)
+	// LimitRanger fills each missing value from every LimitRange: a-defaults gives default.cpu, b-defaults the request (D112).
+	if !slices.Equal(got.Names, []string{"a-defaults", "b-defaults"}) || !same(got.Limit, a.Default) || !same(got.Request, b.DefaultRequest) {
+		t.Errorf("DefaultsOf() = %+v; want default from a-defaults and defaultRequest from b-defaults", got)
 	}
-	if got := DefaultsOf([]corev1.LimitRange{lr("pod-only", podMax)}); got.Name != "" {
+	if got := DefaultsOf([]corev1.LimitRange{lr("pod-only", podMax)}); len(got.Names) != 0 {
 		t.Errorf("DefaultsOf() = %+v; want none: no Container item has defaults", got)
 	}
 }

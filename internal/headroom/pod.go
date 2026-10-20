@@ -14,25 +14,43 @@ import (
 // sized are the resources a pod's requests and limits are counted in.
 var sized = []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory}
 
-// Defaults are the Container defaults of the LimitRange the math uses.
+// Defaults are the Container defaults the math uses, merged from every LimitRange.
 type Defaults struct {
-	Name    string              // the LimitRange; empty when none has Container defaults
+	Names   []string            // the LimitRanges that gave a value, by name
 	Limit   corev1.ResourceList // default
 	Request corev1.ResourceList // defaultRequest
 }
 
-// DefaultsOf picks the first LimitRange by name with a Container item that sets default or
-// defaultRequest (DESIGN.md section 5).
+// DefaultsOf merges the Container defaults of every LimitRange: LimitRanger fills each missing
+// value from every LimitRange, so each value here comes from the first by name that sets it
+// (D112; the API server walks its cache, so two ranges that disagree make this an estimate).
 func DefaultsOf(ranges []corev1.LimitRange) Defaults {
+	d := Defaults{Limit: corev1.ResourceList{}, Request: corev1.ResourceList{}}
 	ranges = slices.SortedFunc(slices.Values(ranges), func(a, b corev1.LimitRange) int { return strings.Compare(a.Name, b.Name) })
 	for _, lr := range ranges {
+		gave := false
 		for _, item := range lr.Spec.Limits {
-			if item.Type == corev1.LimitTypeContainer && (len(item.Default) > 0 || len(item.DefaultRequest) > 0) {
-				return Defaults{Name: lr.Name, Limit: item.Default, Request: item.DefaultRequest}
+			if item.Type == corev1.LimitTypeContainer {
+				gave = fill(d.Limit, item.Default) || gave
+				gave = fill(d.Request, item.DefaultRequest) || gave
 			}
 		}
+		if gave {
+			d.Names = append(d.Names, lr.Name)
+		}
 	}
-	return Defaults{}
+	return d
+}
+
+// fill copies into into each value of from that into lacks, and reports whether it copied one.
+func fill(into, from corev1.ResourceList) bool {
+	copied := false
+	for k, v := range from {
+		if _, ok := into[k]; !ok {
+			into[k], copied = v, true
+		}
+	}
+	return copied
 }
 
 // Pod is one pod's cpu and memory as the quota counts them.

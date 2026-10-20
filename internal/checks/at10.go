@@ -156,7 +156,11 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	tail := " (" + breakdown + "); " + strings.Join(used, "; ")
 	if defaulted > 0 {
-		tail += "; defaults from LimitRange " + defaults.Name + " for " + containers(defaulted)
+		ranges := "LimitRange "
+		if len(defaults.Names) > 1 {
+			ranges = "LimitRanges "
+		}
+		tail += "; defaults from " + ranges + andList(defaults.Names) + " for " + containers(defaulted)
 	}
 	// A partial sum can only grow, so a shortfall is FAIL even with lists missing; not while the
 	// HPAs are unread, since an HPA's maxReplicas can be below spec.replicas (D110).

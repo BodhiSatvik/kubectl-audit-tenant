@@ -52,11 +52,15 @@ func TestAT07(t *testing.T) {
 		{"a Pod item only", listOf(limitRange("pod-max", limitItem(corev1.LimitTypePod, "max.cpu", "max.memory"))),
 			configResult(spec, report.Fail, "config", "no LimitRange has a type: Container item (pod-max)", failHint)},
 		{"missing defaults", listOf(limitRange("cpu-only", limitItem(corev1.LimitTypeContainer, "default.cpu", "defaultRequest.cpu"))),
-			configResult(spec, report.Fail, "config", "no Container item sets default and defaultRequest for cpu and memory: cpu-only lacks default.memory, defaultRequest.memory", failHint)},
-		{"several LimitRanges, the defaults split across them", listOf(
+			configResult(spec, report.Fail, "config", "no LimitRange sets default.memory, defaultRequest.memory; cpu-only sets default.cpu and defaultRequest.cpu", failHint)},
+		{"several LimitRanges that split the defaults pass together: LimitRanger reads them all (D112)", listOf(
 			limitRange("b-requests", limitItem(corev1.LimitTypeContainer, "defaultRequest.cpu", "defaultRequest.memory")),
 			limitRange("a-limits", limitItem(corev1.LimitTypePod, "max.cpu"), limitItem(corev1.LimitTypeContainer, "default.cpu", "default.memory"))),
-			configResult(spec, report.Fail, "config", "no Container item sets default and defaultRequest for cpu and memory: a-limits lacks defaultRequest.cpu, defaultRequest.memory; b-requests lacks default.cpu, default.memory", failHint)},
+			configResult(spec, report.Pass, "config", "LimitRanges give containers default and defaultRequest for cpu and memory together: a-limits sets default.cpu and default.memory; b-requests sets defaultRequest.cpu and defaultRequest.memory", "")},
+		{"several LimitRanges that still miss a default", listOf(
+			limitRange("cpu-defaults", limitItem(corev1.LimitTypeContainer, "default.cpu", "defaultRequest.cpu")),
+			limitRange("mem-limit", limitItem(corev1.LimitTypeContainer, "default.memory"))),
+			configResult(spec, report.Fail, "config", "no LimitRange sets defaultRequest.memory; cpu-defaults sets default.cpu and defaultRequest.cpu; mem-limit sets default.memory", failHint)},
 		{"several LimitRanges, one complete", listOf(
 			limitRange("b-full", limitItem(corev1.LimitTypeContainer, fourDefaults...)),
 			limitRange("a-partial", limitItem(corev1.LimitTypeContainer, "default.cpu"))),

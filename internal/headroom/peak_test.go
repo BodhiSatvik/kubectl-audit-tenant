@@ -87,7 +87,7 @@ func TestStatefulSetPeakIsItsReplicas(t *testing.T) {
 }
 
 func TestWorkloadsCarryTheirPod(t *testing.T) {
-	d := Defaults{Name: "limits", Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}
+	d := Defaults{Names: []string{"limits"}, Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}
 	s := statefulSet(replicas(1))
 	s.Spec.Template.Spec.Containers = append(s.Spec.Template.Spec.Containers, container("unsized", nil, nil))
 	if w := StatefulSet(s, nil, d); !same(w.Pod.Requests, list("cpu", "1100m", "memory", "1152Mi")) || w.Pod.Defaulted != 1 {
