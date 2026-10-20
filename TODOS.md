@@ -182,7 +182,7 @@ Found by /ponytail-review, gstack /review (specialists, Red Team, Claude adversa
 
 ### Phase 3 /ship review (2026-10-20)
 
-Found by the /ship re-review (specialists, Red Team, kind QA smoke); decisions D119 to D124.
+Found by the /ship re-review (specialists, Red Team, kind QA smoke) and its Step 11 adversarial pass (Claude, Codex); decisions D119 to D133.
 - [x] A huge maxSurge percent (the API bounds none) wrapped the AT-10 peak negative: "pods -9223372036854774809 of 20" as a PASS on kind. The scaled surge is clamped at MaxInt32 (D110 class).
 - [x] D119: namespaces/status and namespaces/finalize both change labels (proven on kind); AT-09's D105 note asks them too. Tenant e2e runs now use 40 of the 40-request budget until B27.
 - [x] D120: D111's refusal FAIL keeps; the hint and DESIGN.md say a webhook that sets sizes only on pods is not seen. Kyverno's autogen writes the template and is seen (proven on kind).
@@ -193,6 +193,12 @@ Found by the /ship re-review (specialists, Red Team, kind QA smoke); decisions D
 - [x] Cycle 3 (D128): the AT-10 note names what the peak counts (Deployments and StatefulSets at template sizes) and what it does not (other workloads, sizes set at admission). The "several HPAs" clause names at most three workloads (D114 rule); stale comments fixed.
 - [ ] D129: the HPA controller also stops scaling HPAs whose targets' pods overlap by labels (web's app=web selector matching web-v2's pods); AT-10 counts each at its maxReplicas and can FAIL falsely. Detect overlapping selectors across counted workloads (with B27).
 - [ ] The /ship review stopped at its 3-cycle cap without converging (D131): cycle 1 fixed 4 kind-confirmed defects, cycle 2 two, cycle 3 only wording; each cycle found smaller AT-10/AT-09 edges. Expect the same class in Phase 4 reviews.
+- [x] D132 (after the cap; no full panel read it again): a pod that sets any pod-level request or limit skips quota admission's "must specify" check, so AT-10 no longer FAILs it as refused; a pod-level limit with a container request of 0 takes 0 as the pod's request, not the limit (Claude adversarial and Codex, both from upstream source).
+- [ ] D133: quota admission compares usage with `status.hard`, but AT-06 and AT-10 read `spec.hard`; the two differ until the quota controller syncs a new `spec.hard` (Claude adversarial).
+- [ ] D133: a Deployment scaled to 0 whose containers leave a tracked value unset gets the AT-10 refusal FAIL, though its peak is 0 and the quota refuses nothing until it scales up (Claude adversarial).
+- [ ] D133: a ValidatingAdmissionPolicy whose message quotes "violates PodSecurity" is classified as PSA, because that rule comes before the policy rule in `probe/classify.go`; AT-09's FAIL then names a PSA cluster default that does not exist (Claude adversarial; D102 class).
+- [ ] D133: AT-10's reason names every refused workload and quota with no cap; use `firstThree` with "and N more", as the HPA and RuntimeClass clauses do (D114 rule; Claude adversarial).
+- [ ] D133: the D126 note says the HPA controller "scales none" of the HPAs that target one workload, but kind showed it still clamps the replicas to `maxReplicas`; reword the note (Claude adversarial, cycle 3 kind check).
 
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 
