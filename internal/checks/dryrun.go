@@ -75,7 +75,7 @@ func notDryRun(c *cluster.Client, spec Spec, m metav1.Object, what string) []rep
 // would PASS without proving anything (D69). AT-01 to AT-05 share one answer per run (D80).
 func rbacPass(ctx context.Context, c *cluster.Client, spec Spec, pass []report.Result) []report.Result {
 	a := c.AnchorQuestion()
-	q := question{verb: a.Verb, group: a.Group, resource: a.Resource, subresource: a.Subresource, namespace: a.Namespace} // every field, so the client's once-per-run match holds
+	q := question{verb: a.Verb, group: a.Group, resource: a.Resource, subresource: a.Subresource, name: a.Name, namespace: a.Namespace} // every field, so the client's once-per-run match holds
 	may, err := can(ctx, c, q)
 	switch {
 	case err != nil && ctx.Err() != nil:

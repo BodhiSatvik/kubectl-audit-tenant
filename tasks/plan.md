@@ -41,14 +41,14 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [ ] Behavioral checks green on kind for all four identities; coverage gate green
 
 ### Phase 3: configuration checks and headroom
-- [ ] B17 AT-06 and AT-07
-- [ ] B18 AT-08 and AT-09
-- [ ] B19 Headroom math
-- [ ] B20 AT-10
-- [ ] B21 e2e: all ten checks
+- [x] B17 AT-06 and AT-07
+- [x] B18 AT-08 and AT-09
+- [x] B19 Headroom math
+- [x] B20 AT-10
+- [x] B21 e2e: all ten checks
 
 ### Checkpoint 3
-- [ ] Full verdict matrix green; `make check` under 90 s
+- [x] Full verdict matrix green; `make check` under 90 s (2026-10-20 at 9d44fcb: real e2e with upstream Kyverno matches runs 1-4, 37/37/31/34 requests; `make check` 16.9 s with a cold cache; D117)
 
 ### Phase 4: output formats and flags
 - [ ] B22 `-o wide`

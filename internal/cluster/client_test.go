@@ -152,6 +152,8 @@ func TestConnectExitReasons(t *testing.T) {
 			"kind-dev may not impersonate team-a-dev: ask a cluster admin for `impersonate` on users, groups and serviceaccounts, or run without --as"},
 		{"namespace 404", "GET /api/v1/namespaces/tenant-a", testutil.Status(http.StatusNotFound, metav1.StatusReasonNotFound, `namespaces "tenant-a" not found`),
 			"namespace tenant-a not found in context kind-dev; check -n or --context"},
+		{"namespace 500: the namespace may not exist, so the run does not go on", "GET /api/v1/namespaces/tenant-a", testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcd unavailable"),
+			"could not read namespace tenant-a: etcd unavailable"},
 		{"first SSAR 403", "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "selfsubjectaccessreviews.authorization.k8s.io is forbidden"),
 			"this identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has"},
 		{"/version answers HTML (a login proxy)", "GET /version", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "<html>sign in</html>") },

@@ -38,6 +38,9 @@ const HintRetry = "re-run; if it repeats, run with --debug and report the server
 var policyErrors = []string{"resulted in error", "failed to configure", "running out of cost budget", "compilation error",
 	"runtime cost could not be calculated", "internal error compiling expression"}
 
+// LayerPSA is the layer of a probe that Pod Security Admission rejected; AT-09 reads it.
+const LayerPSA = "admission (PSA)"
+
 // Classify reads the cluster's answer to a dry-run probe with the rules of DESIGN.md section 5,
 // in order, first match wins. nil means the probe was accepted: FAIL on layer "-", and the caller
 // says what was accepted. The admission rules come before the HTTP 400/422 rule because Kyverno
@@ -66,7 +69,7 @@ func Classify(err error) Outcome {
 		// Before PSA: a webhook such as Kyverno's podSecurity rule quotes the PSA text, but it decided.
 		return Outcome{report.Pass, "admission (webhook: " + between(msg, `admission webhook "`, `"`) + ")", from(msg, "admission webhook"), ""}
 	case decided && strings.Contains(msg, "violates PodSecurity"):
-		return Outcome{report.Pass, "admission (PSA)", from(msg, "violates PodSecurity"), ""}
+		return Outcome{report.Pass, LayerPSA, from(msg, "violates PodSecurity"), ""}
 	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && strings.Contains(msg, "denied request"):
 		return Outcome{report.Pass, "admission (policy: " + between(msg, "ValidatingAdmissionPolicy '", "'") + ")", from(msg, "ValidatingAdmissionPolicy"), ""}
 	case decided && (strings.Contains(msg, "does not support dry run") || strings.Contains(msg, "sideEffects")):

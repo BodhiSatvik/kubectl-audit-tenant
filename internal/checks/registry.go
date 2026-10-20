@@ -31,6 +31,10 @@ type Spec struct {
 	Method   string          `json:"method"`
 	Results  []ResultSpec    `json:"results"`
 	Run      RunFunc         `json:"-"`
+
+	// earlier holds the results of the checks that ran before this one in the run; the runner
+	// sets it. AT-09 reads AT-04's (ADR 0007).
+	earlier []report.Result
 }
 
 // result builds one Result of this check.
@@ -62,32 +66,35 @@ var Registry = []Spec{
 		Method:  "SSAR with no namespace: escalate and bind on clusterroles; impersonate users, groups, serviceaccounts; * on * in every API group",
 		Results: one("AT-03", "No privilege escalation", "MTB-PL2-CC-TI-1"), Run: at03},
 	{ID: "AT-04", Name: "Dangerous pod settings blocked", Kind: report.Behavioral, Severity: report.High,
-		Method: "dry-run pods after a compliant control pod: privileged (two forms), hostPath, hostPID, hostNetwork, allowPrivilegeEscalation",
-		Results: []ResultSpec{
-			{ID: "AT-04.1", Name: "Privileged container blocked", MTB: "MTB-PL1-BC-CPI-5"},
-			{ID: "AT-04.2", Name: "hostPath volume blocked", MTB: "MTB-PL1-BC-HI-1"},
-			{ID: "AT-04.3", Name: "hostPID blocked", MTB: "MTB-PL1-BC-HI-4"},
-			{ID: "AT-04.4", Name: "hostNetwork blocked", MTB: "MTB-PL1-BC-HI-3"},
-			{ID: "AT-04.5", Name: "Privilege escalation blocked", MTB: "MTB-PL1-BC-CPI-6"},
-		}, Run: at04},
+		Method:  "dry-run pods after a compliant control pod: privileged (two forms), hostPath, hostPID, hostNetwork, allowPrivilegeEscalation",
+		Results: at04Results, Run: at04},
 	{ID: "AT-05", Name: "NodePort services blocked", Kind: report.Behavioral, Severity: report.Medium,
 		Method:  "dry-run Service of type NodePort after a ClusterIP control Service",
 		Results: one("AT-05", "NodePort services blocked", "MTB-PL1-BC-HI-1"), Run: at05},
 	{ID: "AT-06", Name: "ResourceQuota present and complete", Kind: report.Config, Severity: report.Medium,
-		Method:  "LIST resourcequotas: an unscoped quota with requests.cpu, requests.memory, limits.cpu, limits.memory, pods",
-		Results: one("AT-06", "ResourceQuota present and complete", "MTB-PL1-CC-FNS-1")},
+		Method:  "LIST resourcequotas: the unscoped quotas together set requests.cpu, requests.memory, limits.cpu, limits.memory, pods",
+		Results: one("AT-06", "ResourceQuota present and complete", "MTB-PL1-CC-FNS-1"), Run: at06},
 	{ID: "AT-07", Name: "LimitRange with defaults", Kind: report.Config, Severity: report.Low,
-		Method:  "LIST limitranges: a Container item with default and defaultRequest for cpu and memory",
-		Results: one("AT-07", "LimitRange with defaults", "-")},
+		Method:  "LIST limitranges: the Container items together set default and defaultRequest for cpu and memory",
+		Results: one("AT-07", "LimitRange with defaults", "-"), Run: at07},
 	{ID: "AT-08", Name: "Default-deny NetworkPolicy", Kind: report.Config, Severity: report.Medium,
 		Method:  "LIST networkpolicies: an empty-selector deny for Ingress and one for Egress",
-		Results: one("AT-08", "Default-deny NetworkPolicy", "-")},
+		Results: one("AT-08", "Default-deny NetworkPolicy", "-"), Run: at08},
 	{ID: "AT-09", Name: "Pod Security Admission enforced", Kind: report.Config, Severity: report.High,
 		Method:  "GET namespace labels: pod-security.kubernetes.io/enforce is baseline or restricted",
-		Results: one("AT-09", "Pod Security Admission enforced", "-")},
+		Results: one("AT-09", "Pod Security Admission enforced", "-"), Run: at09},
 	{ID: "AT-10", Name: "Quota covers rollout peak", Kind: report.Computed, Severity: report.Low,
 		Method:  "LIST deployments, statefulsets, horizontalpodautoscalers, resourcequotas, limitranges; sum the rollout peak",
-		Results: one("AT-10", "Quota covers rollout peak", "-")},
+		Results: one("AT-10", "Quota covers rollout peak", "-"), Run: at10},
+}
+
+// at04Results are AT-04's sub-results, one per probe; AT-09 counts them (D110).
+var at04Results = []ResultSpec{
+	{ID: "AT-04.1", Name: "Privileged container blocked", MTB: "MTB-PL1-BC-CPI-5"},
+	{ID: "AT-04.2", Name: "hostPath volume blocked", MTB: "MTB-PL1-BC-HI-1"},
+	{ID: "AT-04.3", Name: "hostPID blocked", MTB: "MTB-PL1-BC-HI-4"},
+	{ID: "AT-04.4", Name: "hostNetwork blocked", MTB: "MTB-PL1-BC-HI-3"},
+	{ID: "AT-04.5", Name: "Privilege escalation blocked", MTB: "MTB-PL1-BC-CPI-6"},
 }
 
 // ResultIDs flattens the result IDs of specs in order.

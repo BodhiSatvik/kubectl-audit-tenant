@@ -1,0 +1,189 @@
+package headroom
+
+import (
+	"slices"
+	"testing"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// list builds a ResourceList from "cpu", "100m", "memory", "128Mi" pairs.
+func list(kv ...string) corev1.ResourceList {
+	l := corev1.ResourceList{}
+	for pair := range slices.Chunk(kv, 2) {
+		l[corev1.ResourceName(pair[0])] = resource.MustParse(pair[1])
+	}
+	return l
+}
+
+func container(name string, requests, limits corev1.ResourceList) corev1.Container {
+	return corev1.Container{Name: name, Resources: corev1.ResourceRequirements{Requests: requests, Limits: limits}}
+}
+
+func sidecar(c corev1.Container) corev1.Container {
+	always := corev1.ContainerRestartPolicyAlways
+	c.RestartPolicy = &always
+	return c
+}
+
+// same reports whether two lists hold the same keys with equal quantities.
+func same(a, b corev1.ResourceList) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if w, ok := b[k]; !ok || v.Cmp(w) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func TestPodOf(t *testing.T) {
+	sized := container("app", list("cpu", "100m", "memory", "128Mi"), list("cpu", "500m", "memory", "512Mi"))
+	tests := []struct {
+		name               string
+		spec               corev1.PodSpec
+		defaults           Defaults
+		requests, limits   corev1.ResourceList
+		unsized, defaulted int
+	}{
+		{"one sized container", corev1.PodSpec{Containers: []corev1.Container{sized}}, Defaults{},
+			list("cpu", "100m", "memory", "128Mi"), list("cpu", "500m", "memory", "512Mi"), 0, 0},
+		{"app containers add up", corev1.PodSpec{Containers: []corev1.Container{sized, sized}}, Defaults{},
+			list("cpu", "200m", "memory", "256Mi"), list("cpu", "1", "memory", "1Gi"), 0, 0},
+		{"a limit with no request counts as the request", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, list("cpu", "1", "memory", "1Gi"))}}, Defaults{},
+			list("cpu", "1", "memory", "1Gi"), list("cpu", "1", "memory", "1Gi"), 0, 0},
+		{"no sizes and no LimitRange defaults count as 0", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil), sized}}, Defaults{},
+			list("cpu", "100m", "memory", "128Mi"), list("cpu", "500m", "memory", "512Mi"), 1, 0},
+		{"LimitRange defaults fill what is missing", corev1.PodSpec{Containers: []corev1.Container{container("app", list("cpu", "50m"), nil)}},
+			Defaults{Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")},
+			list("cpu", "50m", "memory", "128Mi"), list("cpu", "500m", "memory", "512Mi"), 0, 1},
+		{"an explicit limit beats defaultRequest for the request", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, list("cpu", "2"))}},
+			Defaults{Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")},
+			list("cpu", "2", "memory", "128Mi"), list("cpu", "2", "memory", "512Mi"), 0, 1},
+		{"a plain init container runs alone: the larger side wins per resource", corev1.PodSpec{
+			InitContainers: []corev1.Container{container("migrate", list("cpu", "1", "memory", "64Mi"), list("cpu", "1", "memory", "64Mi"))},
+			Containers:     []corev1.Container{sized}}, Defaults{},
+			list("cpu", "1", "memory", "128Mi"), list("cpu", "1", "memory", "512Mi"), 0, 0},
+		{"a sidecar adds to the app containers", corev1.PodSpec{
+			InitContainers: []corev1.Container{sidecar(container("proxy", list("cpu", "50m", "memory", "64Mi"), list("cpu", "100m", "memory", "128Mi")))},
+			Containers:     []corev1.Container{sized}}, Defaults{},
+			list("cpu", "150m", "memory", "192Mi"), list("cpu", "600m", "memory", "640Mi"), 0, 0},
+		{"an init container after a sidecar overlaps with it", corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				sidecar(container("proxy", list("cpu", "300m", "memory", "64Mi"), list("cpu", "300m", "memory", "64Mi"))),
+				container("migrate", list("cpu", "900m", "memory", "64Mi"), list("cpu", "900m", "memory", "64Mi")),
+			},
+			Containers: []corev1.Container{sized}}, Defaults{},
+			// requests: apps+sidecar = 400m/192Mi; migrate+proxy = 1200m/128Mi. Limits: 800m/576Mi vs 1200m/128Mi.
+			list("cpu", "1200m", "memory", "192Mi"), list("cpu", "1200m", "memory", "576Mi"), 0, 0},
+		{"an init container before a sidecar does not overlap with it", corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				container("migrate", list("cpu", "900m", "memory", "64Mi"), list("cpu", "900m", "memory", "64Mi")),
+				sidecar(container("proxy", list("cpu", "300m", "memory", "64Mi"), list("cpu", "300m", "memory", "64Mi"))),
+			},
+			Containers: []corev1.Container{sized}}, Defaults{},
+			list("cpu", "900m", "memory", "192Mi"), list("cpu", "900m", "memory", "576Mi"), 0, 0},
+		{"pod-level resources replace the container sum", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Requests: list("cpu", "1", "memory", "1Gi"), Limits: list("cpu", "2", "memory", "2Gi")},
+			Containers: []corev1.Container{sized, container("unsized", nil, nil)}}, Defaults{},
+			list("cpu", "1", "memory", "1Gi"), list("cpu", "2", "memory", "2Gi"), 0, 0},
+		{"pod-level resources for cpu only: memory still adds up the containers", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{sized, container("no-memory", list("cpu", "1"), list("cpu", "1"))}}, Defaults{},
+			list("cpu", "1100m", "memory", "128Mi"), list("cpu", "2", "memory", "512Mi"), 1, 0},
+		{"a pod-level limit alone takes the containers' summed requests as the request (SetDefaults_Pod)", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", list("cpu", "100m", "memory", "128Mi"), list("memory", "128Mi"))}}, Defaults{},
+			list("cpu", "100m", "memory", "128Mi"), list("cpu", "2", "memory", "128Mi"), 0, 0},
+		{"a pod-level limit alone is the request when no container requests that resource", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", nil, list("memory", "64Mi"))}},
+			Defaults{Request: list("cpu", "100m")},
+			list("cpu", "2", "memory", "64Mi"), list("cpu", "2", "memory", "64Mi"), 0, 0},
+		// Value: protects=a container request of 0 is the default pod-level request, not the limit (D132); fails_when=the defaulting tests the summed request with IsZero; why_new=every pod-level row requests a non-zero value or none; seam=none; no_claim=init containers
+		{"a container request of 0 is the pod-level request, not the pod-level limit (D132)", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "1")},
+			Containers: []corev1.Container{container("app", list("cpu", "0", "memory", "64Mi"), list("memory", "64Mi"))}}, Defaults{},
+			list("cpu", "0", "memory", "64Mi"), list("cpu", "1", "memory", "64Mi"), 0, 0},
+		// Value: protects=a container limit counts as its request before pod-level defaulting (D132); fails_when=requested() ignores limits; why_new=no row pairs a pod-level limit with a limit-only container; seam=none; no_claim=init containers
+		{"a container limit with no request is the pod-level request, not the pod-level limit (D132)", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", list("memory", "64Mi"), list("cpu", "500m", "memory", "64Mi"))}}, Defaults{},
+			list("cpu", "500m", "memory", "64Mi"), list("cpu", "2", "memory", "64Mi"), 0, 0},
+		// Value: protects=a LimitRange limit default that a pod-level limit replaces is not credited (D121); fails_when=the limit-side !podLim guard goes; why_new=no row sets Defaults.Limit with pod-level limits; seam=none; no_claim=none beyond protects
+		{"a pod-level limit replaces a LimitRange limit default, which is not credited", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2", "memory", "1Gi")},
+			Containers: []corev1.Container{container("app", list("cpu", "100m", "memory", "128Mi"), nil)}},
+			Defaults{Limit: list("cpu", "500m", "memory", "512Mi")},
+			list("cpu", "100m", "memory", "128Mi"), list("cpu", "2", "memory", "1Gi"), 0, 0},
+		{"pod-level requests only: limits still add up the containers", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Requests: list("cpu", "1")},
+			Containers: []corev1.Container{sized, container("no-cpu-limit", list("cpu", "200m", "memory", "64Mi"), list("memory", "64Mi"))}}, Defaults{},
+			list("cpu", "1", "memory", "192Mi"), list("cpu", "500m", "memory", "576Mi"), 1, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := PodOf(tt.spec, tt.defaults)
+			if !same(p.Requests, tt.requests) || !same(p.Limits, tt.limits) || p.Unsized != tt.unsized || p.Defaulted != tt.defaulted {
+				t.Errorf("PodOf() = requests %v, limits %v, unsized %d, defaulted %d;\nwant requests %v, limits %v, unsized %d, defaulted %d",
+					p.Requests, p.Limits, p.Unsized, p.Defaulted, tt.requests, tt.limits, tt.unsized, tt.defaulted)
+			}
+		})
+	}
+}
+
+func TestPodOfListsTheValuesLeftUnset(t *testing.T) {
+	// Quota admission refuses a pod that leaves unset a value the quota tracks (D111).
+	for _, tt := range []struct {
+		name     string
+		spec     corev1.PodSpec
+		defaults Defaults
+		want     []corev1.ResourceName
+	}{
+		{"requests only: both limits unset", corev1.PodSpec{Containers: []corev1.Container{container("app", list("cpu", "100m", "memory", "64Mi"), nil)}}, Defaults{},
+			[]corev1.ResourceName{"limits.cpu", "limits.memory"}},
+		{"no sizes and no defaults: all four unset", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil)}}, Defaults{},
+			[]corev1.ResourceName{"requests.cpu", "requests.memory", "limits.cpu", "limits.memory"}},
+		{"LimitRange defaults set every value", corev1.PodSpec{Containers: []corev1.Container{container("app", nil, nil)}},
+			Defaults{Request: list("cpu", "100m", "memory", "128Mi"), Limit: list("cpu", "500m", "memory", "512Mi")}, nil},
+		{"a pod-level cpu limit sets the cpu values of every container", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", list("memory", "64Mi"), nil)}}, Defaults{},
+			[]corev1.ResourceName{"limits.memory"}},
+	} {
+		if got := PodOf(tt.spec, tt.defaults).Unset; !slices.Equal(got, tt.want) {
+			t.Errorf("%s: PodOf().Unset = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestPodOfNotesARuntimeClass(t *testing.T) {
+	gvisor := "gvisor"
+	if p := PodOf(corev1.PodSpec{RuntimeClassName: &gvisor}, Defaults{}); !p.RuntimeClass {
+		t.Error("a pod with a RuntimeClass must say so: its overhead is not counted")
+	}
+	if p := PodOf(corev1.PodSpec{}, Defaults{}); p.RuntimeClass {
+		t.Error("a pod without a RuntimeClass has no overhead to note")
+	}
+}
+
+func TestDefaultsOf(t *testing.T) {
+	lr := func(name string, items ...corev1.LimitRangeItem) corev1.LimitRange {
+		return corev1.LimitRange{ObjectMeta: metav1.ObjectMeta{Name: name}, Spec: corev1.LimitRangeSpec{Limits: items}}
+	}
+	podMax := corev1.LimitRangeItem{Type: corev1.LimitTypePod, Max: list("cpu", "4")}
+	b := corev1.LimitRangeItem{Type: corev1.LimitTypeContainer, Default: list("cpu", "1"), DefaultRequest: list("cpu", "500m")}
+	a := corev1.LimitRangeItem{Type: corev1.LimitTypeContainer, Default: list("cpu", "2")}
+	got := DefaultsOf([]corev1.LimitRange{lr("b-defaults", b), lr("pod-only", podMax), lr("a-defaults", podMax, a)})
+	// LimitRanger fills each missing value from every LimitRange: a-defaults gives default.cpu, b-defaults the request (D112).
+	if got.limitFrom["cpu"] != "a-defaults" || got.requestFrom["cpu"] != "b-defaults" || !same(got.Limit, a.Default) || !same(got.Request, b.DefaultRequest) {
+		t.Errorf("DefaultsOf() = %+v; want default from a-defaults and defaultRequest from b-defaults", got)
+	}
+	if got := DefaultsOf([]corev1.LimitRange{lr("pod-only", podMax)}); len(got.Limit)+len(got.Request) != 0 {
+		t.Errorf("DefaultsOf() = %+v; want none: no Container item has defaults", got)
+	}
+}

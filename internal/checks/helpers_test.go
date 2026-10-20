@@ -46,7 +46,10 @@ func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.asked = append(s.asked, a)
 	s.mu.Unlock()
-	body, ok := s.answers[a.Verb+" "+a.Resource]
+	body, ok := s.answers[a.Verb+" "+a.Resource+"/"+a.Subresource] // a subresource answer, when a test gives one
+	if !ok {
+		body, ok = s.answers[a.Verb+" "+a.Resource]
+	}
 	if !ok && a.Verb+" "+a.Resource == "create selfsubjectaccessreviews" {
 		body, ok = allowed, true // AT-01's positive control: a real API server always says yes
 	}
@@ -148,4 +151,13 @@ func (s *probeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	out, _ := json.Marshal(answer)
 	testutil.JSON(http.StatusCreated, string(out))(w, r)
+}
+
+// listOf answers a LIST with items, as the API server does.
+func listOf[T any](items ...T) http.HandlerFunc {
+	body, err := json.Marshal(map[string]any{"items": items})
+	if err != nil {
+		panic(err)
+	}
+	return testutil.JSON(http.StatusOK, string(body))
 }

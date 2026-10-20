@@ -39,7 +39,7 @@ func (e *notAPIServerError) Error() string { return e.msg }
 // an answer that does not repeat the question, or an evaluationError on an answer that is not
 // allowed is an error.
 func can(ctx context.Context, c *cluster.Client, q question) (answer, error) {
-	attrs := cluster.Attributes{Verb: q.verb, Group: q.group, Resource: q.resource, Subresource: q.subresource, Namespace: q.namespace}
+	attrs := cluster.Attributes{Verb: q.verb, Group: q.group, Resource: q.resource, Subresource: q.subresource, Name: q.name, Namespace: q.namespace}
 	ssar, err := c.SelfSubjectAccessReview(ctx, attrs)
 	if errors.Is(err, cluster.ErrNoVerdict) {
 		return answer{}, &notAPIServerError{fmt.Sprintf("the answer to \"may I %s?\" has no verdict (status.allowed); something other than the API server answered", q.action())}
@@ -72,9 +72,10 @@ func hintFor(err error) string {
 	return hintRequestFailed
 }
 
-// question is one "may I?" a check asks; an empty namespace asks at cluster scope. label names
-// the action in reasons when verb and resource alone would not read well.
-type question struct{ verb, group, resource, subresource, namespace, label string }
+// question is one "may I?" a check asks; an empty namespace asks at cluster scope, an empty name
+// about every object of the resource. label names the action in reasons when verb and resource
+// alone would not read well.
+type question struct{ verb, group, resource, subresource, name, namespace, label string }
 
 func (q question) action() string {
 	if q.label != "" {

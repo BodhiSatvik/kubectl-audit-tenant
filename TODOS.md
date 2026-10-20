@@ -82,23 +82,23 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Phase 3: configuration checks and headroom
 
-- [ ] **B17 AT-06 and AT-07.** AT-06: unscoped quota with the five keys (aliases `cpu`, `memory`, `count/pods`); AT-07: Container LimitRange with default and defaultRequest for cpu and memory; both from the cache; 403 → SKIP with the permission.
+- [x] **B17 AT-06 and AT-07.** AT-06: unscoped quota with the five keys (aliases `cpu`, `memory`, `count/pods`); AT-07: Container LimitRange with default and defaultRequest for cpu and memory; both from the cache; 403 → SKIP with the permission.
   - AC: table tests for scoped-only quota, missing keys, aliases, several LimitRanges, 403.
   - Verify: `go test ./internal/checks/ -run 'AT06|AT07'`.
   - Depends on: B6. Files: `internal/checks/at06.go`, `internal/checks/at07.go`, tests.
-- [ ] **B18 AT-08 and AT-09.** AT-08: default-deny ingress and egress policies (empty podSelector, policyTypes, no rules; same or different objects), two-policy hint, network-plugin note; AT-09: PSA enforce label baseline or restricted from the cached namespace; cluster-default and policy-engine notes (ADR 0007); 403 → SKIP.
+- [x] **B18 AT-08 and AT-09.** AT-08: default-deny ingress and egress policies (empty podSelector, policyTypes, no rules; same or different objects), two-policy hint, network-plugin note; AT-09: PSA enforce label baseline or restricted from the cached namespace; cluster-default and policy-engine notes (ADR 0007); 403 → SKIP.
   - AC: table tests: two policies, one combined policy, inline-DNS egress (FAIL with the two-policy hint), privileged label, missing label with AT-04 admission note.
   - Verify: `go test ./internal/checks/ -run 'AT08|AT09'`.
   - Depends on: B6. Files: `internal/checks/at08.go`, `internal/checks/at09.go`, tests.
-- [ ] **B19 Headroom math.** `internal/headroom`: pod request and limit (pod-level `spec.resources` first; limit-only counts as request; sidecar rule; LimitRange defaults, else 0 with a note), replicas (HPA matched by group, kind and name → maxReplicas), peak (RollingUpdate surge absolute or percent rounded up, Recreate, StatefulSet), quota comparison per key with aliases, shortfall text.
+- [x] **B19 Headroom math.** `internal/headroom`: pod request and limit (pod-level `spec.resources` first; limit-only counts as request; sidecar rule; LimitRange defaults, else 0 with a note), replicas (HPA matched by group, kind and name → maxReplicas), peak (RollingUpdate surge absolute or percent rounded up, Recreate, StatefulSet), quota comparison per key with aliases, shortfall text.
   - AC: table tests incl. the fixture (5 pods, 0.5 cpu / 640Mi requests, 2.5 cpu / 2.5Gi limits); percent rounding; sidecar overlap; limit-only; pod-level resources; coverage at least 80%.
   - Verify: `go test ./internal/headroom/...`.
   - Depends on: B1. Files: `internal/headroom/pod.go`, `internal/headroom/peak.go`, `internal/headroom/compare.go`, tests.
-- [ ] **B20 AT-10.** Lists deployments, statefulsets, HPAs (quota and limitranges from the cache); edge cases in DESIGN.md order (no unscoped quota → FAIL; no workloads → PASS; unreadable deployments/statefulsets/quota/HPAs → SKIP; unreadable LimitRange with unsized containers → SKIP; partial sum over hard → FAIL); every reason starts with "estimate: …"; `used` values and the not-counted kinds named.
+- [x] **B20 AT-10.** Lists deployments, statefulsets, HPAs (quota and limitranges from the cache); edge cases in DESIGN.md order (no unscoped quota → FAIL; no workloads → PASS; unreadable deployments/statefulsets/quota/HPAs → SKIP; unreadable LimitRange with unsized containers → SKIP; partial sum over hard → FAIL); every reason starts with "estimate: …"; `used` values and the not-counted kinds named.
   - AC: unit cases for each edge; reason golden for the fixture.
   - Verify: `go test ./internal/checks/ -run AT10`.
   - Depends on: B19. Files: `internal/checks/at10.go`, tests.
-- [ ] **B21 e2e: all ten checks.** Assert the complete verdict table of DESIGN.md section 8 for runs 1 to 4, exit codes, header groups in run 2, hints on every non-PASS.
+- [x] **B21 e2e: all ten checks.** Assert the complete verdict table of DESIGN.md section 8 for runs 1 to 4, exit codes, header groups in run 2, hints on every non-PASS.
   - AC: e2e job green against the full table.
   - Verify: e2e workflow.
   - Depends on: B17, B18, B20. Files: `test/e2e/run.sh`, `test/e2e/expected/`.
@@ -160,6 +160,47 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 **Checkpoint 6 (v0.1.0):** every acceptance criterion met; `evidence/` row in the lab for the first outside install when it happens.
 
+### Phase 3 follow-ups (build, 2026-10-14)
+
+Found while building B17 to B21; each names the card or decision that owns it.
+- [x] The checklist cuts reasons near 120 columns off a terminal, and AT-10's required 104-character "estimate: ..." prefix fills most of that, so the peak numbers show only in `-o wide` and `-o json`. Decide whether the long caveat moves to the note and the reason keeps a short "estimate: " start (Checkpoint 3 question; ADR 0006 asks only that the reason start with "estimate"). Done (D106 = short start): the reason starts "estimate: " and the note carries the caveat with the kinds not counted.
+- [ ] The e2e asserts AT-10's verdict and note, not the fixture numbers (5 pods, 500m/640Mi, 2500m/2560Mi), because the checklist cuts them; assert them from `-o json` (B23). The unit golden and a kind run match today.
+- [x] AT-06 needs one unscoped quota with all five keys (DESIGN.md section 5). Two unscoped quotas that split the keys (one for requests, one for limits and pods) bound the namespace just as well but FAIL today; decide whether AT-06 reads the union (Checkpoint 3 question). Done (D107 = union): AT-06 passes when the unscoped quotas together set the five keys and names which quota sets which; a quota that sets all five alone is named alone.
+
+### Phase 3 /review (2026-10-20)
+
+Found by /ponytail-review, gstack /review (specialists, Red Team, Claude adversarial, Codex) and its kind QA smoke; decisions D110 to D115.
+- [x] D110: six wrong outputs. The headroom multiply wrapped int64 on a huge peak (now `Quantity.Mul`); AT-10 FAILed from a partial sum while HPAs were unreadable (now SKIP: an HPA can lower replicas); an empty `scopeSelector: {}` counted as scoped (reproduced on kind); a pod-level limit with no pod-level request counted as the request (now the containers' summed requests, as `SetDefaults_Pod`); AT-09 named AT-04 "blocking every probe" after a partial AT-04; AT-08's PASS said "every pod is denied" next to allow-all policies (now "default deny for ...", and the note names policies that select every pod and allow traffic).
+- [x] D112: AT-07 FAILed two LimitRanges that split the Container defaults, and AT-10 took defaults from the first range only, though LimitRanger fills each missing value from every range (reproduced on kind). Both now merge the ranges; each value comes from the first range by name that sets it.
+- [x] D111: AT-10 counted a value a container leaves unset as 0 and could PASS a rollout whose pods the quota refuses ("must specify", reproduced on kind). It now FAILs naming the quota, workload and keys; it SKIPs for unreadable LimitRanges only when such a tracked value is unset; the note says "left a cpu or memory request or limit unset".
+- [x] D114: tests for an AT-08 deny whose selector uses matchExpressions, AT-09 and AT-10 runs that end mid-check, and pod-level requests without limits; the e2e fails a run above 40 API requests (CONSTRAINTS.md); the AT-10 note names at most three RuntimeClass workloads; "every AT-10 reason starts with estimate" now says PASS, FAIL and SKIP.
+- [x] D113: AT-09 keeps PASS with a "not tested" note when the update/patch question fails, and leaves a run that ends during it to the runner (no change; test added).
+- [ ] AT-08 does not ask whether the identity may delete, update or patch the deny policies, the gap D105 closed for AT-09's label; a PASS note like D105's (Claude adversarial; B22 or later).
+- [ ] AT-09 passes on the label alone even when the same run's AT-04 shows PSA did not enforce it (an exempt namespace or user); a note or FAIL from `spec.earlier` (Red Team; needs a decision).
+- [ ] AT-10 compares only unscoped quotas; a scoped quota that matches every counted pod (NotTerminating, NotBestEffort, a matching PriorityClass) can be tighter and block the rollout. Evaluate scopes against the pod templates, or note the skipped scoped quotas (Red Team; v0.2 with Argo Rollouts).
+- [ ] AT-10 counts a Deployment scaled to 0 with an HPA at maxReplicas plus surge, though the HPA does not scale a target at 0 (Claude adversarial; KEDA scales such targets back up, so decide with B27).
+
+### Phase 3 /ship review (2026-10-20)
+
+Found by the /ship re-review (specialists, Red Team, kind QA smoke) and its Step 11 adversarial passes (Claude, Codex); decisions D119 to D135.
+- [x] A huge maxSurge percent (the API bounds none) wrapped the AT-10 peak negative: "pods -9223372036854774809 of 20" as a PASS on kind. The scaled surge is clamped at MaxInt32 (D110 class).
+- [x] D119: namespaces/status and namespaces/finalize both change labels (proven on kind); AT-09's D105 note asks them too. Tenant e2e runs now use 40 of the 40-request budget until B27.
+- [x] D120: D111's refusal FAIL keeps; the hint and DESIGN.md say a webhook that sets sizes only on pods is not seen. Kyverno's autogen writes the template and is seen (proven on kind).
+- [x] D121: AT-10 names only the LimitRanges a container took a default from.
+- [x] D122: AT-09 treats any PSA layer among AT-04's admission layers as a cluster default.
+- [x] Small: the AT-04 probe count comes from `at04Results`; the PSA layer is `probe.LayerPSA`; the e2e budget gate also fails when it counts no requests; comment and doc fixes.
+- [x] Cycle 2 (D125, D126): AT-09 notes a pinned enforce-version other than latest (restricted at v1.7 admitted the AT-04.5 pod on kind while AT-09 passed); AT-10 counts spec.replicas raised to the largest minReplicas when several HPAs target one workload, since the controller scales none (AmbiguousSelector on kind), and names them in the note. Small: test rows for an alias quota's PASS text, the limit-side default credit, realistic LimitRange fixtures, AT-09 reading Classify's real layers; ADR 0006 and the TODOS request count.
+- [x] Cycle 3 (D128): the AT-10 note names what the peak counts (Deployments and StatefulSets at template sizes) and what it does not (other workloads, sizes set at admission). The "several HPAs" clause names at most three workloads (D114 rule); stale comments fixed.
+- [ ] D129: the HPA controller also stops scaling HPAs whose targets' pods overlap by labels (web's app=web selector matching web-v2's pods); AT-10 counts each at its maxReplicas and can FAIL falsely. Detect overlapping selectors across counted workloads (with B27).
+- [ ] The /ship review stopped at its 3-cycle cap without converging (D131): cycle 1 fixed 4 kind-confirmed defects, cycle 2 two, cycle 3 only wording; each cycle found smaller AT-10/AT-09 edges. Expect the same class in Phase 4 reviews.
+- [x] D132 (after the cap; no full panel read it again): a pod that sets any pod-level request or limit skips quota admission's "must specify" check, so AT-10 no longer FAILs it as refused, though unreadable LimitRanges still SKIP it, since LimitRanger fills its containers (a regression in the first D132 commit, found by the Codex adversarial re-run); a pod-level limit with a container request of 0 takes 0 as the pod's request, not the limit (Claude adversarial and Codex, both from upstream source).
+- [ ] D133: quota admission compares usage with `status.hard`, but AT-06 and AT-10 read `spec.hard`; the two differ until the quota controller syncs a new `spec.hard` (Claude adversarial).
+- [ ] D133: a Deployment scaled to 0 whose containers leave a tracked value unset gets the AT-10 refusal FAIL, though its peak is 0 and the quota refuses nothing until it scales up (Claude adversarial).
+- [ ] D133: a ValidatingAdmissionPolicy whose message quotes "violates PodSecurity" is classified as PSA, because that rule comes before the policy rule in `probe/classify.go`; AT-09's FAIL then names a PSA cluster default that does not exist (Claude adversarial; D102 class).
+- [ ] D133: AT-10's reason names every refused workload and quota with no cap; use `firstThree` with "and N more", as the HPA and RuntimeClass clauses do (D114 rule; Claude adversarial).
+- [ ] D133: the D126 note says the HPA controller "scales none" of the HPAs that target one workload, but kind showed it still clamps the replicas to `maxReplicas`; reword the note (Claude adversarial, cycle 3 kind check).
+- [ ] D135: a maxSurge percent of 2^63 or more passes API validation but does not fit in 64 bits; `intstr.GetScaledValueFromIntOrPercent` returns an error, AT-10 counts surge 0, and the comment in `headroom/peak.go` says the error is never set. The Deployment controller fails every sync for such a value, so the quota does not block it; report the bad maxSurge instead (Codex adversarial re-run).
+
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 
 Found by the /ship verification round on 7e886d0, after the review's fix-cycle limit. The PR stays a draft until the first two are fixed.
@@ -175,7 +216,7 @@ Found by the /ship verification round on 7e886d0, after the review's fix-cycle l
 Found by the /ship adversarial reviews and left for the phase that owns them. Each one names its card.
 - [ ] Verify every Registry MTB ID against kubectl-mtb before `-o wide` and `-o json` show them (B22): AT-04.2 and AT-05 both carry `MTB-PL1-BC-HI-1`.
 - [x] An SSAR answer without `status.allowed` reads as a denial; require the field when AT-02 and AT-03 reuse `can()` (B11). Done: an answer with no `allowed` field is ERROR with the not-the-API-server hint; the request carries no status, so a proxy that echoes it back is caught too (D64, Phase 2 review).
-- [ ] A namespace GET that fails with a 5xx lets the run continue; only a 403 should (B18, with AT-09).
+- [x] A namespace GET that fails with a 5xx lets the run continue; only a 403 should (B18, with AT-09). Done: any other error exits 2 "could not read namespace <n>: <error>" (DESIGN.md section 6).
 - [x] The runner abandons a check 100 ms after the deadline, so a grant held by a check stuck in a credential helper is lost; consider reporting grants as they are proven (B11). Done (D61): checks hand each proven FAIL to the runner, which keeps it when a check never returns or crashes.
 - [x] An interrupted run turns a proven FAIL (exit 1) into exit 2 (DESIGN.md section 8 already lists "interruption after a FAIL" for B16). Done (D63): a FAIL proven before the signal exits 1, as after --timeout.
 - [ ] `--as <user>` without `--as-group` tests the user without its identity-provider groups; warn in the header (B25).
@@ -195,11 +236,11 @@ Found by the end-of-phase review (specialists, red team, Claude and Codex advers
 - [ ] On OpenShift (restricted-v2 SCC) or with registry allowlists, the control pod's fixed `runAsUser: 65532` and the public pause image are rejected, so AT-04 is SKIP; an SCC 403 on a probe matches no classifier rule (ERROR). Consider dropping `runAsUser`, adding `readOnlyRootFilesystem: true`, an SCC classifier rule and a `--probe-image` flag (Later).
 - [ ] Pods a controller creates can pass under a PSA exemption that the tenant's own probes do not have; the README's "what a PASS does not prove" must say so (B29).
 - [ ] `--debug` now prints whole dry-run Pod answers, which can carry values a mutating webhook injected; the README tells users to paste `--debug` into issues (B25, with the existing redaction item).
-- [ ] Redesign AT-04's and AT-05's RBAC-only branch around one SelfSubjectRulesReview (one request; SSAR fallback when `incomplete`): it would cover every way to get a pod or Service, including the in-namespace paths the PASS note names today and the paths that make a controller create pods from an existing template (raising an HPA's minReplicas, deleting or evicting pods; Codex /ship final round) (creating Secrets of type service-account-token, RoleBindings, service account tokens, impersonating local service accounts). A read-only tenant's run already costs about 53 requests (31 controller SSARs), over the 40 budget (B27, D77).
+- [ ] Redesign AT-04's and AT-05's RBAC-only branch around one SelfSubjectRulesReview (one request; SSAR fallback when `incomplete`): it would cover every way to get a pod or Service, including the in-namespace paths the PASS note names today and the paths that make a controller create pods from an existing template (raising an HPA's minReplicas, deleting or evicting pods; Codex /ship final round) (creating Secrets of type service-account-token, RoleBindings, service account tokens, impersonating local service accounts). A read-only tenant's run already costs about 63 requests (31 controller SSARs, plus up to 11 for AT-06 to AT-10, 5 of them AT-09's D105/D119 SSARs), over the 40 budget (B27, D77; the e2e now fails a run above 40).
 - [ ] AT-04 probes test regular containers only; add an initContainers form, allowed hostPath prefixes, and a hostPort probe for AT-04.4's MTB ID, or narrow the MTB tags (B22 with the MTB ID check, D78).
 - [ ] Running as root (`runAsUser: 0`) left AT-04.5 in D78; decide whether it becomes its own result (B31 spec pass).
 - [ ] When the tenant may create pods, AT-04 does not ask about `pods/ephemeralcontainers`; a webhook or ValidatingAdmissionPolicy whose rules list `pods` does not match that subresource, so a policy PASS can leave privileged ephemeral containers open (PSA covers them). The AT-04.1 and AT-04.5 notes say so now; ask update/patch on the subresource on the probe branch and SKIP or note a non-PSA PASS when allowed (B22, D97; /ship review pass 2).
-- [ ] A tenant that may `update` or `patch` its own Namespace can remove the PSA label that made AT-04 PASS; AT-09 should ask it (B18, D81).
+- [x] A tenant that may `update` or `patch` its own Namespace can remove the PSA label that made AT-04 PASS; AT-09 should ask it (B18, D81). Done (D105 = note): an AT-09 PASS asks update, then patch, on the namespace object and notes either grant; the verdict stays.
 - [ ] A tenant bound to `admin` may delete namespaced Kyverno Policies (the chart aggregates that right) or create PolicyExceptions, so a webhook PASS can be liftable (B31 question-set pass, D81).
 - [ ] AT-03 does not ask about approving CertificateSigningRequests (`update certificatesigningrequests/approval`, `approve` on signers); add it to the B31 question-set pass.
 - [ ] Probes have one valid form where policies can demand another: the NodePort Service has no selector, the hostNetwork pod the default DNS policy. A policy that requires a selector or `ClusterFirstWithHostNet` rejects the probe for an unrelated reason and fakes a PASS; add those forms (Later, D87).
@@ -224,7 +265,7 @@ Found by the end-of-phase review (specialists, red team, Claude and Codex advers
 - [ ] Many namespaces or clusters in one run
 - [ ] `--baseline` file: pick checks and severities (v0.2)
 - [ ] DaemonSets, Jobs, CronJobs and bare Pods in AT-10
-- [ ] Argo Rollouts in AT-10 (v0.2): read as unstructured objects when the CRD exists; blueGreen = replicas + (previewReplicaCount else replicas); canary = replicas + maxSurge, or 2 × replicas when `trafficRouting` is set and `dynamicStableScale` is not (deferred in the CEO review, 2026-10-10)
+- [ ] Argo Rollouts in AT-10 (v0.2): read as unstructured objects when the CRD exists; blueGreen = replicas + (previewReplicaCount else replicas); canary = replicas + maxSurge, or 2 × replicas when `trafficRouting` is set and `dynamicStableScale` is not (deferred in the CEO review, 2026-10-10) Also extend the kind list in `headroom.Breakdown`, which names only Deployment and StatefulSet, so a Rollout shows in the reason (D124).
 - [ ] `--as-serviceaccount ns/name` shortcut; cloud identity lookups
 - [ ] Detect whether the network plugin enforces NetworkPolicy
 - [ ] Weekly CI run against the oldest supported server (1.28)
