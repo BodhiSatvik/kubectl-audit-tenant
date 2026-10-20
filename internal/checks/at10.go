@@ -48,7 +48,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	for _, q := range byName(quotas) {
 		if len(q.Spec.Scopes) > 0 || q.Spec.ScopeSelector != nil {
 			scopedNames = append(scopedNames, q.Name)
-		} else {
+		} else if len(headroom.QuotaKeys(q)) > 0 { // a quota on none of the five keys bounds nothing AT-10 counts
 			unscoped = append(unscoped, q)
 		}
 	}
