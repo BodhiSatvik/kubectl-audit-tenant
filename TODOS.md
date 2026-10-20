@@ -190,6 +190,9 @@ Found by the /ship re-review (specialists, Red Team, kind QA smoke); decisions D
 - [x] D122: AT-09 treats any PSA layer among AT-04's admission layers as a cluster default.
 - [x] Small: the AT-04 probe count comes from `at04Results`; the PSA layer is `probe.LayerPSA`; the e2e budget gate also fails when it counts no requests; comment and doc fixes.
 - [x] Cycle 2 (D125, D126): AT-09 notes a pinned enforce-version other than latest (restricted at v1.7 admitted the AT-04.5 pod on kind while AT-09 passed); AT-10 counts spec.replicas raised to the largest minReplicas when several HPAs target one workload, since the controller scales none (AmbiguousSelector on kind), and names them in the note. Small: test rows for an alias quota's PASS text, the limit-side default credit, realistic LimitRange fixtures, AT-09 reading Classify's real layers; ADR 0006 and the TODOS request count.
+- [x] Cycle 3 (D128): the AT-10 note names what the peak counts (Deployments and StatefulSets at template sizes) and what it does not (other workloads, sizes set at admission). The "several HPAs" clause names at most three workloads (D114 rule); stale comments fixed.
+- [ ] D129: the HPA controller also stops scaling HPAs whose targets' pods overlap by labels (web's app=web selector matching web-v2's pods); AT-10 counts each at its maxReplicas and can FAIL falsely. Detect overlapping selectors across counted workloads (with B27).
+- [ ] The /ship review stopped at its 3-cycle cap without converging (D131): cycle 1 fixed 4 kind-confirmed defects, cycle 2 two, cycle 3 only wording; each cycle found smaller AT-10/AT-09 edges. Expect the same class in Phase 4 reviews.
 
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 

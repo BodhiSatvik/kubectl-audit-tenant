@@ -124,7 +124,7 @@ for n in 1 2 4; do
   count "$n" "^ +note +not tested: whether the cluster's network plugin enforces NetworkPolicy$" 1
   count "$n" '^PASS +AT-09 .* pod-security\.kubernetes\.io/enforce=restricted on namespace tenant-a$' 1
   count "$n" '^PASS +AT-10 .* estimate: peak fits tenant-a-quota: requests.cpu 500m of 4' 1
-  count "$n" '^ +note +the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts$' 1
+  count "$n" '^ +note +the peak counts active pods of Deployments and StatefulSets during a rollout, at their template sizes; terminating pods can add to usage; not counted: other workloads \(DaemonSets, Jobs, CronJobs, ReplicaSets, ReplicationControllers, bare Pods, Argo Rollouts\) and sizes set at admission \(VPA\)$' 1
 done
 # D105: only cluster-admin may change the PSA label; the note says so, the verdict stays PASS.
 expect 4 '^ +note +this identity may update namespace tenant-a, so it can change or remove this label$'

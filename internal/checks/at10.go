@@ -31,7 +31,7 @@ const at10Estimate = "estimate: "
 // is FAIL; not while the HPAs are unread, since an HPA can lower replicas (D110).
 func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Result)) []report.Result {
 	ns := c.Namespace
-	note := "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
+	note := "the peak counts active pods of Deployments and StatefulSets during a rollout, at their template sizes; terminating pods can add to usage; not counted: other workloads (DaemonSets, Jobs, CronJobs, ReplicaSets, ReplicationControllers, bare Pods, Argo Rollouts) and sizes set at admission (VPA)" // D128
 	result := func(v report.Verdict, layer, reason, hint string) []report.Result {
 		res := spec.result(spec.Results[0], v, layer, at10Estimate+reason, hint)
 		res.Note = note
@@ -116,6 +116,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	unsized, defaulted := 0, 0
 	var runtimeClass []string
 	defaultedFrom := map[string]bool{}
+	var conflicts []string // workloads that several HPAs target
 	for _, w := range ws {
 		unsized += w.Pod.Unsized
 		defaulted += w.Pod.Defaulted
@@ -123,7 +124,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 			defaultedFrom[name] = true
 		}
 		if len(w.ConflictingHPAs) > 0 { // D126
-			note += "; several HPAs target " + strings.ToLower(w.Kind) + " " + w.Name + " (" + strings.Join(w.ConflictingHPAs, ", ") + "); the HPA controller scales none of them (AmbiguousSelector)"
+			conflicts = append(conflicts, strings.ToLower(w.Kind)+" "+w.Name+" ("+strings.Join(w.ConflictingHPAs, ", ")+")")
 		}
 		if w.Pod.RuntimeClass {
 			runtimeClass = append(runtimeClass, w.Name)
@@ -153,12 +154,11 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		forbidden = append(forbidden, "limitranges")
 		refused = nil
 	}
+	if len(conflicts) > 0 {
+		note += "; several HPAs target " + firstThree(conflicts) + "; the HPA controller scales none of them (AmbiguousSelector)"
+	}
 	if len(runtimeClass) > 0 {
-		names := strings.Join(runtimeClass, ", ")
-		if more := len(runtimeClass) - 3; more > 0 { // the note is never cut, so it names three (D114)
-			names = fmt.Sprintf("%s and %d more", strings.Join(runtimeClass[:3], ", "), more)
-		}
-		note += "; pod overhead of a RuntimeClass (" + names + ")"
+		note += "; pod overhead of a RuntimeClass (" + firstThree(runtimeClass) + ")"
 	}
 	if unsized > 0 {
 		note += "; " + containers(unsized) + " left a cpu or memory request or limit unset; counted as 0"
@@ -228,6 +228,14 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		return result(report.Skip, "-", "cannot list "+strings.Join(forbidden, ", ")+" (forbidden), so the peak is incomplete; "+partial+tail, grant(forbidden))
 	}
 	return result(report.Pass, layerConfig, "peak fits "+strings.Join(fits, "; ")+tail, "")
+}
+
+// firstThree joins items, naming three and then "and N more": the note is never cut (D114).
+func firstThree(items []string) string {
+	if more := len(items) - 3; more > 0 {
+		return fmt.Sprintf("%s and %d more", strings.Join(items[:3], ", "), more)
+	}
+	return strings.Join(items, ", ")
 }
 
 // containers reads "1 container" or "3 containers".

@@ -61,7 +61,7 @@ func TestDeploymentPeak(t *testing.T) {
 		{"scaled to zero has no rollout", deployment("api", replicas(0), rolling(intstr.FromInt32(2))), nil, 0, 0, ""},
 		{"an HPA's maxReplicas replaces replicas", deployment("api", replicas(3), rolling(intstr.FromString("25%"))),
 			[]autoscalingv2.HorizontalPodAutoscaler{hpa("api", "apps/v1", "Deployment", "api", 4)}, 4, 5, "api"},
-		// Value: protects=an HPA maxReplicas below spec.replicas lowers the count (ADR 0006, D110); fails_when=the !found guard goes and only a larger max replaces replicas; why_new=every HPA row has max above replicas; seam=none; no_claim=replicas 0 with an HPA (TODOS)
+		// Value: protects=an HPA maxReplicas below spec.replicas lowers the count (ADR 0006, D110); fails_when=the one-HPA case keeps spec.replicas when maxReplicas is lower; why_new=every HPA row has max above replicas; seam=none; no_claim=replicas 0 with an HPA (TODOS)
 		{"an HPA's maxReplicas below replicas lowers them", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
 			[]autoscalingv2.HorizontalPodAutoscaler{hpa("api", "apps/v1", "Deployment", "api", 2)}, 2, 3, "api"},
 		{"an HPA for another kind, group or name does not match", deployment("api", replicas(3), rolling(intstr.FromString("25%"))),

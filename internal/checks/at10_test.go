@@ -25,7 +25,7 @@ const (
 	statefulSetsPath = "GET /apis/apps/v1/namespaces/tenant-a/statefulsets"
 	hpasPath         = "GET /apis/autoscaling/v2/namespaces/tenant-a/horizontalpodautoscalers"
 	estimate         = "estimate: "
-	notCounted       = "the peak counts active pods during a rollout; terminating pods can add to usage; not counted: DaemonSets, Jobs, CronJobs, bare Pods and Argo Rollouts"
+	notCounted       = "the peak counts active pods of Deployments and StatefulSets during a rollout, at their template sizes; terminating pods can add to usage; not counted: other workloads (DaemonSets, Jobs, CronJobs, ReplicaSets, ReplicationControllers, bare Pods, Argo Rollouts) and sizes set at admission (VPA)"
 	refusedHint      = "set cpu and memory requests and limits on every container, or give them defaults with a LimitRange (see AT-07); a webhook that sets them only on pods, not in the template, is not seen"
 	at10FailHint     = "raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once"
 )
@@ -174,10 +174,11 @@ func TestAT10(t *testing.T) {
 		{"a container that takes only limit defaults names that LimitRange (D121)", map[string]http.HandlerFunc{deploymentsPath: listOf(requestsOnly), quotasPath: listOf(cpuCap("8")),
 			limitRangesPath: listOf(limitRange("a-req", limitItem(corev1.LimitTypeContainer, "defaultRequest.cpu", "defaultRequest.memory")), limitRange("b-lim", limitItem(corev1.LimitTypeContainer, "default.cpu", "default.memory")))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 1 of 8 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRange b-lim for 1 container", ""), notCounted},
-		// Value: protects=a PASS reason shows the peak for a quota spelled with the cpu alias; fails_when=the fits loop reads total[key] and prints "cpu 0 of 4"; why_new=every PASS and SKIP row uses canonical keys; seam=none; no_claim=none beyond protects
+		// Value: protects=a workload with several HPAs counts spec.replicas and the note names those HPAs (D126); fails_when=workload() goes back to the largest maxReplicas, or at10 drops the note clause; why_new=headroom tests do not reach the AT-10 note; seam=none; no_claim=none beyond protects
 		{"two HPAs on one workload: the controller scales none, and the note says so (D126)", map[string]http.HandlerFunc{hpasPath: listOf(apiHPA(), func() autoscalingv2.HorizontalPodAutoscaler { h := apiHPA(); h.Name = "api-mem"; return h }())},
 			configResult(spec, report.Pass, "config", estimate+"peak fits tenant-a-quota: requests.cpu 400m of 4, requests.memory 512Mi of 8Gi, limits.cpu 2 of 8, limits.memory 2Gi of 16Gi, pods 4 of 20 (deployments: api 3->4); used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3", ""),
 			notCounted + "; several HPAs target deployment api (api, api-mem); the HPA controller scales none of them (AmbiguousSelector)"},
+		// Value: protects=a PASS reason shows the peak for a quota spelled with the cpu alias; fails_when=the fits loop reads total[key] and prints "cpu 0 of 4"; why_new=every PASS and SKIP row uses canonical keys; seam=none; no_claim=none beyond protects
 		{"a quota that spells cpu shows the peak in a PASS", map[string]http.HandlerFunc{quotasPath: listOf(tight)},
 			configResult(spec, report.Pass, "config", estimate+"peak fits tenant-a-quota: cpu 500m of 4, pods 5 of 20 (deployments: api 4->5 (HPA max)); used in tenant-a-quota: cpu 300m", ""), notCounted},
 		{"LimitRange defaults are named", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), quotasPath: listOf(cpuCap("4"))},
@@ -268,6 +269,29 @@ func TestAT10NamesAtMostThreeRuntimeClassWorkloads(t *testing.T) {
 	routes[hpasPath] = listOf[autoscalingv2.HorizontalPodAutoscaler]()
 	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
 	if want := notCounted + "; pod overhead of a RuntimeClass (a, b, c and 1 more)"; len(got) != 1 || got[0].Note != want {
+		t.Errorf("at10() = %+v;\nwant note %q", got, want)
+	}
+}
+
+func TestAT10NamesAtMostThreeWorkloadsWithSeveralHPAs(t *testing.T) {
+	// Notes are never cut (D114); a cpu and a memory HPA on every Deployment must not list them all.
+	var ds []appsv1.Deployment
+	var hs []autoscalingv2.HorizontalPodAutoscaler
+	for _, n := range []string{"a", "b", "c", "d"} {
+		d := api()
+		d.Name = n
+		ds = append(ds, d)
+		for _, metric := range []string{"-cpu", "-mem"} {
+			h := apiHPA()
+			h.Name, h.Spec.ScaleTargetRef.Name = n+metric, n
+			hs = append(hs, h)
+		}
+	}
+	routes := at10Routes()
+	routes[deploymentsPath], routes[hpasPath] = listOf(ds...), listOf(hs...)
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	want := notCounted + "; several HPAs target deployment a (a-cpu, a-mem), deployment b (b-cpu, b-mem), deployment c (c-cpu, c-mem) and 1 more; the HPA controller scales none of them (AmbiguousSelector)"
+	if len(got) != 1 || got[0].Note != want {
 		t.Errorf("at10() = %+v;\nwant note %q", got, want)
 	}
 }

@@ -14,7 +14,7 @@ import (
 type Workload struct {
 	Kind     string // Deployment or StatefulSet
 	Name     string
-	Replicas int    // spec.replicas (default 1), or the maxReplicas of an HPA that targets it
+	Replicas int    // spec.replicas (default 1); the maxReplicas of the one HPA that targets it; with several, spec.replicas raised to their largest minReplicas (D126)
 	HPA      string // that HPA, or empty
 	// ConflictingHPAs are the HPAs, by name, when several target this workload; none scales it.
 	ConflictingHPAs []string
