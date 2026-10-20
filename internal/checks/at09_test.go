@@ -76,6 +76,8 @@ func TestAT09(t *testing.T) {
 			result(report.Fail, "config", missing, failHint, "")},
 		{"missing label, an RBAC-only AT-04 PASS says nothing about AT-04", `{}`, denyBoth, at04Passed("RBAC"),
 			result(report.Fail, "config", missing, failHint, "")},
+		{"missing label, AT-04 partly skipped cannot speak for every probe (D110)", `{}`, denyBoth, at04Passed("admission (PSA)")[:4],
+			result(report.Fail, "config", missing, failHint, "")},
 		{"restricted, but the identity may update its namespace (D105)", `{"pod-security.kubernetes.io/enforce":"restricted"}`,
 			map[string]string{"list nodes": denied, "update namespaces": allowed}, nil,
 			result(report.Pass, "config", "pod-security.kubernetes.io/enforce=restricted on namespace tenant-a", "", mayUpdateNote)},
@@ -115,6 +117,16 @@ func TestAT09AFailedQuestionIsANoteNotAVerdict(t *testing.T) {
 	got := at09(t.Context(), c, at09Spec(), ignore)
 	if len(got) != 1 || got[0].Verdict != report.Pass || !strings.HasPrefix(got[0].Note, `not tested: whether this identity may change this label: could not ask "may I update namespace tenant-a?"`) {
 		t.Errorf("at09() = %+v; want PASS with a note naming the failed question", got)
+	}
+}
+
+func TestAT09LeavesAnEndedRunToTheRunner(t *testing.T) {
+	// D113: the run ends during the update question; the runner says timeout or interrupted, as for every check.
+	c := connectWith(t, &ssarServer{answers: map[string]string{"list nodes": denied}}, namespaceWith(`{"pod-security.kubernetes.io/enforce":"restricted"}`))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if got := at09(ctx, c, at09Spec(), ignore); len(got) != 0 {
+		t.Errorf("at09() = %+v; want no result, so the runner says why the run ended", got)
 	}
 }
 

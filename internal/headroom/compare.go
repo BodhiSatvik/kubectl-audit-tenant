@@ -21,17 +21,12 @@ var aliases = map[corev1.ResourceName]corev1.ResourceName{
 }
 
 // Canonical maps a quota key to the one of Keys it counts: cpu, memory and count/pods are
-// aliases. ok is false for any other key.
-func Canonical(key corev1.ResourceName) (canonical corev1.ResourceName, ok bool) {
+// aliases. Any other key maps to itself.
+func Canonical(key corev1.ResourceName) corev1.ResourceName {
 	if a, ok := aliases[key]; ok {
-		return a, true
+		return a
 	}
-	for _, k := range Keys {
-		if k == key {
-			return k, true
-		}
-	}
-	return "", false
+	return key
 }
 
 // Total sums the workloads' peaks for each of the Keys: every pod of a workload's peak counts
@@ -84,7 +79,7 @@ func QuotaKeys(q corev1.ResourceQuota) []corev1.ResourceName {
 func Compare(q corev1.ResourceQuota, total corev1.ResourceList) []Shortfall {
 	var out []Shortfall
 	for _, key := range QuotaKeys(q) {
-		k, _ := Canonical(key)
+		k := Canonical(key)
 		if need, hard := total[k], q.Spec.Hard[key]; need.Cmp(hard) > 0 {
 			out = append(out, Shortfall{Key: key, Need: need, Hard: hard})
 		}

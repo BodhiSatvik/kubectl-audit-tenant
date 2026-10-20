@@ -167,6 +167,11 @@ Found while building B17 to B21; each names the card or decision that owns it.
 - [ ] The e2e asserts AT-10's verdict and note, not the fixture numbers (5 pods, 500m/640Mi, 2500m/2560Mi), because the checklist cuts them; assert them from `-o json` (B23). The unit golden and a kind run match today.
 - [x] AT-06 needs one unscoped quota with all five keys (DESIGN.md section 5). Two unscoped quotas that split the keys (one for requests, one for limits and pods) bound the namespace just as well but FAIL today; decide whether AT-06 reads the union (Checkpoint 3 question). Done (D107 = union): AT-06 passes when the unscoped quotas together set the five keys and names which quota sets which; a quota that sets all five alone is named alone.
 
+### Phase 3 /review (2026-10-20)
+
+Found by /ponytail-review, gstack /review (specialists, Red Team, Claude adversarial, Codex) and its kind QA smoke; decisions D110 to D115.
+- [x] D110: six wrong outputs. The headroom multiply wrapped int64 on a huge peak (now `Quantity.Mul`); AT-10 FAILed from a partial sum while HPAs were unreadable (now SKIP: an HPA can lower replicas); an empty `scopeSelector: {}` counted as scoped (reproduced on kind); a pod-level limit with no pod-level request counted as the request (now the containers' summed requests, as `SetDefaults_Pod`); AT-09 named AT-04 "blocking every probe" after a partial AT-04; AT-08's PASS said "every pod is denied" next to allow-all policies (now "default deny for ...", and the note names policies that select every pod and allow traffic).
+
 ### Before merging Phase 2 (/ship final round, 2026-10-14)
 
 Found by the /ship verification round on 7e886d0, after the review's fix-cycle limit. The PR stays a draft until the first two are fixed.

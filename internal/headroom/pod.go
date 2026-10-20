@@ -107,10 +107,18 @@ func PodOf(spec corev1.PodSpec, d Defaults) Pod {
 		return effective(a, i, sidecar)
 	}
 	p.Requests, p.Limits = pick(func(s sizes) corev1.ResourceList { return s.requests }), pick(func(s sizes) corev1.ResourceList { return s.limits })
+	var explicit corev1.ResourceList // the containers' own requests, before LimitRange defaults
+	if len(podLevel.Limits) > 0 {
+		explicit = PodOf(corev1.PodSpec{Containers: spec.Containers, InitContainers: spec.InitContainers}, Defaults{}).Requests
+	}
 	for _, r := range sized {
 		if v, ok := podLevel.Limits[r]; ok {
-			// shortcut: a pod-level limit with no pod-level request counts as the request, as for containers; the API server may default it to the containers' summed requests instead (KEP-2837), so this can overstate the peak; upgrade if a user reports a false AT-10 FAIL
+			// SetDefaults_Pod: a missing pod-level request is the containers' summed requests, or the
+			// limit when no container requests the resource (D110).
 			p.Requests[r], p.Limits[r] = v, v
+			if q := explicit[r]; !q.IsZero() {
+				p.Requests[r] = q
+			}
 		}
 		if v, ok := podLevel.Requests[r]; ok {
 			p.Requests[r] = v
@@ -157,11 +165,13 @@ func maxInto(into, l corev1.ResourceList) {
 	}
 }
 
-// times is q added n times.
+// times is q added n times. Quantity.Mul falls back to arbitrary precision, so a huge peak
+// cannot wrap negative and pass (D110).
 func times(q resource.Quantity, n int64) resource.Quantity {
-	format := q.Format
-	if format == "" { // a value counted as 0 was never parsed
-		format = resource.DecimalSI
+	out := q.DeepCopy()
+	if out.Format == "" { // a value counted as 0 was never parsed
+		out.Format = resource.DecimalSI
 	}
-	return *resource.NewMilliQuantity(q.MilliValue()*n, format)
+	out.Mul(n)
+	return out
 }

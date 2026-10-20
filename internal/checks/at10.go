@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -46,7 +47,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	var unscoped []corev1.ResourceQuota
 	var scopedNames []string
 	for _, q := range byName(quotas) {
-		if len(q.Spec.Scopes) > 0 || q.Spec.ScopeSelector != nil {
+		if scoped(q) {
 			scopedNames = append(scopedNames, q.Name)
 		} else if len(headroom.QuotaKeys(q)) > 0 { // a quota on none of the five keys bounds nothing AT-10 counts
 			unscoped = append(unscoped, q)
@@ -140,7 +141,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		}
 		var fit, use []string
 		for _, key := range headroom.QuotaKeys(q) {
-			k, _ := headroom.Canonical(key)
+			k := headroom.Canonical(key)
 			need, hard := total[k], q.Spec.Hard[key]
 			fit = append(fit, fmt.Sprintf("%s %s of %s", key, need.String(), hard.String()))
 			if u, ok := q.Status.Used[key]; ok {
@@ -157,8 +158,11 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	if defaulted > 0 {
 		tail += "; defaults from LimitRange " + defaults.Name + " for " + containers(defaulted)
 	}
+	// A partial sum can only grow, so a shortfall is FAIL even with lists missing; not while the
+	// HPAs are unread, since an HPA's maxReplicas can be below spec.replicas (D110).
+	hpasUnread := slices.Contains(forbidden, "horizontalpodautoscalers")
 	switch {
-	case len(short) > 0: // a partial sum can only grow, so it is FAIL even with lists missing
+	case len(short) > 0 && !hpasUnread:
 		reason := strings.Join(short, "; ") + tail
 		if len(forbidden) > 0 {
 			reason += "; partial: cannot list " + strings.Join(forbidden, ", ") + " (forbidden)"
@@ -166,7 +170,11 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		return result(report.Fail, layerConfig, reason,
 			"raise the quota's hard values by the shortfall, or lower replicas, HPA maxReplicas or maxSurge; the estimate assumes every workload rolls out at once")
 	case len(forbidden) > 0:
-		return result(report.Skip, "-", "cannot list "+strings.Join(forbidden, ", ")+" (forbidden), so the peak is incomplete; the partial peak fits "+strings.Join(fits, "; ")+tail, grant(forbidden))
+		partial := "the partial peak fits " + strings.Join(fits, "; ")
+		if len(short) > 0 {
+			partial = "an HPA can lower replicas, so the partial shortfall is not proven: " + strings.Join(short, "; ")
+		}
+		return result(report.Skip, "-", "cannot list "+strings.Join(forbidden, ", ")+" (forbidden), so the peak is incomplete; "+partial+tail, grant(forbidden))
 	}
 	return result(report.Pass, layerConfig, "peak fits "+strings.Join(fits, "; ")+tail, "")
 }

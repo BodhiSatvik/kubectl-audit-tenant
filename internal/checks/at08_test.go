@@ -43,6 +43,7 @@ func TestAT08(t *testing.T) {
 		note     = "not tested: whether the cluster's network plugin enforces NetworkPolicy"
 	)
 	noted := func(r report.Result) report.Result { r.Note = note; return r }
+	withNote := func(r report.Result, n string) report.Result { r.Note = n; return r }
 	denyIn := netpol("default-deny-ingress", []networkingv1.PolicyType{ingress}, nil, nil)
 	denyOut := netpol("default-deny-egress", []networkingv1.PolicyType{egress}, nil, nil)
 	tests := []struct {
@@ -51,12 +52,22 @@ func TestAT08(t *testing.T) {
 		want   report.Result
 	}{
 		{"two policies", listOf(denyIn, denyOut),
-			noted(configResult(spec, report.Pass, "config", "every pod is denied ingress by default-deny-ingress and egress by default-deny-egress", ""))},
+			noted(configResult(spec, report.Pass, "config", "default deny for ingress by default-deny-ingress and egress by default-deny-egress", ""))},
 		{"one combined policy", listOf(netpol("default-deny-all", []networkingv1.PolicyType{ingress, egress}, nil, nil)),
-			noted(configResult(spec, report.Pass, "config", "every pod is denied ingress and egress by default-deny-all", ""))},
-		{"allow policies next to the denies do not change the verdict",
+			noted(configResult(spec, report.Pass, "config", "default deny for ingress and egress by default-deny-all", ""))},
+		{"allow policies next to the denies do not change the verdict; the note names those that select every pod (D110)",
 			listOf(netpol("allow-dns", []networkingv1.PolicyType{egress}, nil, []networkingv1.NetworkPolicyEgressRule{dns}), denyOut, denyIn, selecting(netpol("api-ingress", []networkingv1.PolicyType{ingress}, []networkingv1.NetworkPolicyIngressRule{fromAPI}, nil))),
-			noted(configResult(spec, report.Pass, "config", "every pod is denied ingress by default-deny-ingress and egress by default-deny-egress", ""))},
+			withNote(configResult(spec, report.Pass, "config", "default deny for ingress by default-deny-ingress and egress by default-deny-egress", ""), "allow-dns selects every pod but its egress rules allow traffic; "+note)},
+		{"an allow-all policy next to the denies is named in the note (D110)",
+			listOf(denyIn, denyOut, netpol("allow-all", []networkingv1.PolicyType{ingress, egress}, []networkingv1.NetworkPolicyIngressRule{{}}, []networkingv1.NetworkPolicyEgressRule{{}})),
+			withNote(configResult(spec, report.Pass, "config", "default deny for ingress by default-deny-ingress and egress by default-deny-egress", ""),
+				"allow-all selects every pod but its ingress rules allow traffic; allow-all selects every pod but its egress rules allow traffic; "+note)},
+		{"a deny whose selector uses matchExpressions selects some pods only", listOf(func() networkingv1.NetworkPolicy {
+			p := netpol("deny-labelled", []networkingv1.PolicyType{ingress, egress}, nil, nil)
+			p.Spec.PodSelector = metav1.LabelSelector{MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "app", Operator: metav1.LabelSelectorOpExists}}}
+			return p
+		}()),
+			configResult(spec, report.Fail, "config", "no default deny for ingress or egress", failHint)},
 		{"inline DNS egress", listOf(netpol("default-deny", []networkingv1.PolicyType{ingress, egress}, nil, []networkingv1.NetworkPolicyEgressRule{dns})),
 			configResult(spec, report.Fail, "config", "no default deny for egress: default-deny selects every pod but its egress rules allow traffic", failHint)},
 		{"no policy", listOf[networkingv1.NetworkPolicy](),

@@ -2,7 +2,6 @@ package checks
 
 import (
 	"context"
-	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,44 +20,38 @@ func at06(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	if err != nil {
 		return listFailed(ctx, c, spec, err, "resourcequotas")
 	}
-	var scopedNames []string
-	var unscoped []corev1.ResourceQuota
-	var spelled []map[corev1.ResourceName]string // per unscoped quota: each of the five keys it sets, as it spells it
+	var scopedNames, supplied []string
+	unscoped := 0
+	covered := map[corev1.ResourceName]bool{} // each key is credited to the first unscoped quota by name that sets it
 	for _, q := range byName(quotas) {
-		if len(q.Spec.Scopes) > 0 || q.Spec.ScopeSelector != nil {
+		if scoped(q) {
 			scopedNames = append(scopedNames, q.Name)
 			continue
 		}
-		keys := map[corev1.ResourceName]string{}
+		unscoped++
+		seen := map[corev1.ResourceName]bool{}
+		var all, fresh []string // this quota's spelling of each key it sets; the keys no earlier quota set
 		for _, key := range headroom.QuotaKeys(q) {
-			if k, _ := headroom.Canonical(key); keys[k] == "" {
-				keys[k] = string(key)
+			if k := headroom.Canonical(key); !seen[k] {
+				seen[k] = true
+				all = append(all, string(key))
+				if !covered[k] {
+					covered[k] = true
+					fresh = append(fresh, string(key))
+				}
 			}
 		}
-		if len(keys) == len(headroom.Keys) {
-			var set []string
-			for _, k := range headroom.Keys {
-				set = append(set, keys[k])
-			}
-			return []report.Result{spec.result(spec.Results[0], report.Pass, layerConfig, "ResourceQuota "+q.Name+" has no scopes and sets "+andList(set), "")}
+		if len(all) == len(headroom.Keys) {
+			return []report.Result{spec.result(spec.Results[0], report.Pass, layerConfig, "ResourceQuota "+q.Name+" has no scopes and sets "+andList(all), "")}
 		}
-		unscoped, spelled = append(unscoped, q), append(spelled, keys)
+		if len(fresh) > 0 {
+			supplied = append(supplied, q.Name+" sets "+andList(fresh))
+		}
 	}
-	// Each key comes from the first unscoped quota by name that sets it.
-	sets := make([][]string, len(unscoped))
 	var missing []string
 	for _, k := range headroom.Keys {
-		i := slices.IndexFunc(spelled, func(keys map[corev1.ResourceName]string) bool { return keys[k] != "" })
-		if i < 0 {
+		if !covered[k] {
 			missing = append(missing, string(k))
-		} else {
-			sets[i] = append(sets[i], spelled[i][k])
-		}
-	}
-	var supplied []string
-	for i, q := range unscoped {
-		if len(sets[i]) > 0 {
-			supplied = append(supplied, q.Name+" sets "+andList(sets[i]))
 		}
 	}
 	if len(missing) == 0 {
@@ -68,7 +61,7 @@ func at06(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	switch {
 	case len(quotas) == 0:
 		reason = "no ResourceQuota in " + c.Namespace
-	case len(unscoped) == 0:
+	case unscoped == 0:
 		reason = "no ResourceQuota without scopes in " + c.Namespace + "; a scoped quota covers only some pods"
 	default:
 		reason = "no ResourceQuota without scopes sets " + strings.Join(missing, ", ")

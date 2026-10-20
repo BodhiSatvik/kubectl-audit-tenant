@@ -7,6 +7,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -87,18 +88,13 @@ func TestBreakdownGroupsByKind(t *testing.T) {
 }
 
 func TestCanonical(t *testing.T) {
-	for _, tt := range []struct {
-		key  corev1.ResourceName
-		want corev1.ResourceName
-		ok   bool
-	}{
-		{"cpu", "requests.cpu", true}, {"requests.cpu", "requests.cpu", true},
-		{"memory", "requests.memory", true}, {"limits.memory", "limits.memory", true},
-		{"count/pods", "pods", true}, {"pods", "pods", true},
-		{"services", "", false}, {"requests.storage", "", false},
+	for _, tt := range []struct{ key, want corev1.ResourceName }{
+		{"cpu", "requests.cpu"}, {"requests.cpu", "requests.cpu"},
+		{"memory", "requests.memory"}, {"limits.memory", "limits.memory"},
+		{"count/pods", "pods"}, {"pods", "pods"}, {"services", "services"},
 	} {
-		if got, ok := Canonical(tt.key); got != tt.want || ok != tt.ok {
-			t.Errorf("Canonical(%s) = %s, %v; want %s, %v", tt.key, got, ok, tt.want, tt.ok)
+		if got := Canonical(tt.key); got != tt.want {
+			t.Errorf("Canonical(%s) = %s; want %s", tt.key, got, tt.want)
 		}
 	}
 }
@@ -121,5 +117,16 @@ func TestTotalCountsAnUnsizedPodAsZero(t *testing.T) {
 	}
 	if got := total[corev1.ResourceRequestsCPU]; got.String() != "0" {
 		t.Errorf("an unsized total reads %q, want 0", got.String())
+	}
+}
+
+func TestTotalDoesNotWrapOnAHugePeak(t *testing.T) {
+	// 250,000 pods of 64Gi is past int64 in milli-units; the sum must stay positive (D110).
+	mem := resource.MustParse("64Gi")
+	ws := []Workload{{Kind: "Deployment", Name: "big", Replicas: 200000, Peak: 250000,
+		Pod: Pod{Requests: corev1.ResourceList{corev1.ResourceMemory: mem}, Limits: corev1.ResourceList{corev1.ResourceMemory: mem}}}}
+	q := corev1.ResourceQuota{Spec: corev1.ResourceQuotaSpec{Hard: list("requests.memory", "1Ti", "limits.memory", "1Ti")}}
+	if got := Compare(q, Total(ws)); len(got) != 2 {
+		t.Errorf("Compare() = %v; want both memory keys short: 250,000 x 64Gi is far over 1Ti", got)
 	}
 }

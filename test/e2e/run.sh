@@ -116,7 +116,7 @@ count 4 '^FAIL +AT-0[1-3] .* RBAC allows ' 3
 for n in 1 2 4; do
   count "$n" '^PASS +AT-06 .* ResourceQuota tenant-a-quota has no scopes and sets ' 1
   count "$n" '^PASS +AT-07 .* LimitRange tenant-a-limits gives containers default and defaultRequest ' 1
-  count "$n" '^PASS +AT-08 .* every pod is denied ingress by default-deny-ingress and egress by default-deny-egress' 1
+  count "$n" '^PASS +AT-08 .* default deny for ingress by default-deny-ingress and egress by default-deny-egress' 1
   count "$n" "^ +note +not tested: whether the cluster's network plugin enforces NetworkPolicy$" 1
   count "$n" '^PASS +AT-09 .* pod-security\.kubernetes\.io/enforce=restricted on namespace tenant-a$' 1
   count "$n" '^PASS +AT-10 .* estimate: peak fits tenant-a-quota: requests.cpu 500m of 4' 1

@@ -27,8 +27,14 @@ func quota(name string, keys ...string) corev1.ResourceQuota {
 	return q
 }
 
-func scoped(q corev1.ResourceQuota) corev1.ResourceQuota {
+func notTerminating(q corev1.ResourceQuota) corev1.ResourceQuota {
 	q.Spec.Scopes = []corev1.ResourceQuotaScope{corev1.ResourceQuotaScopeNotTerminating}
+	return q
+}
+
+// everyPod gives q an empty scopeSelector, which the API server stores and which matches every pod.
+func everyPod(q corev1.ResourceQuota) corev1.ResourceQuota {
+	q.Spec.ScopeSelector = &corev1.ScopeSelector{}
 	return q
 }
 
@@ -71,7 +77,7 @@ func TestAT06(t *testing.T) {
 			configResult(spec, report.Pass, "config", "ResourceQuota short has no scopes and sets cpu, memory, limits.cpu, limits.memory and count/pods", "")},
 		{"no quota", listOf[corev1.ResourceQuota](),
 			configResult(spec, report.Fail, "config", "no ResourceQuota in tenant-a", failHint)},
-		{"scoped quotas only", listOf(scoped(quota("long-running", fiveKeys...)), selected(quota("high-priority", fiveKeys...))),
+		{"scoped quotas only", listOf(notTerminating(quota("long-running", fiveKeys...)), selected(quota("high-priority", fiveKeys...))),
 			configResult(spec, report.Fail, "config", "no ResourceQuota without scopes in tenant-a; a scoped quota covers only some pods (scoped: high-priority, long-running)", failHint)},
 		{"two unscoped quotas that split the five keys pass together (D107)", listOf(quota("cpu-mem", "requests.cpu", "requests.memory"), quota("caps", "limits.cpu", "limits.memory", "pods")),
 			configResult(spec, report.Pass, "config", "unscoped ResourceQuotas set all five keys together: caps sets limits.cpu, limits.memory and pods; cpu-mem sets requests.cpu and requests.memory", "")},
@@ -79,10 +85,12 @@ func TestAT06(t *testing.T) {
 			configResult(spec, report.Pass, "config", "ResourceQuota b-full has no scopes and sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods", "")},
 		{"missing keys", listOf(quota("requests-only", "requests.cpu", "requests.memory"), quota("pods-only", "pods")),
 			configResult(spec, report.Fail, "config", "no ResourceQuota without scopes sets limits.cpu, limits.memory; pods-only sets pods; requests-only sets requests.cpu and requests.memory", failHint)},
-		{"missing keys next to a complete scoped quota", listOf(scoped(quota("long-running", fiveKeys...)), quota("cpu-only", "cpu", "limits.cpu")),
+		{"missing keys next to a complete scoped quota", listOf(notTerminating(quota("long-running", fiveKeys...)), quota("cpu-only", "cpu", "limits.cpu")),
 			configResult(spec, report.Fail, "config", "no ResourceQuota without scopes sets requests.memory, limits.memory, pods; cpu-only sets cpu and limits.cpu (scoped: long-running)", failHint)},
-		{"a scoped quota's keys do not fill the union", listOf(scoped(quota("long-running", "limits.cpu", "limits.memory", "pods")), quota("cpu-mem", "requests.cpu", "requests.memory")),
+		{"a scoped quota's keys do not fill the union", listOf(notTerminating(quota("long-running", "limits.cpu", "limits.memory", "pods")), quota("cpu-mem", "requests.cpu", "requests.memory")),
 			configResult(spec, report.Fail, "config", "no ResourceQuota without scopes sets limits.cpu, limits.memory, pods; cpu-mem sets requests.cpu and requests.memory (scoped: long-running)", failHint)},
+		{"an empty scopeSelector matches every pod, so the quota is unscoped (D110)", listOf(everyPod(quota("all-pods", fiveKeys...))),
+			configResult(spec, report.Pass, "config", "ResourceQuota all-pods has no scopes and sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods", "")},
 		{"the first complete quota by name passes", listOf(quota("zz-full", fiveKeys...), quota("partial", "pods"), quota("aa-full", fiveKeys...)),
 			configResult(spec, report.Pass, "config", "ResourceQuota aa-full has no scopes and sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods", "")},
 		{"forbidden", forbidden("resourcequotas"),

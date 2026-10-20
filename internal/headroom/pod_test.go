@@ -94,7 +94,20 @@ func TestPodOf(t *testing.T) {
 		{"pod-level resources for cpu only: memory still adds up the containers", corev1.PodSpec{
 			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
 			Containers: []corev1.Container{sized, container("no-memory", list("cpu", "1"), list("cpu", "1"))}}, Defaults{},
-			list("cpu", "2", "memory", "128Mi"), list("cpu", "2", "memory", "512Mi"), 1, 0},
+			list("cpu", "1100m", "memory", "128Mi"), list("cpu", "2", "memory", "512Mi"), 1, 0},
+		{"a pod-level limit alone takes the containers' summed requests as the request (SetDefaults_Pod)", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", list("cpu", "100m", "memory", "128Mi"), list("memory", "128Mi"))}}, Defaults{},
+			list("cpu", "100m", "memory", "128Mi"), list("cpu", "2", "memory", "128Mi"), 0, 0},
+		{"a pod-level limit alone is the request when no container requests that resource", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Limits: list("cpu", "2")},
+			Containers: []corev1.Container{container("app", nil, list("memory", "64Mi"))}},
+			Defaults{Name: "limits", Request: list("cpu", "100m")},
+			list("cpu", "2", "memory", "64Mi"), list("cpu", "2", "memory", "64Mi"), 0, 0},
+		{"pod-level requests only: limits still add up the containers", corev1.PodSpec{
+			Resources:  &corev1.ResourceRequirements{Requests: list("cpu", "1")},
+			Containers: []corev1.Container{sized, container("no-cpu-limit", list("cpu", "200m", "memory", "64Mi"), list("memory", "64Mi"))}}, Defaults{},
+			list("cpu", "1", "memory", "192Mi"), list("cpu", "500m", "memory", "576Mi"), 1, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

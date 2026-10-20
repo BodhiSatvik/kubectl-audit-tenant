@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -36,4 +37,10 @@ func byName[T any, P interface {
 	metav1.Object
 }](objects []T) []T {
 	return slices.SortedFunc(slices.Values(objects), func(a, b T) int { return strings.Compare(P(&a).GetName(), P(&b).GetName()) })
+}
+
+// scoped reports whether q covers only some pods. An empty scopeSelector matches every pod, so a
+// quota with one is unscoped (D110).
+func scoped(q corev1.ResourceQuota) bool {
+	return len(q.Spec.Scopes) > 0 || (q.Spec.ScopeSelector != nil && len(q.Spec.ScopeSelector.MatchExpressions) > 0)
 }
