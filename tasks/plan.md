@@ -61,7 +61,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 
 ### Phase 5: integration layer, benchmark and floor tests
 - [x] B26 envtest layer
-- [ ] B27 Benchmark
+- [x] B27 Benchmark
 - [ ] B28 Floor tests over the registry
 
 ### Checkpoint 5

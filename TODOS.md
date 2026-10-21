@@ -132,7 +132,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: envtest job green; FAIL fixtures produce FAIL, PASS fixtures PASS.
   - Verify: `make envtest` in CI.
   - Depends on: B11. Files: `test/envtest/rbac_test.go`, `test/envtest/fixtures/`, `.github/workflows/ci.yml`.
-- [ ] **B27 Benchmark.** `test/e2e/bench.sh`: five full runs, median and maximum wall time, request count from the `--debug` trace; asserts median under 10 s and at most 40 requests; writes `BENCHMARK.md` rows with the exact command; kubectl-mtb baseline attempt recorded as a finding if it does not build.
+- [x] **B27 Benchmark.** `test/e2e/bench.sh`: five full runs, median and maximum wall time, request count from the `--debug` trace; asserts median under 10 s and at most 40 requests; writes `BENCHMARK.md` rows with the exact command; kubectl-mtb baseline attempt recorded as a finding if it does not build.
   - AC: `BENCHMARK.md` has measured rows for v0.1.0-rc; CI fails if a budget is missed.
   - Verify: `make bench` inside the e2e job.
   - Depends on: B21, B25. Files: `test/e2e/bench.sh`, `BENCHMARK.md`, `.github/workflows/e2e.yml`.
