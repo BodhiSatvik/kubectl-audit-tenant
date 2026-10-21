@@ -39,7 +39,7 @@ func TestPolicyReportSample(t *testing.T) {
 	if err := yaml.UnmarshalStrict(buf.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.APIVersion != "wgpolicyk8s.io/v1alpha2" || got.Kind != "PolicyReport" || got.Metadata.Name != reportName(r.Identity) || got.Metadata.Namespace != "team-a" {
+	if got.APIVersion != "wgpolicyk8s.io/v1alpha2" || got.Kind != "PolicyReport" || got.Metadata.Name != reportName(r) || got.Metadata.Namespace != "team-a" {
 		t.Errorf("object = %s %s %s/%s", got.APIVersion, got.Kind, got.Metadata.Namespace, got.Metadata.Name)
 	}
 	if got.Metadata.Labels["app.kubernetes.io/managed-by"] != "audit-tenant" || got.Metadata.Annotations["audit-tenant.dev/groups"] != `["team-a","system:authenticated"]` ||
@@ -67,83 +67,74 @@ func TestPolicyReportSample(t *testing.T) {
 	}
 }
 
-func TestPolicyReportNameIsOnePerIdentityAndGroupSet(t *testing.T) {
-	// D144, D147: audit-tenant-<slug cut to 54>-<32 hex of the requested identity>, so identities that
-	// differ in case, in replaced characters or in groups keep their own reports (D27).
+// as and self build a run's report with only the inputs that name its PolicyReport (D154).
+func as(user string, groups ...string) Report {
+	return Report{Identity: Identity{Mode: ModeImpersonation, Username: user}, Request: Request{User: user, Groups: groups}}
+}
+
+func self(user string, groups ...string) Report {
+	return Report{Identity: Identity{Mode: ModeSelf, Username: user, Groups: groups, Verified: true}}
+}
+
+func TestPolicyReportNameIsOnePerRunInput(t *testing.T) {
+	// D144, D154: audit-tenant-<slug cut to 54>-<32 hex of the run's inputs as given>. Runs whose inputs
+	// differ keep their own reports (D27), so no run replaces the FAILs of another identity or boundary.
 	hashed := regexp.MustCompile(`^audit-tenant-(?:([a-z0-9-]*[a-z0-9])-)?[0-9a-f]{32}$`) // no slug when nothing readable is left
-	sa := Identity{Mode: ModeImpersonation, Username: "system:serviceaccount:tenant-a:tenant-a-dev", Groups: []string{"system:serviceaccounts", "system:authenticated"}}
-	names := map[string]Identity{}
-	for _, id := range []Identity{
-		sa,
-		{Mode: ModeImpersonation, Username: sa.Username, Groups: []string{"devs", "system:authenticated"}}, // the same user with other groups
-		{Mode: ModeImpersonation, Username: "audit-probe", Groups: []string{"tenant-a"}},                   // --as audit-probe --as-group <group>
-		{Mode: ModeImpersonation, Username: "audit-probe", Groups: []string{"tenant-b"}},                   // ... for a second group
-		{Username: "alice@example.com"}, {Username: "Alice@Example.com"}, // case
-		{Mode: ModeImpersonation, Username: "alice@example.com"},           // --as alice without her identity provider's groups (D151)
-		{Username: "alice-example-com"}, {Username: ""}, {Username: "@@@"}, // replaced characters, nothing left
-		{Username: strings.Repeat("a", 54)}, {Username: strings.Repeat("a", 55)}, // the cut
+	sa := "system:serviceaccount:tenant-a:tenant-a-dev"
+	uid, extra, other, server := as("alice"), as("alice"), as("alice"), as("alice")
+	uid.Request.UID = "u-1"
+	extra.Request.Extra = map[string][]string{"scopes": {"read"}}
+	other.OtherNamespace = "tenant-b"
+	server.Cluster.Server = "https://prod.example.com:6443"
+	names := map[string]Report{}
+	for _, r := range []Report{
+		as(sa), as(sa, "system:authenticated"), // a given group stops the API server adding the service account's own groups
+		as(sa, "devs"), as(sa, "devs", "system:serviceaccounts", "system:serviceaccounts:tenant-a"),
+		self(sa, "system:serviceaccounts", "system:serviceaccounts:tenant-a", "system:authenticated"), // the token: apart from --as of it
+		as("audit-probe", "tenant-a"), as("audit-probe", "tenant-b"), // --as audit-probe --as-group <group>
+		as("bob", "system:unauthenticated"), as("bob", "system:unauthenticated", "system:authenticated"),
+		as("alice"), self("alice", "devs"), self("alice", "ops"), uid, extra, other, server,
+		self("alice@example.com"), self("Alice@Example.com"), // case
+		self("alice-example-com"), self(""), self("@@@"), // replaced characters, nothing left
+		self(strings.Repeat("a", 54)), self(strings.Repeat("a", 55)), // the cut
 	} {
-		name := reportName(id)
-		m := hashed.FindStringSubmatch(name)
-		if m == nil || len(validation.IsDNS1123Subdomain(name)) > 0 || len(name) > len("audit-tenant-")+54+1+32 {
-			t.Errorf("reportName(%+v) = %q: want audit-tenant-<slug>-<32 hex>, a valid name of at most 100 characters", id, name)
+		name := reportName(r)
+		if hashed.FindStringSubmatch(name) == nil || len(validation.IsDNS1123Subdomain(name)) > 0 || len(name) > len("audit-tenant-")+54+1+32 {
+			t.Errorf("reportName(%+v) = %q: want audit-tenant-<slug>-<32 hex>, a valid name of at most 100 characters", r.Request, name)
 			continue
 		}
-		if other, seen := names[name]; seen {
-			t.Errorf("%+v and %+v share the report name %q", other, id, name)
+		if prev, seen := names[name]; seen {
+			t.Errorf("%+v %+v and %+v %+v share the report name %q", prev.Identity, prev.Request, r.Identity, r.Request, name)
 		}
-		names[name] = id
+		names[name] = r
 	}
-	if got := hashed.FindStringSubmatch(reportName(sa))[1]; got != "system-serviceaccount-tenant-a-tenant-a-dev" {
+	if got := hashed.FindStringSubmatch(reportName(as(sa)))[1]; got != "system-serviceaccount-tenant-a-tenant-a-dev" {
 		t.Errorf("slug = %q, want the readable identity", got)
 	}
-	if got := hashed.FindStringSubmatch(reportName(Identity{Username: strings.Repeat("a", 55)}))[1]; got != strings.Repeat("a", 54) {
+	if got := hashed.FindStringSubmatch(reportName(self(strings.Repeat("a", 55))))[1]; got != strings.Repeat("a", 54) {
 		t.Errorf("a 55-character slug = %q, want it cut to 54", got)
-	}
-	if reportName(Identity{Mode: ModeImpersonation, Username: "u", Groups: []string{"b", "a"}}) != reportName(Identity{Mode: ModeImpersonation, Username: "u", Groups: []string{"a", "b"}}) {
-		t.Error("the group order the server returns must not rename the report")
 	}
 }
 
-func TestPolicyReportNameIsTheSameForAVerifiedAndAnUnverifiedRun(t *testing.T) {
-	// D147: the hash covers the requested identity. A SelfSubjectReview adds system:authenticated and a
-	// service account's own groups; a run whose review failed has only the requested groups.
-	saUser := "system:serviceaccount:tenant-a:tenant-a-dev"
-	for _, tt := range []struct{ verified, unverified Identity }{
-		{Identity{Mode: ModeImpersonation, Username: saUser, Groups: []string{"system:serviceaccounts", "system:serviceaccounts:tenant-a", "system:authenticated"}, Verified: true},
-			Identity{Mode: ModeImpersonation, Username: saUser}},
-		{Identity{Mode: ModeImpersonation, Username: "audit-probe", Groups: []string{"tenant-a", "system:authenticated"}, Verified: true},
-			Identity{Mode: ModeImpersonation, Username: "audit-probe", Groups: []string{"tenant-a"}}},
-		// A self-mode run without a verified identity never prints a PolicyReport (D151).
+func TestPolicyReportNameKeepsOneRunsInputsTogether(t *testing.T) {
+	// D154: the same inputs name the same report. Groups and extras are sets, and the SelfSubjectReview
+	// adds groups to the identity, never to the request, so a verified and an unverified run share it.
+	sa := "system:serviceaccount:tenant-a:tenant-a-dev"
+	verified := as(sa)
+	verified.Identity.Groups, verified.Identity.Verified = []string{"system:serviceaccounts", "system:serviceaccounts:tenant-a", "system:authenticated"}, true
+	extraAB, extraBA := as("alice"), as("alice")
+	extraAB.Request.Extra = map[string][]string{"scopes": {"a", "b"}, "team": {"x"}}
+	extraBA.Request.Extra = map[string][]string{"team": {"x"}, "scopes": {"b", "a", "b"}}
+	for _, pair := range [][2]Report{
+		{verified, as(sa)},
+		{as("u", "b", "a"), as("u", "a", "b")},
+		{as("u", "a", "a"), as("u", "a")},
+		{extraAB, extraBA},
+		{self("alice", "ops", "devs"), self("alice", "devs", "ops")},
 	} {
-		if a, b := reportName(tt.verified), reportName(tt.unverified); a != b {
-			t.Errorf("verified %q and unverified %q runs of one identity must share a report name", a, b)
+		if a, b := reportName(pair[0]), reportName(pair[1]); a != b {
+			t.Errorf("%+v and %+v are one run's inputs; names %q and %q", pair[0].Request, pair[1].Request, a, b)
 		}
-	}
-	if reportName(Identity{Mode: ModeImpersonation, Username: saUser}) == reportName(Identity{Mode: ModeImpersonation, Username: saUser, Groups: []string{"devs"}}) {
-		t.Error("requested groups still name their own report")
-	}
-	// Ship review (D149): the API server adds a service account's own groups only when no group is
-	// given, so --as-group devs without them is another identity than devs with them, and one of the
-	// two is not the pair the server adds.
-	withOwn := Identity{Mode: ModeImpersonation, Username: saUser, Groups: []string{"devs", "system:serviceaccounts", "system:serviceaccounts:tenant-a"}}
-	if reportName(withOwn) == reportName(Identity{Mode: ModeImpersonation, Username: saUser, Groups: []string{"devs"}}) {
-		t.Error("a service account with --as-group but without its own groups must not replace the report of one with them")
-	}
-	if reportName(Identity{Mode: ModeImpersonation, Username: saUser, Groups: []string{"system:serviceaccounts"}}) == reportName(Identity{Mode: ModeImpersonation, Username: saUser}) {
-		t.Error("one of a service account's two own groups is not the pair the API server adds")
-	}
-	both := Identity{Mode: ModeImpersonation, Username: saUser, Groups: []string{"system:serviceaccounts:tenant-a", "system:serviceaccounts"}}
-	if reportName(both) != reportName(Identity{Mode: ModeImpersonation, Username: saUser}) {
-		t.Error("--as-group with exactly the pair the API server adds is the same identity as no --as-group")
-	}
-	// Red Team (D151): an impersonated service account with its own groups is the token identity, and
-	// an impersonated user is not that user's own login.
-	if reportName(Identity{Mode: ModeSelf, Username: saUser, Groups: both.Groups, Verified: true}) != reportName(Identity{Mode: ModeImpersonation, Username: saUser}) {
-		t.Error("the service account's token and --as of that service account must share a report")
-	}
-	if reportName(Identity{Mode: ModeSelf, Username: "alice", Groups: []string{"devs"}, Verified: true}) == reportName(Identity{Mode: ModeImpersonation, Username: "alice", Groups: []string{"system:authenticated"}, Verified: true}) {
-		t.Error("--as alice without groups tests fewer rights than alice; it must not replace her own report")
 	}
 }
 

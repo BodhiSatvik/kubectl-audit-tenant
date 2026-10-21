@@ -71,7 +71,7 @@ func PolicyReport(w io.Writer, r Report) error {
 		APIVersion: "wgpolicyk8s.io/v1alpha2",
 		Kind:       "PolicyReport",
 		Metadata: prMetadata{
-			Name:        reportName(id),
+			Name:        reportName(r),
 			Namespace:   r.Namespace,
 			Labels:      map[string]string{"app.kubernetes.io/managed-by": "audit-tenant"},
 			Annotations: annotations,
@@ -106,44 +106,31 @@ func PolicyReport(w io.Writer, r Report) error {
 	return err
 }
 
-// reportName is audit-tenant-<slug>-<hash>, so a re-run replaces the report of its own identity and
-// reports of other identities stay (D27). The slug is the username lowercased with every character
-// outside a-z and 0-9 turned into -, cut to 54 characters; the hash is 32 hex characters of the
-// SHA-256 of the requested identity (requestedIdentity), so case, replaced characters and group sets
-// (the --as audit-probe --as-group <group> pattern) never share a name (D144, D147).
-func reportName(id Identity) string {
-	key, _ := json.Marshal(requestedIdentity(id)) // a []string always marshals
+// reportName is audit-tenant-<slug>-<hash>, so a re-run replaces its own report and reports of other
+// runs stay (D27). The slug is the username lowercased with every character outside a-z and 0-9
+// turned into -, cut to 54 characters. The hash is 32 hex characters of the SHA-256 of the run's
+// inputs exactly as given (D154): the mode; when impersonating, the requested user, groups, uid and
+// extras; in self mode, the verified username and groups (D151 refuses an unverified one); and the
+// other namespace and the server. One identity can get two reports (--as of a service account and
+// its token), but two different inputs never share one, so no run replaces another's FAIL.
+func reportName(r Report) string {
+	user, groups := r.Request.User, r.Request.Groups
+	if r.Identity.Mode != ModeImpersonation {
+		user, groups = r.Identity.Username, r.Identity.Groups
+	}
+	extra := map[string][]string{}
+	for k, v := range r.Request.Extra {
+		extra[k] = slices.Compact(slices.Sorted(slices.Values(v)))
+	}
+	// Groups and extras are sets: their order never renames a report. Marshal sorts the map keys.
+	key, _ := json.Marshal([]any{r.Identity.Mode, user, slices.Compact(slices.Sorted(slices.Values(groups))), r.Request.UID, extra, r.OtherNamespace, r.Cluster.Server})
 	sum := sha256.Sum256(key)
 	slug := strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
 			return r
 		}
 		return '-'
-	}, strings.ToLower(id.Username))
+	}, strings.ToLower(r.Identity.Username))
 	slug = strings.Trim(slug[:min(len(slug), 54)], "-")
 	return strings.Join(slices.DeleteFunc([]string{"audit-tenant", slug, hex.EncodeToString(sum[:16])}, func(s string) bool { return s == "" }), "-")
-}
-
-// requestedIdentity is the username and, when impersonating, the sorted groups without the ones the
-// API server adds itself: system:authenticated, and a service account's own two groups when they are
-// its only groups (the server adds them only when no group is given). So a run whose
-// SelfSubjectReview failed names the same report as a verified one (D147), and a service account with
-// --as-group keeps a report apart from one with its own groups too. In self mode the username alone
-// names it: an identity provider's groups belong to the user. An impersonated user (not a service
-// account) is keyed apart from that user's own login, which has the identity provider's groups (D151).
-func requestedIdentity(id Identity) []string {
-	if id.Mode != ModeImpersonation {
-		return []string{id.Username}
-	}
-	groups := slices.DeleteFunc(slices.Clone(id.Groups), func(g string) bool { return g == "system:authenticated" })
-	slices.Sort(groups)
-	rest, sa := strings.CutPrefix(id.Username, "system:serviceaccount:")
-	if !sa {
-		return append([]string{ModeImpersonation, id.Username}, groups...)
-	}
-	ns, _, _ := strings.Cut(rest, ":")
-	if slices.Equal(groups, []string{"system:serviceaccounts", "system:serviceaccounts:" + ns}) {
-		groups = nil // the API server's own pair: the same identity as the service account's token
-	}
-	return append([]string{id.Username}, groups...)
 }

@@ -19,6 +19,7 @@ func sample() Report {
 		Cluster:   Cluster{Context: "kind-dev", Server: "https://127.0.0.1:6443", Version: "v1.37.0"},
 		Namespace: "team-a", OtherNamespace: "kube-system",
 		Identity:  Identity{Mode: "impersonation", Username: "team-a-dev", Groups: []string{"team-a", "system:authenticated"}, Verified: true},
+		Request:   Request{User: "team-a-dev", Groups: []string{"team-a"}},
 		Timestamp: time.Date(2026, 10, 20, 15, 4, 5, 0, time.UTC),
 		Results: []Result{
 			{ID: "AT-01", Name: "No cluster-scoped access", Kind: Behavioral, MTB: "MTB-PL1-CC-CPI-1", Severity: High, Verdict: Pass, Layer: "RBAC", Reason: "RBAC denied all 4 actions"},

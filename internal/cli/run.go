@@ -179,6 +179,9 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		FailOnSkip: o.failOnSkip,
 		AdminHint:  c.Identity.Mode == report.ModeSelf && checks.LooksLikeAdmin(results),
 	}
+	if as != "" {
+		rep.Request = report.Request{User: as, Groups: asGroups, UID: cfg.Impersonate.UID, Extra: cfg.Impersonate.Extra}
+	}
 	rep.Summary = report.Summarize(results, o.failOnSkip) // an interrupted run's unfinished checks are ERROR; a proven FAIL still wins (D63)
 	switch o.output {
 	case "json":

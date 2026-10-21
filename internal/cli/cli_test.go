@@ -357,6 +357,37 @@ func TestPolicyReportNeedsAVerifiedIdentityInSelfMode(t *testing.T) {
 	}
 }
 
+func TestPolicyReportNameFollowsTheImpersonationFlags(t *testing.T) {
+	// D154: the name hashes the flags as given. The fake SelfSubjectReview names kind-dev for every
+	// run, so only the request can tell these runs apart.
+	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":false}`))
+	name := func(args ...string) string {
+		t.Helper()
+		_, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport"}, args...)...)
+		var pr struct{ Metadata struct{ Name string } }
+		if err := yaml.Unmarshal([]byte(stdout), &pr); err != nil || pr.Metadata.Name == "" {
+			t.Fatalf("%v: err %v, stderr %q, no report name:\n%s", args, err, stderr, stdout)
+		}
+		return pr.Metadata.Name
+	}
+	sa := "system:serviceaccount:tenant-a:tenant-a-dev"
+	base := name("--as", sa)
+	if again := name("--as", sa); again != base {
+		t.Errorf("the same flags gave %q and %q", base, again)
+	}
+	for _, args := range [][]string{
+		{"--as", sa, "--as-group", "system:authenticated"},
+		{"--as", sa, "--as-uid", "u-1"},
+		{"--as", sa, "--as-user-extra", "scopes=read"},
+		{"--as", sa, "--other-namespace", "tenant-b"},
+		nil, // self mode
+	} {
+		if got := name(args...); got == base {
+			t.Errorf("%v must not share the report of --as %s: %q", args, sa, got)
+		}
+	}
+}
+
 func TestDebugPrintsPostAnswerBodiesWithoutHeaders(t *testing.T) {
 	srv := cluster(t)
 	_, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--debug")

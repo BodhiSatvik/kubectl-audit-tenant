@@ -90,4 +90,16 @@ type Report struct {
 	AdminHint bool `json:"-"`
 	// FailOnSkip records the --fail-on-skip flag for the summary wording.
 	FailOnSkip bool `json:"-"`
+	// Request is the impersonation the run asked for; with the mode, the other namespace and the
+	// server it names the PolicyReport (D154).
+	Request Request `json:"-"`
+}
+
+// Request is the impersonation as given: --as, --as-group, --as-uid and --as-user-extra, or the
+// kubeconfig user's as entries. It is empty in self mode.
+type Request struct {
+	User   string
+	Groups []string
+	UID    string
+	Extra  map[string][]string
 }
