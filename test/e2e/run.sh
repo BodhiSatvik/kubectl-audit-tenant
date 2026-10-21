@@ -160,7 +160,7 @@ done
 run policyreport 0 -n tenant-a --as system:serviceaccount:tenant-a:tenant-a-dev -o policyreport
 applied=$(kubectl apply --dry-run=server -f bin/e2e-policyreport.out -o jsonpath='{.metadata.name} {.results[13].policy} {.summary.pass}') \
   || fail "-o policyreport: kubectl apply --dry-run=server refused it (output above)"
-[ "$applied" = "audit-tenant-system-serviceaccount-tenant-a-tenant-a-dev AT-10 14" ] || fail "-o policyreport: applied '$applied', want the identity's report with 14 passes"
+[[ "$applied" =~ ^audit-tenant-system-serviceaccount-tenant-a-tenant-a-dev-[0-9a-f]{32}\ AT-10\ 14$ ]] || fail "-o policyreport: applied '$applied', want the identity's report (D144 name) with 14 passes"
 
 say "e2e: all four runs, -o json and -o policyreport match (verdicts AT-01 to AT-10, layers and reasons, notes, exit codes, headers, hints and the schema)"
 if [ "${E2E_DELETE:-}" = 1 ]; then kind delete cluster --name "$cluster"; fi

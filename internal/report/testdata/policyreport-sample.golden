@@ -2,13 +2,15 @@ apiVersion: wgpolicyk8s.io/v1alpha2
 kind: PolicyReport
 metadata:
   annotations:
-    audit-tenant.dev/groups: team-a,system:authenticated
+    audit-tenant.dev/groups: '["team-a","system:authenticated"]'
     audit-tenant.dev/identity: team-a-dev
+    audit-tenant.dev/other-namespace: kube-system
     audit-tenant.dev/tool-version: 0.1.0
     audit-tenant.dev/verified: "true"
+    audit-tenant.dev/warnings: '["--checks or --skip left out results"]'
   labels:
     app.kubernetes.io/managed-by: audit-tenant
-  name: audit-tenant-team-a-dev
+  name: audit-tenant-team-a-dev-5641d29a6dd6f073a9e194d1c1ab6a3a
   namespace: team-a
 results:
 - category: multi-tenancy

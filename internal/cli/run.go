@@ -64,6 +64,11 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if err != nil {
 		return exit2("%v", err)
 	}
+	every, _ := checks.Select(nil, nil) // every check this build runs
+	ran, all := len(checks.ResultIDs(specs)), len(checks.ResultIDs(every))
+	if ran < all && o.output == "policyreport" { // D147: dashboards show results, not annotations
+		return exit2("-o policyreport needs every check: a report from --checks or --skip would replace the identity's full report; drop those flags")
+	}
 	raw, err := o.flags.ToRawKubeConfigLoader().RawConfig()
 	if err != nil {
 		return exit2("cannot load the kubeconfig: %v", err)
@@ -99,11 +104,19 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	// The effective impersonation: the --as flags or the kubeconfig's as and as-groups entries
 	// (clientcmd already refuses groups without a user there).
 	as, asGroups := cfg.Impersonate.UserName, cfg.Impersonate.Groups
-	var warnings []string // D141: what the flags leave untested; no request needed
-	if as != "" && len(asGroups) == 0 && !strings.HasPrefix(as, "system:serviceaccount:") {
-		warnings = append(warnings, "--as "+as+" has no --as-group: the run tests the user without the groups an identity provider adds, and the API server does not check that the user exists")
+	var warnings []string // D141, D146, D147: what the flags leave untested; no request needed
+	saNamespace, sa := strings.CutPrefix(as, "system:serviceaccount:")
+	saNamespace, _, _ = strings.Cut(saNamespace, ":")
+	switch missing := slices.DeleteFunc([]string{"system:serviceaccounts", "system:serviceaccounts:" + saNamespace}, func(g string) bool { return slices.Contains(asGroups, g) }); {
+	case as != "" && !sa && len(asGroups) == 0:
+		warnings = append(warnings, "impersonating "+as+" with no groups (--as-group, or as-groups in the kubeconfig): the run lacks the groups an identity provider adds, and the API server does not check that the user exists")
+	case sa && len(asGroups) > 0 && len(missing) > 0: // the API server adds them only when no group is given
+		warnings = append(warnings, "impersonating service account "+as+" with groups that leave out "+strings.Join(missing, " and ")+": the API server adds a service account's own groups only when no group is given (--as-group, or as-groups in the kubeconfig)")
 	}
-	if o.otherNamespace != defaultOtherNamespace {
+	if ran < all {
+		warnings = append(warnings, fmt.Sprintf("--checks or --skip ran %d of %d results; the others are not in this report", ran, all))
+	}
+	if o.otherNamespace != defaultOtherNamespace && slices.ContainsFunc(specs, func(s checks.Spec) bool { return s.ID == "AT-02" }) {
 		warnings = append(warnings, "--other-namespace "+o.otherNamespace+" is not checked: AT-02 cannot tell a missing namespace from a forbidden one, so a misspelled name passes")
 	}
 	impersonation := "no impersonation"
@@ -147,6 +160,9 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	})
 	if err != nil {
 		return exit2("%v", err)
+	}
+	if o.output == "policyreport" && c.Identity.Mode == report.ModeSelf && !c.Identity.Verified { // D151: the report name needs the identity
+		return exit2("-o policyreport needs to know who runs the tool: no SelfSubjectReview answer named the identity, and the kubeconfig names only its user entry %q; use --as, or -o json", c.Identity.Username)
 	}
 	results := checks.Run(ctx, c, specs, o.timeout)
 	if len(results) == 0 {

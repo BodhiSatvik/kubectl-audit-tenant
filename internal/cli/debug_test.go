@@ -3,6 +3,7 @@ package cli_test
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -66,11 +67,16 @@ func TestDebugTraceGolden(t *testing.T) {
 	}
 }
 
-// D141: warnings for an impersonated user without groups and for a changed --other-namespace; none
-// for a service account, a user with --as-group, self mode or the default --other-namespace.
+// D141, D146: warnings for an impersonated user without groups (flag or kubeconfig as:), a service
+// account with --as-group, a selection that leaves results out and a changed --other-namespace; none
+// for a service account alone, a user with groups, self mode or a full default run.
 func TestIdentityWarnings(t *testing.T) {
-	const user = "warning: --as team-a-dev has no --as-group"
-	const other = "warning: --other-namespace prod"
+	const (
+		user    = "warning: impersonating team-a-dev with no groups"
+		sa      = "warning: impersonating service account system:serviceaccount:tenant-a:tenant-a-dev with groups that leave out system:serviceaccounts and system:serviceaccounts:tenant-a"
+		partial = "warning: --checks or --skip ran 1 of 14 results"
+		other   = "warning: --other-namespace prod"
+	)
 	for _, tt := range []struct {
 		args []string
 		want []string
@@ -78,12 +84,16 @@ func TestIdentityWarnings(t *testing.T) {
 		{[]string{"--as", "team-a-dev"}, []string{user}},
 		{[]string{"--as", "team-a-dev", "--as-group", "devs"}, nil},
 		{[]string{"--as", "system:serviceaccount:tenant-a:tenant-a-dev"}, nil},
+		{[]string{"--as", "system:serviceaccount:tenant-a:tenant-a-dev", "--as-group", "devs"}, []string{sa}},
+		{[]string{"--as", "system:serviceaccount:tenant-a:tenant-a-dev", "--as-group", "system:serviceaccounts", "--as-group", "system:serviceaccounts:tenant-a"}, nil},
+		{[]string{"--skip", "AT-02", "--other-namespace", "prod"}, []string{"warning: --checks or --skip ran 13 of 14 results"}}, // AT-02 did not run: no namespace warning
 		{nil, nil},
+		{[]string{"--checks", "AT-02"}, []string{partial}},
 		{[]string{"--other-namespace", "prod"}, []string{other}},
 		{[]string{"--as", "team-a-dev", "--other-namespace", "prod"}, []string{user, other}},
 	} {
 		srv := cluster(t)
-		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-02"}, tt.args...)...)
+		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, "")}, tt.args...)...)
 		if code != 0 || strings.Count(stdout, "\nwarning: ") != len(tt.want) {
 			t.Errorf("%v: exit %d, stderr %q; want %d warning lines:\n%s", tt.args, code, stderr, len(tt.want), stdout)
 		}
@@ -93,10 +103,55 @@ func TestIdentityWarnings(t *testing.T) {
 			}
 		}
 	}
+	// A kubeconfig user's as: impersonates too; the warning names no flag the user never passed.
 	srv := cluster(t)
-	_, stdout, _ := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-02", "--as", "team-a-dev", "-o", "json")
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	cfg := fmt.Sprintf("apiVersion: v1\nkind: Config\nclusters: [{name: dev, cluster: {server: %q}}]\ncontexts: [{name: kind-dev, context: {cluster: dev, user: kind-dev}}]\ncurrent-context: kind-dev\nusers: [{name: kind-dev, user: {token: test-token, as: team-a-dev}}]\n", srv.URL)
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, stdout, _ := run(t, "-n", "tenant-a", "--kubeconfig", path); !strings.Contains(stdout, "\n"+user+" (--as-group, or as-groups in the kubeconfig)") {
+		t.Errorf("kubeconfig as: without groups must warn:\n%s", stdout)
+	}
+	_, stdout, _ := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--as", "team-a-dev", "-o", "json")
 	var rep struct{ Warnings []string }
 	if err := json.Unmarshal([]byte(stdout), &rep); err != nil || len(rep.Warnings) != 1 || !strings.HasPrefix("warning: "+rep.Warnings[0], user) {
 		t.Errorf("err %v, warnings %q; -o json must carry the warning:\n%s", err, rep.Warnings, stdout)
+	}
+}
+
+func TestDebugTraceNamesAnUnverifiedSelfIdentity(t *testing.T) {
+	// The last identity line matters most when the SelfSubjectReview fails (testing specialist).
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "forbidden"),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
+	}))
+	_, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-02", "--debug")
+	for _, want := range []string{"identity: context kind-dev, kubeconfig user kind-dev, no impersonation\n",
+		"identity: no SelfSubjectReview answer named the identity, so the header shows kind-dev from the kubeconfig and --as, marked unverified\n"} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("--debug stderr lacks %q:\n%s", want, stderr)
+		}
+	}
+}
+
+// Added by the /ship test coverage audit (Phase 4), pass 1.
+// Value: protects=the --debug identity line built from the SelfSubjectReview answer carries no raw ESC, BEL or CR from the server;
+// fails_when=report.Sanitize is dropped from trace's identity lines; why_new=the stderr sanitize test names a plain user, and JSON escapes the body line;
+// seam=none; no_claim=sanitizing of the kubeconfig and --as text on the first identity line
+func TestDebugIdentityLineSanitizesTheServerNamedIdentity(t *testing.T) {
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews": testutil.JSON(http.StatusCreated,
+			`{"status":{"userInfo":{"username":"team-a-dev\u001b]0;owned\u0007\u001b[2K\r","groups":["team-a\u001b[31m"]}}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
+	}))
+	_, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-02", "--debug")
+	if !strings.Contains(stderr, "identity: the SelfSubjectReview names team-a-dev") {
+		t.Fatalf("--debug stderr lacks the verified identity line:\n%q", stderr)
+	}
+	if strings.ContainsAny(stderr, "\x1b\x07\r") {
+		t.Errorf("the --debug identity line carries raw control characters from the server:\n%q", stderr)
 	}
 }

@@ -100,6 +100,9 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"unknown check in --skip", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--skip", "at-01"}, `unknown check ID "at-01"`},
 		{"empty selection", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--checks", "AT-01", "--skip", "AT-01"}, "no checks selected"},
 		{"unknown output", []string{"-n", "tenant-a", "--kubeconfig", withNS, "-o", "yaml"}, `unknown output format "yaml"`},
+		// D147: a partial report would replace the identity's full report.
+		{"policyreport with --checks", []string{"-n", "tenant-a", "--kubeconfig", withNS, "-o", "policyreport", "--checks", "AT-01"}, "-o policyreport needs every check"},
+		{"policyreport with --skip", []string{"-n", "tenant-a", "--kubeconfig", withNS, "-o", "policyreport", "--skip", "AT-04.2"}, "-o policyreport needs every check"},
 		{"other namespace equals target", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--other-namespace", "tenant-a"}, "--other-namespace must differ from -n"},
 		{"timeout zero", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--timeout", "0"}, "--timeout must be longer than 0"},
 		{"namespace required", []string{"--kubeconfig", noNS}, "namespace required"},
@@ -319,7 +322,7 @@ func TestWideFlagReachesThePrinter(t *testing.T) {
 
 func TestPolicyReportFlagPrintsAPolicyReportAndKeepsTheExitCode(t *testing.T) {
 	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":true}`)) // AT-01 FAIL: exit 1
-	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport", "--checks", "AT-01")
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport")
 	var pr struct {
 		Kind     string `json:"kind"`
 		Metadata struct {
@@ -330,9 +333,27 @@ func TestPolicyReportFlagPrintsAPolicyReportAndKeepsTheExitCode(t *testing.T) {
 			Result string `json:"result"`
 		} `json:"results"`
 	}
-	if err := yaml.Unmarshal([]byte(stdout), &pr); err != nil || code != 1 || pr.Kind != "PolicyReport" || pr.Metadata.Name != "audit-tenant-kind-dev" ||
-		pr.Metadata.Namespace != "tenant-a" || len(pr.Results) != 1 || pr.Results[0].Result != "fail" {
-		t.Errorf("exit %d, err %v, stderr %q; want exit 1 and a PolicyReport with one fail:\n%s", code, err, stderr, stdout)
+	if err := yaml.Unmarshal([]byte(stdout), &pr); err != nil || code != 1 || pr.Kind != "PolicyReport" || !strings.HasPrefix(pr.Metadata.Name, "audit-tenant-kind-dev-") ||
+		pr.Metadata.Namespace != "tenant-a" || len(pr.Results) != 14 || pr.Results[0].Result != "fail" {
+		t.Errorf("exit %d, err %v, stderr %q; want exit 1 and a PolicyReport of 14 results, AT-01 failed:\n%s", code, err, stderr, stdout)
+	}
+}
+
+func TestPolicyReportNeedsAVerifiedIdentityInSelfMode(t *testing.T) {
+	// D151 (Red Team): without a SelfSubjectReview answer the kubeconfig names only its user entry,
+	// which other people and in-cluster runs share, so a self-mode report has no name; --as has one.
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "forbidden"),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
+	}))
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport")
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs to know who runs the tool") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2 and no report", code, stdout, stderr)
+	}
+	code, stdout, stderr = run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport", "--as", "team-a-dev", "--as-group", "devs")
+	if code == 2 || !strings.Contains(stdout, "kind: PolicyReport") {
+		t.Errorf("exit %d, stderr %q; --as names the report even when unverified:\n%s", code, stderr, stdout)
 	}
 }
 
