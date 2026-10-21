@@ -9,7 +9,7 @@ POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews 201 <duration>
   {"spec":{"resourceAttributes":{"namespace":"tenant-a","verb":"create","resource":"pods"}},"status":{"allowed":true}}
 GET /api/v1/namespaces/tenant-a/limitranges 403 <duration>
 POST /api/v1/namespaces/tenant-a/pods?dryRun=All 201 <duration>
-  {"kind":"Pod","metadata":{"name":"audit-tenant-probe-ctl01","namespace":"tenant-a","uid":"u-1"}} (spec and status not shown: a webhook may have injected values)
+  {"kind":"Pod","metadata":{"name":"audit-tenant-probe-ctl01","namespace":"tenant-a","uid":"u-1"},"spec":{"containers":[{"name":"probe"}]}} (other fields not shown: a webhook may have injected values)
 POST /api/v1/namespaces/tenant-a/pods?dryRun=All 403 <duration>
   {"kind":"Status","apiVersion":"v1","metadata":{},"status":"Failure","message":"pods \"audit-tenant-probe-p4x2z\" is forbidden: violates PodSecurity \"restricted:latest\": host namespaces (hostPID=true)","reason":"Forbidden","code":403}
 identity: the SelfSubjectReview names team-a-dev (groups: team-a, system:authenticated), shown as verified

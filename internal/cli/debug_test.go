@@ -23,7 +23,8 @@ const injected = `{"kind":"Pod","apiVersion":"v1","metadata":{"name":"audit-tena
 
 // TestDebugTraceGolden is the stderr golden of a fake --debug run with --as and a bearer token: the
 // identity steps, one line per request with the answers of the POSTs, never a request header, no
-// SelfSubjectReview extra, and only the metadata of an accepted create (acceptance criterion 2, D51, D140).
+// SelfSubjectReview extra, and only the kind, metadata and probe security fields of an accepted create
+// (acceptance criterion 2, D51, D140, D145).
 func TestDebugTraceGolden(t *testing.T) {
 	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
@@ -45,7 +46,7 @@ func TestDebugTraceGolden(t *testing.T) {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
 	}
 	got := regexp.MustCompile(`(?m) [0-9.]+(µs|ms|s)$`).ReplaceAllString(stderr, " <duration>")
-	path := filepath.Join("testdata", "debug-trace.golden")
+	path := filepath.Join("testdata", "stderr-trace.golden")
 	if *update {
 		if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
 			t.Fatal(err)

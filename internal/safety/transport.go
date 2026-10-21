@@ -87,7 +87,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 				case strings.HasSuffix(req.URL.Path, selfSubjectReviews):
 					r.Body = withoutExtra(body)
 				case create && resp.StatusCode >= 200 && resp.StatusCode <= 299:
-					r.Body = onlyMetadata(body)
+					r.Body = createSummary(body)
 				default:
 					r.Body = string(body)
 				}
@@ -151,26 +151,64 @@ func withoutExtra(body []byte) string {
 	return string(out)
 }
 
-// onlyMetadata keeps the kind and the metadata a dry-run check needs (name, namespace,
-// resourceVersion, uid) of an accepted create before --debug can print it: a mutating webhook can
-// inject values (env, tokens) into the rest, and users paste --debug output into issues (D140).
-func onlyMetadata(body []byte) string {
+// createSummary keeps, of an accepted create, what --debug needs: the kind, the metadata a dry-run
+// check reads (name, namespace, resourceVersion, uid) and the probe's security fields (hostPID,
+// hostNetwork, a Service's type, each container's name and securityContext, hostPath volumes), so a
+// mutation that removed a dangerous field shows (D145). Env, images, annotations, other volumes and
+// status stay out: a mutating webhook can inject secrets there, and users paste --debug output into
+// issues (D140).
+func createSummary(body []byte) string {
 	var obj map[string]any // a map: a resourceVersion that is not a string must still show
 	if json.Unmarshal(body, &obj) != nil {
 		return "(create answer not shown: not a JSON object)"
 	}
-	meta, _ := obj["metadata"].(map[string]any)
-	kept := map[string]any{}
-	for _, k := range []string{"name", "namespace", "resourceVersion", "uid"} {
-		if v, ok := meta[k]; ok {
-			kept[k] = v
+	spec := pick(obj["spec"], "hostPID", "hostNetwork", "type")
+	src, _ := obj["spec"].(map[string]any)
+	for _, k := range []string{"initContainers", "containers"} {
+		if list, ok := src[k].([]any); ok {
+			var kept []any
+			for _, c := range list {
+				kc := pick(c, "name")
+				if sc := pick(c, "securityContext")["securityContext"]; sc != nil {
+					kc["securityContext"] = pick(sc, securityContextFields...) // not windowsOptions: a GMSA webhook puts credential specs there
+				}
+				kept = append(kept, kc)
+			}
+			spec[k] = kept
 		}
 	}
-	out, err := json.Marshal(map[string]any{"kind": obj["kind"], "metadata": kept})
+	if list, ok := src["volumes"].([]any); ok {
+		var kept []any
+		for _, v := range list {
+			if hp := pick(v, "name", "hostPath"); hp["hostPath"] != nil {
+				kept = append(kept, hp)
+			}
+		}
+		if kept != nil {
+			spec["volumes"] = kept
+		}
+	}
+	out, err := json.Marshal(map[string]any{"kind": obj["kind"], "metadata": pick(obj["metadata"], "name", "namespace", "resourceVersion", "uid"), "spec": spec})
 	if err != nil {
 		return "(create answer not shown)"
 	}
-	return string(out) + " (spec and status not shown: a webhook may have injected values)"
+	return string(out) + " (other fields not shown: a webhook may have injected values)"
+}
+
+// securityContextFields are the securityContext keys --debug shows: the ones a probe or a gate decides on.
+var securityContextFields = []string{"privileged", "allowPrivilegeEscalation", "capabilities", "runAsUser", "runAsGroup", "runAsNonRoot",
+	"readOnlyRootFilesystem", "procMount", "seccompProfile", "appArmorProfile", "seLinuxOptions"}
+
+// pick returns the named keys of m when m is a JSON object, else an empty object.
+func pick(m any, keys ...string) map[string]any {
+	src, _ := m.(map[string]any)
+	out := map[string]any{}
+	for _, k := range keys {
+		if v, ok := src[k]; ok {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // allowed reports whether req is on the allowlist, and whether it is a create (a pods or services POST).
