@@ -10,7 +10,7 @@ metadata:
     audit-tenant.dev/warnings: '["--checks or --skip left out results"]'
   labels:
     app.kubernetes.io/managed-by: audit-tenant
-  name: audit-tenant-team-a-dev-9b317d90e3903486ccd3d4ccbce89236
+  name: audit-tenant-team-a-dev-bdf935203813e0b75e4df952533298d7
   namespace: team-a
 results:
 - category: multi-tenancy

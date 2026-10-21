@@ -107,22 +107,22 @@ func PolicyReport(w io.Writer, r Report) error {
 }
 
 // reportName is audit-tenant-<slug>-<hash>, so a re-run replaces its own report and reports of other
-// runs stay (D27). The slug is the username lowercased with every character outside a-z and 0-9
-// turned into -, cut to 54 characters. The hash is 32 hex characters of the SHA-256 of the run's
-// inputs exactly as given (D154): the mode; when impersonating, the requested user, groups, uid and
-// extras; in self mode, the verified username and groups (D151 refuses an unverified one); and the
-// other namespace and the server. One identity can get two reports (--as of a service account and
-// its token), but two different inputs never share one, so no run replaces another's FAIL.
+// runs stay (D27). The slug is the user lowercased with every character outside a-z and 0-9 turned
+// into -, cut to 54 characters. The hash is 32 hex characters of the SHA-256 of the run's inputs
+// exactly as given (D154): the mode; when impersonating, the requested user, groups, uid and extras;
+// in self mode, the verified username and groups (D151 refuses an unverified one); and the other
+// namespace and the server. One identity can get two reports (--as of a service account and its
+// token), but two different inputs never share one, so no run replaces another's FAIL.
 func reportName(r Report) string {
-	user, groups := r.Request.User, r.Request.Groups
+	user, groups, extra := r.Request.User, r.Request.Groups, r.Request.Extra
 	if r.Identity.Mode != ModeImpersonation {
 		user, groups = r.Identity.Username, r.Identity.Groups
 	}
-	extra := map[string][]string{}
-	for k, v := range r.Request.Extra {
-		extra[k] = slices.Compact(slices.Sorted(slices.Values(v)))
+	if len(extra) == 0 {
+		extra = nil // an empty kubeconfig entry and no --as-user-extra are the same input
 	}
-	// Groups and extras are sets: their order never renames a report. Marshal sorts the map keys.
+	// Groups are a set (RBAC reads them so), so their order never renames a report; extra values stay
+	// as given, since a policy may read their order. Marshal sorts the extra keys.
 	key, _ := json.Marshal([]any{r.Identity.Mode, user, slices.Compact(slices.Sorted(slices.Values(groups))), r.Request.UID, extra, r.OtherNamespace, r.Cluster.Server})
 	sum := sha256.Sum256(key)
 	slug := strings.Map(func(r rune) rune {
@@ -130,7 +130,7 @@ func reportName(r Report) string {
 			return r
 		}
 		return '-'
-	}, strings.ToLower(r.Identity.Username))
+	}, strings.ToLower(user)) // the request, so a verified and an unverified run share the slug too
 	slug = strings.Trim(slug[:min(len(slug), 54)], "-")
 	return strings.Join(slices.DeleteFunc([]string{"audit-tenant", slug, hex.EncodeToString(sum[:16])}, func(s string) bool { return s == "" }), "-")
 }

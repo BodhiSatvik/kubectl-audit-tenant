@@ -81,9 +81,11 @@ func TestPolicyReportNameIsOnePerRunInput(t *testing.T) {
 	// differ keep their own reports (D27), so no run replaces the FAILs of another identity or boundary.
 	hashed := regexp.MustCompile(`^audit-tenant-(?:([a-z0-9-]*[a-z0-9])-)?[0-9a-f]{32}$`) // no slug when nothing readable is left
 	sa := "system:serviceaccount:tenant-a:tenant-a-dev"
-	uid, extra, other, server := as("alice"), as("alice"), as("alice"), as("alice")
+	uid, extra, extraBA, extraTwice, other, server := as("alice"), as("alice"), as("alice"), as("alice"), as("alice"), as("alice")
 	uid.Request.UID = "u-1"
-	extra.Request.Extra = map[string][]string{"scopes": {"read"}}
+	extra.Request.Extra = map[string][]string{"scopes": {"admin", "read"}}
+	extraBA.Request.Extra = map[string][]string{"scopes": {"read", "admin"}} // a policy may read the first value (Codex, D154)
+	extraTwice.Request.Extra = map[string][]string{"scopes": {"admin", "admin", "read"}}
 	other.OtherNamespace = "tenant-b"
 	server.Cluster.Server = "https://prod.example.com:6443"
 	names := map[string]Report{}
@@ -93,7 +95,7 @@ func TestPolicyReportNameIsOnePerRunInput(t *testing.T) {
 		self(sa, "system:serviceaccounts", "system:serviceaccounts:tenant-a", "system:authenticated"), // the token: apart from --as of it
 		as("audit-probe", "tenant-a"), as("audit-probe", "tenant-b"), // --as audit-probe --as-group <group>
 		as("bob", "system:unauthenticated"), as("bob", "system:unauthenticated", "system:authenticated"),
-		as("alice"), self("alice", "devs"), self("alice", "ops"), uid, extra, other, server,
+		as("alice"), self("alice", "devs"), self("alice", "ops"), uid, extra, extraBA, extraTwice, other, server,
 		self("alice@example.com"), self("Alice@Example.com"), // case
 		self("alice-example-com"), self(""), self("@@@"), // replaced characters, nothing left
 		self(strings.Repeat("a", 54)), self(strings.Repeat("a", 55)), // the cut
@@ -117,19 +119,21 @@ func TestPolicyReportNameIsOnePerRunInput(t *testing.T) {
 }
 
 func TestPolicyReportNameKeepsOneRunsInputsTogether(t *testing.T) {
-	// D154: the same inputs name the same report. Groups and extras are sets, and the SelfSubjectReview
-	// adds groups to the identity, never to the request, so a verified and an unverified run share it.
+	// D154: the same inputs name the same report. Groups are a set, and the SelfSubjectReview adds
+	// groups to the identity, never to the request, so a verified and an unverified run share it.
 	sa := "system:serviceaccount:tenant-a:tenant-a-dev"
 	verified := as(sa)
 	verified.Identity.Groups, verified.Identity.Verified = []string{"system:serviceaccounts", "system:serviceaccounts:tenant-a", "system:authenticated"}, true
-	extraAB, extraBA := as("alice"), as("alice")
-	extraAB.Request.Extra = map[string][]string{"scopes": {"a", "b"}, "team": {"x"}}
-	extraBA.Request.Extra = map[string][]string{"team": {"x"}, "scopes": {"b", "a", "b"}}
+	renamed := as("alice") // a SelfSubjectReview that names another user still leaves the request (Codex, D154)
+	renamed.Identity.Username, renamed.Identity.Verified = "kind-dev", true
+	noExtra := as("alice")
+	noExtra.Request.Extra = map[string][]string{}
 	for _, pair := range [][2]Report{
 		{verified, as(sa)},
+		{renamed, as("alice")},
+		{noExtra, as("alice")},
 		{as("u", "b", "a"), as("u", "a", "b")},
 		{as("u", "a", "a"), as("u", "a")},
-		{extraAB, extraBA},
 		{self("alice", "ops", "devs"), self("alice", "devs", "ops")},
 	} {
 		if a, b := reportName(pair[0]), reportName(pair[1]); a != b {
