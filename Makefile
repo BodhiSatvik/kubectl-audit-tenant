@@ -3,6 +3,7 @@ SHELL := bash
 .SHELLFLAGS := -o pipefail -ec
 GO ?= go
 PKG := ./...
+SETUP_ENVTEST ?= $(GO) run sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.25.2
 
 .PHONY: check-fast check check-full lint vet secrets unit coverage-gate safety floor-guard vuln envtest e2e bench clean-room
 
@@ -25,8 +26,8 @@ floor-guard:
 	python3 hack/floor-guard.py
 vuln:
 	govulncheck $(PKG)
-envtest:
-	$(GO) test ./test/envtest/... -count=1 -v
+envtest: # the API server and etcd binaries from setup-envtest; the build tag keeps the test out of make unit
+	assets="$$($(SETUP_ENVTEST) use 1.37.x -p path)" && KUBEBUILDER_ASSETS="$$assets" $(GO) test -tags envtest ./test/envtest/... -count=1 -v
 e2e:
 	test/e2e/run.sh
 bench:

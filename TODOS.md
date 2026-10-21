@@ -128,7 +128,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Phase 5: integration layer, benchmark and floor tests
 
-- [ ] **B26 envtest layer.** `setup-envtest use 1.37.x` in CI; Role and RoleBinding fixtures for PASS and FAIL per AT-01..03; SSAR under impersonation; `--as-group` without `--as` exits 2 against the real server.
+- [x] **B26 envtest layer.** `setup-envtest use 1.37.x` in CI; Role and RoleBinding fixtures for PASS and FAIL per AT-01..03; SSAR under impersonation; `--as-group` without `--as` exits 2 against the real server.
   - AC: envtest job green; FAIL fixtures produce FAIL, PASS fixtures PASS.
   - Verify: `make envtest` in CI.
   - Depends on: B11. Files: `test/envtest/rbac_test.go`, `test/envtest/fixtures/`, `.github/workflows/ci.yml`.
@@ -275,7 +275,7 @@ Found by the /ship adversarial reviews and left for the phase that owns them. Ea
 - [x] `--debug` will print whole dry-run Pod answers once AT-04 lands; decide what to redact (webhook-injected env) with the stderr golden (B25). Done (D140, D145): an accepted create shows only its kind, metadata and the probe's security fields; `internal/cli/testdata/stderr-trace.golden`.
 - [ ] Release: goreleaser `release.draft: true`, publish only after the krew-install job passes; check the krew download checksum; release only tags on main (B31). GitHub Actions SHA pinning (D43) before the public release.
 - [ ] `hack/check-public.sh` passes when `git ls-files` fails (not a checkout); make it fail closed (B29).
-- [ ] CONSTRAINTS.md lists an envtest gate (AT-01 to AT-03 under real RBAC); `test/envtest/` does not exist yet (B26).
+- [x] CONSTRAINTS.md lists an envtest gate (AT-01 to AT-03 under real RBAC); `test/envtest/` does not exist yet (B26). Done: `make envtest` runs `test/envtest/rbac_test.go` (build tag `envtest`) on the setup-envtest 1.37 binaries in the ci job; five RBAC fixtures and the `--as-group` exit 2.
 - [ ] A default run drops unbuilt checks without a line saying so; D28 trims the Registry at v0.1.0, or print "not in this build" until then (B31).
 - [ ] Teleport-style access proxies (D57) are covered by unit tests only; try one live before the release (B31).
 

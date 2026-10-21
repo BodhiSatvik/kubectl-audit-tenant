@@ -26,6 +26,7 @@ jobs:
       - run: hack/check-public.sh --self-test && hack/check-public.sh
       - run: make check
       - run: make vuln
+      - run: make envtest
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: v2.18.3 # pinned like every other tool; bump on purpose

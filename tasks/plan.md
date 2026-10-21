@@ -60,7 +60,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] Five printers golden-tested; schema and PolicyReport pass in e2e (2026-10-21 at cb82f89: goldens for checklist, plain, color, wide and wide-plain, json, policyreport and the --debug stderr trace; e2e runs 1-4 plus -o json validated against the schema and -o policyreport applied with --dry-run=server, 40/40/31/34/40/40 requests; CI check and kind green; D142 to D156)
 
 ### Phase 5: integration layer, benchmark and floor tests
-- [ ] B26 envtest layer
+- [x] B26 envtest layer
 - [ ] B27 Benchmark
 - [ ] B28 Floor tests over the registry
 

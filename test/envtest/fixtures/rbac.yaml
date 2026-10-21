@@ -1,0 +1,109 @@
+# RBAC fixtures for test/envtest (DESIGN.md section 8, acceptance criterion 3). The test impersonates
+# each user with --as; the API server does not check that a user exists, so a name is enough.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-a
+---
+# The namespace-only grant: every verb on every resource, inside tenant-a only. AT-01 to AT-03 must PASS on it.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-everything
+  namespace: tenant-a
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-everything
+  namespace: tenant-a
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tenant-everything
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: tenant-dev}
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: at01-fail}
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: at02-fail}
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: at03-fail}
+---
+# AT-01 FAIL: one cluster-scoped action.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: create-persistentvolumes
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: at01-fail
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: create-persistentvolumes
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: at01-fail}
+---
+# AT-02 FAIL: list secrets in kube-system, the default --other-namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: list-secrets
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: at02-fail
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: list-secrets
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: at02-fail}
+---
+# AT-03 FAIL: impersonate users.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: impersonate-users
+rules:
+  - apiGroups: [""]
+    resources: ["users"]
+    verbs: ["impersonate"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: at03-fail
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: impersonate-users
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: at03-fail}
+---
+# All three FAIL: a cluster-admin binding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cluster-admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - {apiGroup: rbac.authorization.k8s.io, kind: User, name: cluster-admin-user}
