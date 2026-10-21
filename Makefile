@@ -23,7 +23,7 @@ unit:
 safety:
 	$(GO) test ./internal/safety/... -run 'TestSafety' -count=1 -v
 floor-guard:
-	python3 hack/floor-guard.py
+	python3 hack/floor-guard.py --self-test && python3 hack/floor-guard.py
 vuln:
 	govulncheck $(PKG)
 envtest: # the API server and etcd binaries from setup-envtest; the build tag keeps the test out of make unit

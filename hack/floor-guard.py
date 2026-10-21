@@ -2,6 +2,7 @@
 """floor-guard.py: diff-scoped enforcement of the CONSTRAINTS.md floor.
 
 Usage: python3 hack/floor-guard.py [--base origin/main]
+       python3 hack/floor-guard.py --self-test
 Exit 0 clean, 1 at least one floor violation, 2 the guard could not run.
 Adapted for Go from the constraint-driven-development reference. Reports rule and location, never a secret value.
 """
@@ -15,6 +16,23 @@ def git(args, allow_exit1=False):
 
 def bail(msg):
     print("floor-guard: " + msg, file=sys.stderr); sys.exit(2)
+
+if "--self-test" in sys.argv:
+    import os, tempfile
+    row = "| Coverage | At least {floor}% of statements | make unit | CI |\n## Measured, not yet enforced\n| Project coverage | {today} | must not fall ({tol}% tolerance) |\n"
+    cases = [("recording a Today value", dict(floor=80, today="98.0% (make unit, 2026-10-21)", tol=0.5), 0),
+             ("changing a Direction number", dict(floor=80, today="98.0%", tol=2), 1),
+             ("lowering an enforced floor", dict(floor=70, today="not measured yet", tol=0.5), 1)]
+    for name, edit, want in cases:
+        with tempfile.TemporaryDirectory() as d:
+            sh = lambda *a: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", *a], cwd=d, check=True, capture_output=True)
+            path = os.path.join(d, "CONSTRAINTS.md")
+            with open(path, "w") as fh: fh.write(row.format(floor=80, today="not measured yet", tol=0.5))
+            sh("init", "-q"); sh("add", "."); sh("commit", "-qm", "base")
+            with open(path, "w") as fh: fh.write(row.format(**edit))
+            got = subprocess.run([sys.executable, os.path.abspath(__file__), "--base", "HEAD"], cwd=d, capture_output=True).returncode
+        if got != want: print(f"floor-guard self-test: FAIL, {name} exited {got}, want {want}"); sys.exit(1)
+    print("floor-guard self-test: ok"); sys.exit(0)
 
 base = "origin/main"
 if "--base" in sys.argv:
@@ -91,6 +109,17 @@ def thresholds(t):
         d = "min" if (MIN_BEFORE.search(before) or MIN_AFTER.search(after)) else "max" if (MAX_BEFORE.search(before) or MAX_AFTER.search(after)) else None
         out.append((float(m.group(0)), d))
     return out
+# A row of the Measured table holds a record in its Today cell, not a rule: only Metric and Direction are compared (D158).
+measured = {}
+for f in {f for f, _ in removed + added if is_constraints(f) and os.path.exists(f)}:
+    inside = False; measured[f] = set()
+    for line in open(f):
+        if line.startswith("## "): inside = line.strip() == "## Measured, not yet enforced"
+        elif inside and line.strip().startswith("|"): measured[f].add(rule_key(line))
+def ruled(f, t):
+    if rule_key(t) not in measured.get(f, ()): return t
+    cells = t.strip().strip("|").split("|")
+    return "|".join(cells[:1] + cells[2:])
 removed_rules = [(f, t) for f, t in removed if is_constraints(f) and rule_key(t) is not None]
 added_rules = [(f, t) for f, t in added if is_constraints(f) and rule_key(t) is not None]
 for f, r in removed_rules:
@@ -98,7 +127,7 @@ for f, r in removed_rules:
     if match is None:
         if not is_exception(r): flag("rule-removed", f, r)
         continue
-    before, after = thresholds(r), thresholds(match); verdict = None
+    before, after = thresholds(ruled(f, r)), thresholds(ruled(f, match)); verdict = None
     for d in ("min", "max", None):
         was = [x for x in before if x[1] == d]; now = [x for x in after if x[1] == d]
         for i, b in enumerate(was):

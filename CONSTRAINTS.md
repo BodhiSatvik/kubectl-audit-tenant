@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-10-11 by Satvik Bhasin (decisions D30 to D33 in the plan-review session).
 
-Read this file before writing code. Do not weaken it to make a change pass. Tightening is silent; loosening is loud: `hack/floor-guard.py` flags any lowered number, removed rule or new exception in this file.
+Read this file before writing code. Do not weaken it to make a change pass. Tightening is silent; loosening is loud: `hack/floor-guard.py` flags any lowered number, removed rule or new exception in this file. The Today cell of a Measured row is a record, not a rule, so a new measurement passes (D158).
 
 ## Floor (always enforced, no setup required)
 
@@ -39,7 +39,7 @@ Every row names the command that produces the verdict. A dimension with a number
 
 | Metric | Today | Direction |
 |--------|-------|-----------|
-| Project statement coverage (all packages) | not measured yet (no code); record at the first green CI run | must not fall (0.5% tolerance) |
+| Project statement coverage (all packages) | 98.0% (`make unit`, then `go tool cover -func coverage.out`; maintainer's Mac at 7c11d28, 2026-10-21) | must not fall (0.5% tolerance) |
 | Binary size, linux/amd64 | record at v0.1.0 | must not grow more than 10% per minor release without a note in CHANGELOG |
 | `make check` wall time on the maintainer's Mac | 16.9 s (M1 Pro, 8 cores, test cache cleared; Phase 3 at 9d44fcb, 2026-10-20) | stays under 90 s |
 
