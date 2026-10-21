@@ -6,12 +6,30 @@ on:
 permissions:
   contents: read
 jobs:
+  # Its own job (D164): a gate change makes it red on purpose, and the check job still reports every other result.
+  floor-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the guard diffs against the base commit
+      - name: Floor guard as the base commit has it (a branch cannot weaken the guard that judges it)
+        shell: bash # -eo pipefail: a missing guard file must fail, not feed python an empty script
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+        run: git show "$BASE:hack/floor-guard.py" | python3 -I - --base "$BASE"
+      - name: Floor guard as the branch has it, after its self-test
+        if: ${{ !cancelled() }} # show its findings too when the base copy already failed
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || 'origin/main' }}
+        run: python3 -I hack/floor-guard.py --self-test && python3 -I hack/floor-guard.py --base "$BASE"
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # the floor guard diffs against origin/main
+          fetch-depth: 0 # gitleaks scans the branch's whole history
       - uses: actions/setup-go@v6 # v6 builds with go.mod's toolchain directive
         with:
           go-version-file: go.mod
@@ -24,7 +42,7 @@ jobs:
           go install github.com/zricethezav/gitleaks/v8@v8.30.1
           go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
       - run: hack/check-public.sh --self-test && hack/check-public.sh
-      - run: make check
+      - run: make check-fast unit safety # make check without its floor-guard stage, which has its own job
       - run: make vuln
       - run: make envtest
       - uses: goreleaser/goreleaser-action@v6
