@@ -136,7 +136,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: `BENCHMARK.md` has measured rows for v0.1.0-rc; CI fails if a budget is missed.
   - Verify: `make bench` inside the e2e job.
   - Depends on: B21, B25. Files: `test/e2e/bench.sh`, `BENCHMARK.md`, `.github/workflows/e2e.yml`.
-- [ ] **B28 Floor tests over the registry.** A unit test that drives every registered check through its FAIL, SKIP and ERROR paths with scripted answers and asserts a non-empty hint on each; `list-checks` golden; the safety replay now covers all ten checks.
+- [x] **B28 Floor tests over the registry.** A unit test that drives every registered check through its FAIL, SKIP and ERROR paths with scripted answers and asserts a non-empty hint on each; `list-checks` golden; the safety replay now covers all ten checks.
   - AC: hint test green for all 14 result IDs; `TestSafety` replays every check.
   - Verify: `go test ./internal/checks/ -run 'Hints|ListChecks'`; `make safety`.
   - Depends on: B21. Files: `internal/checks/hints_test.go`, `internal/safety/transport_test.go`.

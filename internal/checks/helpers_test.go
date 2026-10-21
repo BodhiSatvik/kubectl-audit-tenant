@@ -28,12 +28,13 @@ const (
 
 // ssarServer answers SelfSubjectAccessReviews from canned status bodies keyed by "verb resource",
 // echoing the question as the API server does, and remembers every question. A question
-// without an answer gets HTTP 500, except AT-01's positive control and the "list pods" anchor,
-// which are allowed.
+// without an answer gets otherwise, or HTTP 500 when otherwise is empty, except AT-01's positive
+// control and the "list pods" anchor, which are allowed.
 type ssarServer struct {
-	mu      sync.Mutex
-	answers map[string]string
-	asked   []cluster.Attributes
+	mu        sync.Mutex
+	answers   map[string]string
+	otherwise string
+	asked     []cluster.Attributes
 }
 
 func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +56,9 @@ func (s *ssarServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok && a.Verb+" "+a.Resource == "list pods" {
 		body, ok = allowed, true // the no-rights anchor (D80): every real tenant may list pods
+	}
+	if !ok && s.otherwise != "" {
+		body, ok = s.otherwise, true
 	}
 	if !ok {
 		http.Error(w, "no canned answer for "+a.Verb+" "+a.Resource, http.StatusInternalServerError)

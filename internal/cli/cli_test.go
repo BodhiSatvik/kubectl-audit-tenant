@@ -206,11 +206,13 @@ func TestNamespaceComesFromTheContextWhenFlagIsAbsent(t *testing.T) {
 
 func TestListChecks(t *testing.T) {
 	code, stdout, _ := run(t, "list-checks")
+	golden(t, "list-checks.golden", stdout)
 	lines := strings.Split(strings.TrimRight(stdout, "\n"), "\n")
 	if code != 0 || len(lines) != 10 || !strings.HasPrefix(lines[0], "AT-01") || !strings.Contains(lines[0], "MTB-PL1-CC-CPI-1") {
 		t.Errorf("list-checks: exit %d, %d lines:\n%s", code, len(lines), stdout)
 	}
 	code, stdout, _ = run(t, "list-checks", "-o", "json")
+	golden(t, "list-checks-json.golden", stdout)
 	var checks []struct {
 		ID       string `json:"id"`
 		Severity string `json:"severity"`
@@ -223,6 +225,24 @@ func TestListChecks(t *testing.T) {
 	}
 	if code, _, stderr := run(t, "list-checks", "-o", "yaml"); code != 2 || !strings.Contains(stderr, "unknown output format") {
 		t.Errorf("list-checks -o yaml: exit %d, stderr %q", code, stderr)
+	}
+}
+
+// golden compares got with testdata/name; go test -update rewrites the file first.
+func golden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", name)
+	if *update {
+		if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		t.Fatalf("read golden: %v (run with -update to create it)", err)
+	}
+	if got != string(want) {
+		t.Errorf("output differs from %s:\n--- got\n%s\n--- want\n%s", path, got, want)
 	}
 }
 

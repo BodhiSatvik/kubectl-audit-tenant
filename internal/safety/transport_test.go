@@ -3,6 +3,7 @@ package safety_test
 import (
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	authnv1 "k8s.io/api/authentication/v1"
 	authzv1 "k8s.io/api/authorization/v1"
@@ -19,6 +21,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/checks"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/safety"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
 )
@@ -168,6 +173,76 @@ func TestSafety(t *testing.T) {
 			t.Errorf("a denied request reached the server: %v", got[len(before):])
 		}
 	})
+}
+
+// TestSafetyReplaysEveryRegisteredCheck runs the whole registry through the transport, as a tenant
+// that may create pods and Services (the probe paths) and as one that may not (the RBAC-only
+// paths): no check may meet a refusal (it would be an ERROR), every request that reached the server
+// is in the trace, none is a write or touches secrets, and together the two runs use every
+// allowlisted path.
+func TestSafetyReplaysEveryRegisteredCheck(t *testing.T) {
+	quota := testutil.JSON(http.StatusOK, `{"items":[{"metadata":{"name":"q"},"spec":{"hard":{"pods":"10"}}}]}`)                                     // AT-10 then lists the workloads
+	deployment := testutil.JSON(http.StatusOK, `{"items":[{"metadata":{"name":"api"},"spec":{"template":{"spec":{"containers":[{"name":"c"}]}}}}]}`) // and then the HPAs
+	dryRunAnswer := testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"}}`)                                            // a generated name, no resourceVersion
+	used := map[string]bool{}
+	var allowlist []string
+	for _, tc := range []struct {
+		name, ssar, namespace string
+	}{
+		{"a tenant that may create pods and Services", `{"allowed":true}`, `{"metadata":{"name":"tenant-a"}}`},
+		{"a tenant that may not", `{"allowed":false}`, `{"metadata":{"name":"tenant-a","labels":{"pod-security.kubernetes.io/enforce":"restricted"}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ok := testutil.JSON(http.StatusOK, `{"items":[]}`)
+			routes := map[string]http.HandlerFunc{
+				"GET /version":                                                          testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+				"GET /api/v1/namespaces/tenant-a":                                       testutil.JSON(http.StatusOK, tc.namespace),
+				"GET /api/v1/namespaces/tenant-a/resourcequotas":                        quota,
+				"GET /api/v1/namespaces/tenant-a/limitranges":                           ok,
+				"GET /apis/networking.k8s.io/v1/namespaces/tenant-a/networkpolicies":    ok,
+				"GET /apis/apps/v1/namespaces/tenant-a/deployments":                     deployment,
+				"GET /apis/apps/v1/namespaces/tenant-a/statefulsets":                    ok,
+				"GET /apis/autoscaling/v2/namespaces/tenant-a/horizontalpodautoscalers": ok,
+				"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews":           testutil.SSAR(tc.ssar),
+				"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":                testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"tenant-a-dev"}}}`),
+				"POST /api/v1/namespaces/tenant-a/pods":                                 dryRunAnswer,
+				"POST /api/v1/namespaces/tenant-a/services":                             dryRunAnswer,
+			}
+			allowlist = slices.Sorted(maps.Keys(routes))
+			srv := testutil.NewServer(t, routes)
+			c, err := cluster.Connect(t.Context(), &rest.Config{Host: srv.URL}, cluster.Options{Namespace: ns, OtherNamespace: "kube-system", As: "tenant-a-dev", Timeout: time.Minute})
+			if err != nil {
+				t.Fatalf("Connect: %v", err)
+			}
+			for _, r := range checks.Run(t.Context(), c, checks.Registry, time.Minute) {
+				// AT-09 keeps a failed namespace question as a note on a PASS, so a refusal can hide there too.
+				if r.Verdict == report.Error || strings.Contains(r.Reason+r.Note, "read-only allowlist") {
+					t.Errorf("%s: %s %s; note: %s", r.ID, r.Verdict, r.Reason, r.Note)
+				}
+			}
+			var traced []string
+			for _, r := range c.Recorder.Requests() {
+				path, _, _ := strings.Cut(r.Path, "?")
+				traced = append(traced, r.Method+" "+path)
+				write := r.Method != http.MethodGet && !strings.Contains(path, "/selfsubject") && !strings.Contains(r.Path, "dryRun=All")
+				if write || strings.Contains(path, "secrets") {
+					t.Errorf("%s %s: a write or a secrets path left the process", r.Method, r.Path)
+				}
+			}
+			hits := srv.Hits()
+			if !slices.Equal(hits, traced) {
+				t.Errorf("server saw %v, trace has %v", hits, traced)
+			}
+			for _, h := range hits {
+				used[h] = true
+			}
+		})
+	}
+	for _, path := range allowlist {
+		if !used[path] {
+			t.Errorf("no check sent %s: the replay does not cover every allowlisted path", path)
+		}
+	}
 }
 
 // TestSafetyRefusesARedirectToAnotherHost: client-go would re-attach the bearer token to the
