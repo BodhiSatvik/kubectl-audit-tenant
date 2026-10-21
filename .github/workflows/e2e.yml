@@ -27,4 +27,5 @@ jobs:
           path: |
             bin/e2e-*.out
             bin/bench-*.out
+            bin/bench-*.err
             BENCHMARK.md
