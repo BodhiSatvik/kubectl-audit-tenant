@@ -27,9 +27,9 @@ const (
 )
 
 // ssarServer answers SelfSubjectAccessReviews from canned status bodies keyed by "verb resource",
-// echoing the question as the API server does, and remembers every question. A question
-// without an answer gets otherwise, or HTTP 500 when otherwise is empty, except AT-01's positive
-// control and the "list pods" anchor, which are allowed.
+// echoing the question as the API server does, and remembers every question. A question gets its
+// answers entry; failing that, AT-01's positive control and the "list pods" anchor are allowed;
+// failing that, it gets s.otherwise, or HTTP 500 when otherwise is empty.
 type ssarServer struct {
 	mu        sync.Mutex
 	answers   map[string]string

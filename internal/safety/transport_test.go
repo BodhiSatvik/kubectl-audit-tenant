@@ -186,6 +186,7 @@ func TestSafetyReplaysEveryRegisteredCheck(t *testing.T) {
 	dryRunAnswer := testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"}}`)                                            // a generated name, no resourceVersion
 	used := map[string]bool{}
 	var allowlist []string
+	ran := 0 // coverage needs both runs; -run may select one
 	for _, tc := range []struct {
 		name, ssar, namespace string
 	}{
@@ -193,6 +194,7 @@ func TestSafetyReplaysEveryRegisteredCheck(t *testing.T) {
 		{"a tenant that may not", `{"allowed":false}`, `{"metadata":{"name":"tenant-a","labels":{"pod-security.kubernetes.io/enforce":"restricted"}}}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			ran++
 			ok := testutil.JSON(http.StatusOK, `{"items":[]}`)
 			routes := map[string]http.HandlerFunc{
 				"GET /version":                                                          testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
@@ -222,10 +224,14 @@ func TestSafetyReplaysEveryRegisteredCheck(t *testing.T) {
 			}
 			var traced []string
 			for _, r := range c.Recorder.Requests() {
-				path, _, _ := strings.Cut(r.Path, "?")
-				traced = append(traced, r.Method+" "+path)
-				write := r.Method != http.MethodGet && !strings.Contains(path, "/selfsubject") && !strings.Contains(r.Path, "dryRun=All")
-				if write || strings.Contains(path, "secrets") {
+				u, err := url.Parse(r.Path)
+				if err != nil {
+					t.Fatalf("trace path %q: %v", r.Path, err)
+				}
+				traced = append(traced, r.Method+" "+u.Path)
+				review := r.Method == http.MethodPost && (u.Path == "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews" || u.Path == "/apis/authentication.k8s.io/v1/selfsubjectreviews")
+				dryRun := r.Method == http.MethodPost && u.Query().Get("dryRun") == "All"
+				if (r.Method != http.MethodGet && !review && !dryRun) || strings.Contains(u.Path, "secrets") {
 					t.Errorf("%s %s: a write or a secrets path left the process", r.Method, r.Path)
 				}
 			}
@@ -234,9 +240,15 @@ func TestSafetyReplaysEveryRegisteredCheck(t *testing.T) {
 				t.Errorf("server saw %v, trace has %v", hits, traced)
 			}
 			for _, h := range hits {
+				if !slices.Contains(allowlist, h) {
+					t.Errorf("%s reached the server but is not an allowlisted path", h)
+				}
 				used[h] = true
 			}
 		})
+	}
+	if ran < 2 {
+		return
 	}
 	for _, path := range allowlist {
 		if !used[path] {

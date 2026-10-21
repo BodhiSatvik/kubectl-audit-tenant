@@ -4,6 +4,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,6 +64,10 @@ func TestHintsOnEveryFailSkipAndError(t *testing.T) {
 			for _, r := range got {
 				if r.Verdict != tc.want || r.Hint == "" {
 					t.Errorf("%s: %s with hint %q, want %s with a hint; reason: %s", r.ID, r.Verdict, r.Hint, tc.want, r.Reason)
+				}
+				// The runner's own ERRORs (a crash, a missing result, the deadline) carry hints too; they must not stand in for the check's.
+				if r.Hint == hintBug || strings.HasPrefix(r.Reason, "not run: timeout") || r.Reason == "interrupted" { // a check's own "not run: an earlier create ..." ERROR is fine
+					t.Errorf("%s: the runner filled this result (%s), not the check", r.ID, r.Reason)
 				}
 			}
 		})

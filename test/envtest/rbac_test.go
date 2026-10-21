@@ -7,6 +7,7 @@ package envtest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,11 +16,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-logr/logr"
+	authzv1 "k8s.io/api/authorization/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/wait"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -44,7 +50,30 @@ func TestRBACAgainstARealAPIServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add the admin user: %v", err)
 	}
+	cs, err := kubernetes.NewForConfig(admin.Config())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The API server creates kube-system, and its RBAC authorizer sees new bindings, a moment after
+	// the writes return; a one-shot assertion before that would flake.
+	ready(t, "namespace kube-system", func(ctx context.Context) (bool, error) {
+		_, err := cs.CoreV1().Namespaces().Get(ctx, "kube-system", metav1.GetOptions{})
+		return err == nil, nil
+	})
 	apply(t, admin.Config())
+	for user, attrs := range map[string]authzv1.ResourceAttributes{
+		"tenant-dev":         {Verb: "list", Resource: "pods", Namespace: "tenant-a"},
+		"at01-fail":          {Verb: "create", Resource: "persistentvolumes"},
+		"at02-fail":          {Verb: "list", Resource: "secrets", Namespace: "kube-system"},
+		"at03-fail":          {Verb: "impersonate", Resource: "users"},
+		"cluster-admin-user": {Verb: "list", Resource: "nodes"},
+	} {
+		ready(t, user+"'s grant in the authorizer", func(ctx context.Context) (bool, error) {
+			review := &authzv1.SubjectAccessReview{Spec: authzv1.SubjectAccessReviewSpec{User: user, ResourceAttributes: &attrs}}
+			got, err := cs.AuthorizationV1().SubjectAccessReviews().Create(ctx, review, metav1.CreateOptions{})
+			return err == nil && got.Status.Allowed, nil
+		})
+	}
 	raw, err := admin.KubeConfig()
 	if err != nil {
 		t.Fatalf("admin kubeconfig: %v", err)
@@ -98,6 +127,14 @@ func TestRBACAgainstARealAPIServer(t *testing.T) {
 			t.Errorf("exit %d, stdout %q, stderr %q; want exit 2, no report and the message", code, out, stderr)
 		}
 	})
+}
+
+// ready polls cond until it holds, for at most 30 seconds.
+func ready(t *testing.T, what string, cond wait.ConditionWithContextFunc) {
+	t.Helper()
+	if err := wait.PollUntilContextTimeout(t.Context(), 100*time.Millisecond, 30*time.Second, true, cond); err != nil {
+		t.Fatalf("waiting for %s: %v", what, err)
+	}
 }
 
 // run runs the plugin's command line against the kubeconfig and returns the exit code, stdout and stderr.
