@@ -94,7 +94,9 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 		return nil, fmt.Errorf("cannot load the kubeconfig: %w", err)
 	}
 	rec := cmp.Or(opts.Recorder, &safety.Recorder{})
-	c := &Client{Recorder: rec, Namespace: opts.Namespace, OtherNamespace: opts.OtherNamespace, Server: cfg.Host}
+	server := *base
+	server.User, server.RawQuery, server.Fragment = nil, "", "" // a kubeconfig server URL may carry user:password or a token; -o json prints Server
+	c := &Client{Recorder: rec, Namespace: opts.Namespace, OtherNamespace: opts.OtherNamespace, Server: server.String()}
 	cfg.Wrap(safety.Wrap(opts.Namespace, base, rec, &c.Unverified))
 	cs, err := kubernetes.NewForConfig(cfg)
 	if err != nil {

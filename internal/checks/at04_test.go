@@ -408,7 +408,75 @@ var (
 	acceptProbe = testutil.JSON(http.StatusCreated, `{"metadata":{"name":"audit-tenant-probe-x7k2p"}}`)
 	rejectProbe = testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, psaDenial)
 	mayPods     = map[string]string{"list nodes": denied, "create pods": allowed}
+	// mutatedProbe is the API server's answer to a privileged probe that a mutating policy gave allowPrivilegeEscalation: false.
+	mutatedProbe = testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-x7k2p" is invalid: spec.containers[0].securityContext: Invalid value: {"Privileged":true,"AllowPrivilegeEscalation":false}: cannot set `+"`allowPrivilegeEscalation` to false and `privileged` to true")
+	// bothInvalid is one 422 from an API server with --allow-privileged=false for a probe a mutation also changed: rule 4b decides.
+	bothInvalid = testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-x7k2p" is invalid: [spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy, spec.containers[0].securityContext: Invalid value: {"Privileged":true,"AllowPrivilegeEscalation":false}: cannot set `+"`allowPrivilegeEscalation` to false and `privileged` to true]")
+	// policyQuotingMutation is a policy that could not evaluate and quotes the mutation text in its expression: rule 2a decides (ERROR).
+	policyQuotingMutation = testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`pods "audit-tenant-probe-x7k2p" is forbidden: ValidatingAdmissionPolicy 'no-priv' with binding 'b' denied request: expression 'object.spec.containers.all(c, c.securityContext.privileged != true)' resulted in error: cannot set `+"`allowPrivilegeEscalation` to false and `privileged` to true")
+	noDryRunProbe = testutil.Status(http.StatusBadRequest, metav1.StatusReasonBadRequest, `admission webhook "privileged-guard.example.com" does not support dry run`)
 )
+
+func TestAT04PrivilegedFormsReadTheTwoValidationAnswers(t *testing.T) {
+	noPrivileged := testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-xtfqk" is invalid: spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy`)
+	specs, err := Select([]string{"AT-04.1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name          string
+		first, second http.HandlerFunc
+		want          report.Verdict
+		layer, hint   string
+		mutatedNote   bool // D143: a PASS says one form never reached a security gate
+	}{
+		{"an API server with --allow-privileged=false", noPrivileged, noPrivileged, report.Pass, "API server (allow-privileged=false)", "", false},
+		{"a mutation, then PSA", mutatedProbe, rejectProbe, report.Pass, "admission (PSA)", "", true},
+		{"PSA, then a mutation", rejectProbe, mutatedProbe, report.Pass, "admission (PSA)", "", true},
+		{"a mutation in both forms", mutatedProbe, mutatedProbe, report.Skip, "-", "allowPrivilegeEscalation: false", false},
+		// Review pass 2 (D147): a form counts as mutated only when the classifier chose that rule.
+		{"the API server after a mutation, then the API server", bothInvalid, noPrivileged, report.Pass, "API server (allow-privileged=false)", "", false},
+		{"the API server, then the API server after a mutation", noPrivileged, bothInvalid, report.Pass, "API server (allow-privileged=false)", "", false},
+		{"the API server after a mutation in both forms", bothInvalid, bothInvalid, report.Pass, "API server (allow-privileged=false)", "", false},
+		{"a mutation, then the API server after a mutation", mutatedProbe, bothInvalid, report.Pass, "API server (allow-privileged=false)", "", true},
+		{"the API server after a mutation, then a mutation", bothInvalid, mutatedProbe, report.Pass, "API server (allow-privileged=false)", "", true},
+		{"a policy error quoting the mutation text, then PSA", policyQuotingMutation, rejectProbe, report.Error, "-", "could not evaluate", false},
+		{"PSA, then a policy error quoting the mutation text", rejectProbe, policyQuotingMutation, report.Error, "-", "could not evaluate", false},
+		{"a mutation, then a webhook that cannot dry-run", mutatedProbe, noDryRunProbe, report.Skip, "-", "sideEffects: NoneOnDryRun", false},
+		{"a webhook that cannot dry-run, then a mutation", noDryRunProbe, mutatedProbe, report.Skip, "-", "sideEffects: NoneOnDryRun", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": nth(tt.first, tt.second)}}
+			got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), specs[0], ignore)
+			if len(got) != 1 || got[0].Verdict != tt.want || got[0].Layer != tt.layer || (tt.hint == "") != (got[0].Hint == "") || !strings.Contains(got[0].Hint, tt.hint) {
+				t.Errorf("AT-04.1 = %+v, want %s on layer %q with a hint containing %q", got, tt.want, tt.layer, tt.hint)
+			}
+			if len(got) == 1 && strings.Contains(got[0].Note, "never reached a security gate") != tt.mutatedNote {
+				t.Errorf("AT-04.1 note = %q; want the mutated-form note: %v", got[0].Note, tt.mutatedNote)
+			}
+		})
+	}
+}
+
+func TestAT04AnAddedPrivilegedContainerProvesNothingForTheOtherProbes(t *testing.T) {
+	// D143: --allow-privileged=false proves only AT-04.1. A hostPath probe refused for a privileged
+	// container that a webhook added decides nothing about hostPath (Codex adversarial).
+	added := testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-x7k2p" is invalid: spec.containers[1].securityContext.privileged: Forbidden: disallowed by cluster policy`)
+	specs, err := Select([]string{"AT-04.2"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.2": added}}
+	got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), specs[0], ignore)
+	if len(got) != 1 || got[0].Verdict != report.Skip || got[0].Layer != "-" || !strings.Contains(got[0].Hint, "made a container of the probe privileged") {
+		t.Errorf("AT-04.2 = %+v, want SKIP: the refusal is about an added privileged container, not hostPath", got)
+	}
+}
 
 func TestAT04InterruptAfterTheFirstPrivilegedFormKeepsTheFail(t *testing.T) {
 	// D84(1), D61, D63: the first form was accepted; Ctrl-C arrives while the second is in flight.
@@ -561,6 +629,22 @@ func TestAT04OneResultTakesTheWorstOfItsForms(t *testing.T) {
 		// Added by the /ship pre-landing review (Phase 2): the two orders the rows above miss, a FAIL over a SKIP and an ERROR over a SKIP.
 		{"a webhook that cannot dry-run, then accepted", noDryRun, acceptProbe, report.Fail},
 		{"a webhook that cannot dry-run, then unreadable", noDryRun, unread, report.Error},
+		// B22: a privileged form that a mutating policy made invalid decides nothing; the other form decides
+		// (TestAT04PrivilegedFormsReadTheTwoValidationAnswers covers the mutation first, then PSA, and both forms).
+		{"mutated, then accepted", mutatedProbe, acceptProbe, report.Fail},
+		{"rejected, then mutated", rejectProbe, mutatedProbe, report.Pass},
+		{"mutated, then unreadable", mutatedProbe, unread, report.Error},
+		// Review pass 2: the cells of the two-form fold the state matrix found untested.
+		{"the API server after a mutation, then accepted", bothInvalid, acceptProbe, report.Fail},
+		{"the API server after a mutation, then a webhook that cannot dry-run", bothInvalid, noDryRun, report.Skip},
+		{"the API server after a mutation, then unreadable", bothInvalid, unread, report.Error},
+		{"a webhook that cannot dry-run, then rejected", noDryRun, rejectProbe, report.Skip},
+		{"a webhook that cannot dry-run, then the API server after a mutation", noDryRun, bothInvalid, report.Skip},
+		{"a webhook that cannot dry-run in both forms", noDryRun, noDryRun, report.Skip},
+		{"unreadable, then the API server after a mutation", unread, bothInvalid, report.Error},
+		{"unreadable, then mutated", unread, mutatedProbe, report.Error},
+		{"unreadable, then a webhook that cannot dry-run", unread, noDryRun, report.Error},
+		{"unreadable in both forms", unread, unread, report.Error},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ps := &probeServer{answers: map[string]http.HandlerFunc{"AT-04.1": nth(tt.first, tt.second)}}

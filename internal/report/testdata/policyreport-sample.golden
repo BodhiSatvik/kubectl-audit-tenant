@@ -1,0 +1,70 @@
+apiVersion: wgpolicyk8s.io/v1alpha2
+kind: PolicyReport
+metadata:
+  annotations:
+    audit-tenant.dev/groups: '["team-a","system:authenticated"]'
+    audit-tenant.dev/identity: team-a-dev
+    audit-tenant.dev/other-namespace: kube-system
+    audit-tenant.dev/tool-version: 0.1.0
+    audit-tenant.dev/verified: "true"
+    audit-tenant.dev/warnings: '["--checks or --skip left out results"]'
+  labels:
+    app.kubernetes.io/managed-by: audit-tenant
+  name: audit-tenant-team-a-dev-bdf935203813e0b75e4df952533298d7
+  namespace: team-a
+results:
+- category: multi-tenancy
+  message: RBAC denied all 4 actions
+  policy: AT-01
+  properties:
+    identity: team-a-dev
+    layer: RBAC
+    name: No cluster-scoped access
+    note: 'not tested: grants limited to named objects (resourceNames)'
+  result: pass
+  rule: MTB-PL1-CC-CPI-1
+  severity: high
+  source: audit-tenant
+  timestamp:
+    nanos: 0
+    seconds: 1792508645
+- category: multi-tenancy
+  message: a NodePort Service was accepted in a dry run
+  policy: AT-05
+  properties:
+    hint: 'add a policy that rejects type: NodePort, or remove `create services` from
+      the tenant role'
+    identity: team-a-dev
+    layer: '-'
+    name: NodePort services blocked
+  result: fail
+  rule: MTB-PL1-BC-HI-1
+  severity: medium
+  source: audit-tenant
+  timestamp:
+    nanos: 0
+    seconds: 1792508645
+- category: multi-tenancy
+  message: cannot read namespace labels (forbidden)
+  policy: AT-09
+  properties:
+    hint: grant `get` on namespace team-a to this identity, or run with --as <admin>
+    identity: team-a-dev
+    layer: '-'
+    name: Pod Security Admission enforced
+  result: skip
+  severity: high
+  source: audit-tenant
+  timestamp:
+    nanos: 0
+    seconds: 1792508645
+scope:
+  apiVersion: v1
+  kind: Namespace
+  name: team-a
+summary:
+  error: 0
+  fail: 1
+  pass: 1
+  skip: 1
+  warn: 0

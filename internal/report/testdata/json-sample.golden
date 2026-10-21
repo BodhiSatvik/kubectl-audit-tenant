@@ -1,0 +1,69 @@
+{
+  "apiVersion": "audit-tenant.dev/v1alpha1",
+  "tool": {
+    "name": "audit-tenant",
+    "version": "0.1.0"
+  },
+  "cluster": {
+    "context": "kind-dev",
+    "server": "https://127.0.0.1:6443",
+    "version": "v1.37.0"
+  },
+  "namespace": "team-a",
+  "otherNamespace": "kube-system",
+  "identity": {
+    "mode": "impersonation",
+    "username": "team-a-dev",
+    "groups": [
+      "team-a",
+      "system:authenticated"
+    ],
+    "verified": true
+  },
+  "timestamp": "2026-10-20T15:04:05Z",
+  "results": [
+    {
+      "id": "AT-01",
+      "name": "No cluster-scoped access",
+      "kind": "behavioral",
+      "mtb": "MTB-PL1-CC-CPI-1",
+      "severity": "high",
+      "verdict": "PASS",
+      "layer": "RBAC",
+      "reason": "RBAC denied all 4 actions",
+      "hint": "",
+      "note": "not tested: grants limited to named objects (resourceNames)"
+    },
+    {
+      "id": "AT-05",
+      "name": "NodePort services blocked",
+      "kind": "behavioral",
+      "mtb": "MTB-PL1-BC-HI-1",
+      "severity": "medium",
+      "verdict": "FAIL",
+      "layer": "-",
+      "reason": "a NodePort Service was accepted in a dry run",
+      "hint": "add a policy that rejects type: NodePort, or remove `create services` from the tenant role"
+    },
+    {
+      "id": "AT-09",
+      "name": "Pod Security Admission enforced",
+      "kind": "config",
+      "mtb": "-",
+      "severity": "high",
+      "verdict": "SKIP",
+      "layer": "-",
+      "reason": "cannot read namespace labels (forbidden)",
+      "hint": "grant `get` on namespace team-a to this identity, or run with --as <admin>"
+    }
+  ],
+  "summary": {
+    "pass": 1,
+    "fail": 1,
+    "skip": 1,
+    "error": 0,
+    "exitCode": 1,
+    "results": 3,
+    "checks": 3
+  }
+}

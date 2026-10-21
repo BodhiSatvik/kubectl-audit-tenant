@@ -42,7 +42,7 @@ type Result struct {
 	MTB      string   `json:"mtb"` // "-" when the check has no MTB ID
 	Severity Severity `json:"severity"`
 	Verdict  Verdict  `json:"verdict"`
-	Layer    string   `json:"layer"` // RBAC, admission (...), config, or "-"
+	Layer    string   `json:"layer"` // RBAC, admission (...), API server (allow-privileged=false), config, or "-" (DESIGN.md section 6)
 	Reason   string   `json:"reason"`
 	Hint     string   `json:"hint"`
 	Note     string   `json:"note,omitempty"` // what the check did not test; printed on its own line, never cut (D86)
@@ -82,6 +82,7 @@ type Report struct {
 	Namespace      string    `json:"namespace"`
 	OtherNamespace string    `json:"otherNamespace"`
 	Identity       Identity  `json:"identity"`
+	Warnings       []string  `json:"warnings,omitempty"` // what the identity or flags leave untested (D141); under the header
 	Timestamp      time.Time `json:"timestamp"`
 	Results        []Result  `json:"results"`
 	Summary        Summary   `json:"summary"`
@@ -89,4 +90,16 @@ type Report struct {
 	AdminHint bool `json:"-"`
 	// FailOnSkip records the --fail-on-skip flag for the summary wording.
 	FailOnSkip bool `json:"-"`
+	// Request is the impersonation the run asked for; with the mode, the other namespace and the
+	// server it names the PolicyReport (D154).
+	Request Request `json:"-"`
+}
+
+// Request is the impersonation as given: --as, --as-group, --as-uid and --as-user-extra, or the
+// kubeconfig user's as entries. It is empty in self mode.
+type Request struct {
+	User   string
+	Groups []string
+	UID    string
+	Extra  map[string][]string
 }

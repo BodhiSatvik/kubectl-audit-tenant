@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -43,6 +44,21 @@ func connect(t *testing.T, routes map[string]http.HandlerFunc, o cluster.Options
 	t.Cleanup(cancel)
 	c, err := cluster.Connect(ctx, &rest.Config{Host: srv.URL}, o)
 	return srv, c, err
+}
+
+func TestServerLeavesOutUserinfo(t *testing.T) {
+	// -o json prints Server; a kubeconfig server URL may carry user:password (security review).
+	srv := testutil.NewServer(t, happy())
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.User = url.UserPassword("admin", "s3cret")
+	u.RawQuery, u.Fragment = "token=s3cret", "s3cret" // client-go never sends these; -o json must not print them either
+	c, err := cluster.Connect(t.Context(), &rest.Config{Host: u.String()}, opts)
+	if err != nil || c.Server != srv.URL {
+		t.Errorf("Connect() error %v; Server = %q, want %s without the userinfo", err, c.Server, srv.URL)
+	}
 }
 
 func TestConnectResolvesIdentityVersionNamespaceAndCaches(t *testing.T) {

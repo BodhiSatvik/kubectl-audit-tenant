@@ -83,7 +83,7 @@ The one-line advice attached to every FAIL, SKIP or ERROR that tells the reader 
 _Avoid_: Remediation, fix, suggestion
 
 **Deciding layer**:
-The part of the cluster that produced a verdict: RBAC (the permission list), admission (a gatekeeper such as Pod Security Admission or a policy engine), or configuration (an object the tool read).
+The part of the cluster that produced a verdict: RBAC (the permission list), admission (a gatekeeper such as Pod Security Admission or a policy engine), the API server's own validation (`--allow-privileged=false` refuses every privileged container), or configuration (an object the tool read).
 _Avoid_: Source, enforcer, mechanism
 
 **Reason**:

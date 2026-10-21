@@ -30,6 +30,9 @@ const (
 	hintUnknown    = "the cluster rejected the probe for a reason audit-tenant does not recognize, so it decides nothing; read the reason, or run with --debug and report it"
 )
 
+// hintMutated is the hint of a probe that a mutating policy made invalid (Mutated).
+const hintMutated = "a mutating webhook or policy changed the probe so that it sets privileged: true together with allowPrivilegeEscalation: false, which the API server refuses as invalid before any security gate runs, so it decides nothing; check which mutation changes the probe's securityContext"
+
 // HintRetry is the one hint for a request that failed or met a throttled or failing server; the checks use it too.
 const HintRetry = "re-run; if it repeats, run with --debug and report the server message"
 
@@ -40,6 +43,17 @@ var policyErrors = []string{"resulted in error", "failed to configure", "running
 
 // LayerPSA is the layer of a probe that Pod Security Admission rejected; AT-09 reads it.
 const LayerPSA = "admission (PSA)"
+
+// LayerAPIServer is the layer of a probe refused because the API server forbids privileged
+// containers (--allow-privileged=false); it proves only AT-04.1 (D143).
+const LayerAPIServer = "API server (allow-privileged=false)"
+
+// Mutated reports whether Classify reads err with rule 4c: the API server's 422 for a container that
+// sets privileged: true with allowPrivilegeEscalation: false. No probe sends that pair (D78), so a
+// mutating policy changed it and validation refused it before any security gate ran: that form
+// decides nothing (D138). An earlier rule that sees the same text, such as --allow-privileged=false or
+// a policy that could not evaluate, keeps its verdict (D147).
+func Mutated(err error) bool { return Classify(err).Hint == hintMutated }
 
 // Classify reads the cluster's answer to a dry-run probe with the rules of DESIGN.md section 5,
 // in order, first match wins. nil means the probe was accepted: FAIL on layer "-", and the caller
@@ -88,6 +102,11 @@ func Classify(err error) Outcome {
 		return Outcome{report.Skip, "-", full, hintQuota}
 	case decided && (strings.Contains(msg, " usage per Container is ") || strings.Contains(msg, " usage per Pod is ")): // LimitRanger, one violation or several in brackets
 		return Outcome{report.Skip, "-", full, hintLimitRange}
+	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, "privileged: Forbidden: disallowed by cluster policy"):
+		// kube-apiserver --allow-privileged=false refuses every privileged container at validation, for every identity.
+		return Outcome{report.Pass, LayerAPIServer, full, ""}
+	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, "cannot set `allowPrivilegeEscalation` to false and `privileged` to true"):
+		return Outcome{report.Skip, "-", full, hintMutated}
 	case s.Code == 400 || s.Code == 422:
 		return Outcome{report.Error, "-", full, hintMalformed}
 	}

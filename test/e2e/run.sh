@@ -4,7 +4,8 @@
 # fixtures, builds the plugin and runs it as the four identities of DESIGN.md section 8.
 # It asserts the verdict of all fourteen results (test/e2e/expected/run<N>.txt), the deciding
 # layer or reason of every check, the exit codes, the header lines, the notes that change a
-# reader's trust (D86, D105) and a fix line under every non-PASS.
+# reader's trust (D86, D105) and a fix line under every non-PASS. Two more runs print -o json,
+# validated against docs/report.schema.json, and -o policyreport, applied with --dry-run=server.
 #
 # Environment: E2E_CLUSTER (default audit-tenant-e2e); E2E_DELETE=1 deletes the cluster at the end.
 # Outputs land in bin/ (git-ignored). The user's own kubeconfig is never changed.
@@ -38,6 +39,11 @@ kubectl -n kyverno wait deployment -l app.kubernetes.io/component=admission-cont
 say "restrict-nodeport policy from kyverno/policies@${KYVERNO_POLICIES_COMMIT:0:7}, switched to Enforce"
 curl -sfL "https://raw.githubusercontent.com/kyverno/policies/$KYVERNO_POLICIES_COMMIT/best-practices/restrict-node-port/restrict-node-port.yaml" \
   | sed 's/validationFailureAction: Audit/validationFailureAction: Enforce/' | kubectl apply -f -
+
+say "PolicyReport CRD wgpolicyk8s.io/v1alpha2 (Kyverno's chart installs it; else the pinned upstream copy)"
+kubectl get crd policyreports.wgpolicyk8s.io >/dev/null 2>&1 \
+  || kubectl apply -f "https://raw.githubusercontent.com/kubernetes-sigs/wg-policy-prototypes/$POLICYREPORT_CRD_COMMIT/$POLICYREPORT_CRD_PATH"
+kubectl wait --for condition=established --timeout=60s crd/policyreports.wgpolicyk8s.io
 
 say "fixtures"
 kubectl apply -f test/e2e/fixtures/tenant-a.yaml
@@ -103,6 +109,7 @@ absent 2 'looks like a cluster admin' # self mode as a tenant: no hint
 
 for n in 1 2 4; do count "$n" '^PASS +AT-04\.[1-5] .* violates PodSecurity "restricted:latest"' 5; done # PSA applies to admins too
 for n in 1 2 3 4; do
+  absent "$n" '^warning: ' # D141: service accounts and the default --other-namespace need no warning
   verdicts "$n"
   count "$n" '^PASS +AT-05 .* admission webhook "validate\.kyverno\.svc-fail" denied' 1
   hints "$n"
@@ -138,5 +145,22 @@ count 3 '^FAIL +AT-09 .* namespace tenant-b has no pod-security\.kubernetes\.io/
 count 3 '^FAIL +AT-10 .* estimate: no ResourceQuota to compare against$' 1
 count 3 '^ +fix +add a ResourceQuota with no scopes .* \(see AT-06\)$' 1 # AT-10: no quota to compare against
 
-say "e2e: all four runs match (verdicts AT-01 to AT-10, layers and reasons, notes, exit codes, headers and hints)"
+# -o json (B23), as run 1's identity: the schema, the verdicts, and AT-10's fixture numbers, which the checklist cuts.
+run json 0 -n tenant-a --as system:serviceaccount:tenant-a:tenant-a-dev -o json
+go run "github.com/santhosh-tekuri/jsonschema/cmd/jv@$JV_VERSION" -f docs/report.schema.json bin/e2e-json.out || fail "-o json does not match docs/report.schema.json"
+jq -r '.results[] | "\(.verdict) \(.id)"' bin/e2e-json.out | diff -u test/e2e/expected/run1.txt - || fail "-o json: verdicts differ from test/e2e/expected/run1.txt"
+jq -e '.summary == {pass: 14, fail: 0, skip: 0, error: 0, exitCode: 0, results: 14, checks: 10}' bin/e2e-json.out >/dev/null || fail "-o json: the summary is not 14 passes over 10 checks"
+at10=$(jq -r '.results[] | select(.id == "AT-10") | .reason' bin/e2e-json.out)
+for want in 'requests.cpu 500m of 4,' 'requests.memory 640Mi of 8Gi,' 'limits.cpu 2500m of 8,' 'limits.memory 2560Mi of 16Gi,' 'pods 5 of 20 ' 'api 4->5 (HPA max)'; do
+  grep -qF "$want" <<<"$at10" || fail "-o json: the AT-10 reason lacks '$want': $at10"
+done
+
+# -o policyreport (B24), as run 1's identity: the API server accepts it under the CRD's schema and strict
+# field validation, as a dry run (the tool never writes it); one report per identity, all 14 results.
+run policyreport 0 -n tenant-a --as system:serviceaccount:tenant-a:tenant-a-dev -o policyreport
+applied=$(kubectl apply --dry-run=server -f bin/e2e-policyreport.out -o jsonpath='{.metadata.name} {.results[13].policy} {.summary.pass}') \
+  || fail "-o policyreport: kubectl apply --dry-run=server refused it (output above)"
+[[ "$applied" =~ ^audit-tenant-system-serviceaccount-tenant-a-tenant-a-dev-[0-9a-f]{32}\ AT-10\ 14$ ]] || fail "-o policyreport: applied '$applied', want the identity's report (D144 name) with 14 passes"
+
+say "e2e: all four runs, -o json and -o policyreport match (verdicts AT-01 to AT-10, layers and reasons, notes, exit codes, headers, hints and the schema)"
 if [ "${E2E_DELETE:-}" = 1 ]; then kind delete cluster --name "$cluster"; fi

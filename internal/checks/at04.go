@@ -13,7 +13,10 @@ import (
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/report"
 )
 
-const hintPSA = "set the namespace label pod-security.kubernetes.io/enforce=baseline (or restricted), or add a policy that blocks "
+const (
+	hintPSA             = "set the namespace label pod-security.kubernetes.io/enforce=baseline (or restricted), or add a policy that blocks "
+	hintAddedPrivileged = "a mutating webhook or policy made a container of the probe privileged and the API server refuses privileged containers (--allow-privileged=false), so this probe decides nothing; check which mutation adds privileged containers"
+)
 
 // at04Probes maps each AT-04 result to its probe forms (all must be rejected for a PASS), to what
 // a FAIL says, and to the note on what a PASS did not test (D78, D86).
@@ -51,7 +54,8 @@ const (
 
 // at04 follows DESIGN.md section 5: RBAC first by SSAR, so a probe rejection is never RBAC; then a
 // compliant control pod, verified as a dry run (D79); then the dry-run probes of each selected
-// result (AT-04.1 sends two forms and keeps the worse verdict, D78).
+// result (AT-04.1 sends two forms and keeps the worse verdict, D78; a form that a mutating policy
+// made invalid decides nothing while another form decides, D138, and a PASS then says so, D143).
 func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result)) []report.Result {
 	ns := c.Namespace
 	may, err := can(ctx, c, question{verb: "create", resource: "pods", namespace: ns})
@@ -87,6 +91,7 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 	for i, r := range spec.Results {
 		p := at04Probes[r.ID]
 		var res report.Result
+		mutated, anyMutated := false, false // res is a form a mutation made invalid: any later form replaces it
 		for f, form := range p.forms {
 			pod := probe.ControlPod(size)
 			form(pod)
@@ -107,8 +112,14 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 					return append(out, stored...) // no probe after one the server kept (D84)
 				}
 			}
-			if got := probed(spec, r, err, p.accepted, p.hint, prove); f == 0 || worse[got.Verdict] > worse[res.Verdict] {
-				res = got
+			got := probed(spec, r, err, p.accepted, p.hint, prove)
+			if got.Layer == probe.LayerAPIServer && r.ID != "AT-04.1" { // only the privileged probe is proven by it (D143)
+				got = spec.result(r, report.Skip, "-", got.Reason, hintAddedPrivileged)
+			}
+			neutral := probe.Mutated(err)
+			anyMutated = anyMutated || neutral
+			if f == 0 || mutated || (!neutral && worse[got.Verdict] > worse[res.Verdict]) {
+				res, mutated = got, neutral
 			}
 			if res.Verdict == report.Fail {
 				break // proven; another form would be one more dangerous request (D84)
@@ -116,6 +127,9 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		}
 		if res.Verdict == report.Pass {
 			res.Note = p.limit
+			if anyMutated {
+				res.Note += "; one privileged form was changed by a mutating policy and never reached a security gate" // D143
+			}
 		}
 		out = append(out, res)
 	}

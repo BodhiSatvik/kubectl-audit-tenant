@@ -1,0 +1,17 @@
+namespace team-a | as team-a-dev (groups: team-a, system:authenticated) | cluster kind-dev
+
+PASS  AT-01    MTB-PL1-CC-CPI-1  RBAC                                   No cluster-scoped access            RBAC denied all 4 actions
+PASS  AT-04.1  MTB-PL1-BC-CPI-5  API server (allow-privileged=false)    Privileged container blocked        spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy
+      note     tested in a regular container only (not initContainers or ephemeral containers)
+PASS  AT-04.2  MTB-PL1-BC-HI-1   admission (PSA)                        hostPath volume blocked             violates PodSecurity "restricted:latest": hostPath volumes (volume "host")
+PASS  AT-04.3  MTB-PL1-BC-HI-4   admission (webhook: evil.example.com)  hostPID blocked                     line one; line two
+PASS  AT-04.4  MTB-PL1-BC-HI-3   admission (policy: deny-host-network)  hostNetwork blocked                 ValidatingAdmissionPolicy 'deny-host-network' with binding 'b' denied request: no host network
+PASS  AT-05    MTB-PL1-BC-HI-1   admission (quota: no-nodeports)        NodePort services blocked           exceeded quota: no-nodeports, requested: services.nodeports=1, used: services.nodeports=0, limited: services.nodeports=0
+PASS  AT-06    MTB-PL1-CC-FNS-1  config                                 ResourceQuota present and complete  ResourceQuota tenant-a-quota has no scopes and sets all five keys
+SKIP  AT-09    -                 -                                      Pod Security Admission enforced     cannot read namespace labels (forbidden)
+      fix      grant `get` on namespace team-a to this identity, or run with --as <admin>
+FAIL  AT-10    -                 config                                 Quota covers rollout peak           estimate: tenant-a-quota requests.cpu: peak needs 6, hard is 4, short by 2 (deployments: api 3->4, worker 2->3); tenant-a-quota pods: peak needs 24, hard is 20, short by 4
+      fix      raise the quota, or lower replicas or maxSurge
+
+7 passed | 1 failed (AT-10) | 1 skipped (AT-09) | 0 errors | exit 1
+machine output: -o json, -o policyreport

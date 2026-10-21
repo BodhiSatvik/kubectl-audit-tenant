@@ -12,7 +12,7 @@ type Request struct {
 	Path     string // path and query
 	Status   int    // 0 when no response came back
 	Duration time.Duration
-	Body     string // response body of POSTs (SSAR, SelfSubjectReview without userInfo.extra, dry-run); empty for GET
+	Body     string // POST answers: SSARs whole, SelfSubjectReview without userInfo.extra, create rejections whole, accepted creates as createSummary (D140, D145); empty for GET
 }
 
 // Recorder keeps every request of a run for --debug and the request budget.

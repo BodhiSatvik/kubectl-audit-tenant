@@ -451,3 +451,72 @@ func TestSafetySendsEachCreateOnce(t *testing.T) {
 		}
 	}
 }
+
+// D140, D145: a mutating webhook can inject values (env, tokens) into an accepted object, and users
+// paste --debug output into public issues, so the trace keeps only the metadata and the probe's
+// security fields of an accepted create: enough to see that a mutation removed a dangerous field.
+func TestSafetyShowsOnlyTheMetadataAndSecurityFieldsOfAnAcceptedCreate(t *testing.T) {
+	accepted := `{"kind":"Pod","apiVersion":"v1","metadata":{"name":"audit-tenant-probe-x7k2p","namespace":"tenant-a","uid":"u-1",` +
+		`"annotations":{"vault.example/token":"SENTINEL-ANNOTATION"}},"spec":{"hostPID":true,"containers":[{"name":"probe","image":"SENTINEL-IMAGE",` +
+		`"securityContext":{"privileged":false,"windowsOptions":{"gmsaCredentialSpec":"SENTINEL-GMSA"}},"env":[{"name":"TOKEN","value":"SENTINEL-ENV"}]}],` +
+		`"volumes":[{"name":"host","hostPath":{"path":"/"}},{"name":"creds","secret":{"secretName":"SENTINEL-SECRET"}}]},"status":{"phase":"Pending"}}`
+	for _, tt := range []struct {
+		name         string
+		status       int
+		body         string
+		want, hidden []string
+	}{
+		{"an accepted dry run", http.StatusCreated, accepted,
+			[]string{`"name":"audit-tenant-probe-x7k2p"`, `"uid":"u-1"`, `"kind":"Pod"`, `"hostPID":true`, `"securityContext":{"privileged":false}`,
+				`{"hostPath":{"path":"/"},"name":"host"}`, "other fields not shown"},
+			[]string{"SENTINEL", "Pending", "creds"}},
+		{"a NodePort Service", http.StatusCreated, `{"kind":"Service","metadata":{"name":"audit-tenant-probe-s1"},"spec":{"type":"NodePort","clusterIP":"SENTINEL"}}`,
+			[]string{`"type":"NodePort"`}, []string{"SENTINEL"}},
+		{"a stored object whose resourceVersion is a number", http.StatusCreated, `{"kind":"Pod","metadata":{"name":"x","resourceVersion":4711},"spec":{"x":"SENTINEL"}}`,
+			[]string{`"resourceVersion":4711`}, []string{"SENTINEL"}},
+		// Added by the /ship test coverage audit (Phase 4), pass 1.
+		// Value: protects=--debug shows an injected init container's name and gate fields, never its image, env or windowsOptions (D140, D145);
+		// fails_when=createSummary stops reading spec.initContainers or copies them whole; why_new=the rows above carry regular containers only;
+		// seam=none; no_claim=ephemeral containers, which a create cannot carry
+		{"an init container a webhook injected", http.StatusCreated, `{"kind":"Pod","metadata":{"name":"audit-tenant-probe-x7k2p"},"spec":{"initContainers":[{"name":"istio-init",` +
+			`"image":"SENTINEL-IMAGE","env":[{"name":"T","value":"SENTINEL-ENV"}],"securityContext":{"capabilities":{"add":["NET_ADMIN"]},"runAsUser":0,` +
+			`"windowsOptions":{"gmsaCredentialSpec":"SENTINEL-GMSA"}}}],"containers":[{"name":"probe"}]}}`,
+			[]string{`"initContainers":[{"name":"istio-init","securityContext":{"capabilities":{"add":["NET_ADMIN"]},"runAsUser":0}}]`}, []string{"SENTINEL"}},
+		{"an accepted answer that is not JSON", http.StatusOK, "SENTINEL plain text", []string{"not shown"}, []string{"SENTINEL"}},
+		{"a rejection", http.StatusForbidden, `{"kind":"Status","message":"pods \"audit-tenant-probe-x\" is forbidden: violates PodSecurity"}`,
+			[]string{"violates PodSecurity"}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := "/api/v1/namespaces/tenant-a/pods"
+			if strings.Contains(tt.body, `"Service"`) {
+				path = "/api/v1/namespaces/tenant-a/services"
+			}
+			srv := testutil.NewServer(t, map[string]http.HandlerFunc{"POST " + path: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = io.WriteString(w, tt.body)
+			}})
+			base, _ := url.Parse(srv.URL)
+			rec := &safety.Recorder{}
+			client := &http.Client{Transport: &safety.Transport{Namespace: ns, Base: base, Next: http.DefaultTransport, Recorder: rec, Unverified: &atomic.Bool{}}}
+			resp, err := client.Post(srv.URL+path+"?dryRun=All", "application/json", strings.NewReader("{}"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, _ := io.ReadAll(resp.Body); string(got) != tt.body {
+				t.Errorf("the client must still get the whole answer; got %q", got)
+			}
+			_ = resp.Body.Close()
+			reqs := rec.Requests()
+			for _, w := range tt.want {
+				if !strings.Contains(reqs[0].Body, w) {
+					t.Errorf("trace body %q lacks %q", reqs[0].Body, w)
+				}
+			}
+			for _, h := range tt.hidden {
+				if strings.Contains(reqs[0].Body, h) {
+					t.Errorf("trace body %q shows %q", reqs[0].Body, h)
+				}
+			}
+		})
+	}
+}
