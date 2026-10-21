@@ -80,9 +80,10 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		"kubectl label --overwrite namespace "+ns+" "+psaEnforce+"=restricted (baseline also passes, but does not block AT-04.5)")}
 }
 
-// at04Admission returns the layers of AT-04's results when admission rejected every AT-04 probe
-// (each result a PASS by an admission layer), in order and without repeats; otherwise nil. A run
-// that skipped some of AT-04 cannot speak for every probe (D110).
+// at04Admission returns the layers of AT-04's results when admission, or the API server's
+// --allow-privileged=false (D143), rejected every AT-04 probe (each result a PASS by such a layer),
+// in order and without repeats; otherwise nil. A run that skipped some of AT-04 cannot speak for
+// every probe (D110).
 func at04Admission(earlier []report.Result) []string {
 	var layers []string
 	probes := 0
@@ -90,7 +91,7 @@ func at04Admission(earlier []report.Result) []string {
 		if !strings.HasPrefix(r.ID, "AT-04.") {
 			continue
 		}
-		if r.Verdict != report.Pass || !strings.HasPrefix(r.Layer, "admission") {
+		if r.Verdict != report.Pass || !strings.HasPrefix(r.Layer, "admission") && r.Layer != probe.LayerAPIServer {
 			return nil
 		}
 		probes++

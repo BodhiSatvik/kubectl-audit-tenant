@@ -42,7 +42,7 @@ type Result struct {
 	MTB      string   `json:"mtb"` // "-" when the check has no MTB ID
 	Severity Severity `json:"severity"`
 	Verdict  Verdict  `json:"verdict"`
-	Layer    string   `json:"layer"` // RBAC, admission (...), config, or "-"
+	Layer    string   `json:"layer"` // RBAC, admission (...), API server (allow-privileged=false), config, or "-" (DESIGN.md section 6)
 	Reason   string   `json:"reason"`
 	Hint     string   `json:"hint"`
 	Note     string   `json:"note,omitempty"` // what the check did not test; printed on its own line, never cut (D86)

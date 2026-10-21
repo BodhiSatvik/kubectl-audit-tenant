@@ -51,6 +51,8 @@ func TestAT09(t *testing.T) {
 	psaAndPolicy[4].Layer = "admission (webhook: validate.kyverno.svc-fail)"
 	mixed := at04Passed("admission (PSA)")
 	mixed[2].Verdict = report.Fail
+	apiServerThenPSA := at04Passed("admission (PSA)")
+	apiServerThenPSA[0].Layer = probe.LayerAPIServer
 	tests := []struct {
 		name    string
 		labels  string
@@ -82,6 +84,9 @@ func TestAT09(t *testing.T) {
 			result(report.Fail, "config", missing, failHint, "")},
 		{"missing label, AT-04 shows PSA and a policy engine together: PSA proves a cluster default (D122)", `{}`, denyBoth, psaAndPolicy,
 			result(report.Fail, "config", missing+"; AT-04 shows admission (PSA), admission (webhook: validate.kyverno.svc-fail) blocking every probe anyway, so a cluster-wide default level applies; the label is what states the level on the namespace", failHint, "")},
+		// D143: --allow-privileged=false refuses AT-04.1 for everyone; PSA on the rest still proves a cluster default.
+		{"missing label, AT-04.1 refused by the API server and the rest by PSA", `{}`, denyBoth, apiServerThenPSA,
+			result(report.Fail, "config", missing+"; AT-04 shows API server (allow-privileged=false), admission (PSA) blocking every probe anyway, so a cluster-wide default level applies; the label is what states the level on the namespace", failHint, "")},
 		{"missing label, AT-04 partly skipped cannot speak for every probe (D110)", `{}`, denyBoth, at04Passed("admission (PSA)")[:4],
 			result(report.Fail, "config", missing, failHint, "")},
 		{"restricted pinned to an old version: the note says checks added later are not enforced (D125)", `{"pod-security.kubernetes.io/enforce":"restricted","pod-security.kubernetes.io/enforce-version":"v1.7"}`, denyBoth, nil,
@@ -191,8 +196,13 @@ func TestAT04AdmissionReadsEveryClassifyAdmissionLayer(t *testing.T) {
 		`pods "p" is forbidden: violates PodSecurity "restricted:latest": privileged`,
 		`admission webhook "validate.kyverno.svc-fail" denied the request: blocked`,
 		`ValidatingAdmissionPolicy 'no-priv' with binding 'b' denied request: blocked`,
+		`Pod "p" is invalid: spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy`, // D143
 	} {
-		o := probe.Classify(&apierrors.StatusError{ErrStatus: metav1.Status{Code: http.StatusForbidden, Message: msg}})
+		code := int32(http.StatusForbidden)
+		if strings.HasPrefix(msg, "Pod ") {
+			code = http.StatusUnprocessableEntity
+		}
+		o := probe.Classify(&apierrors.StatusError{ErrStatus: metav1.Status{Code: code, Message: msg}})
 		var earlier []report.Result
 		for _, r := range at04Results {
 			earlier = append(earlier, report.Result{ID: r.ID, Verdict: o.Verdict, Layer: o.Layer})

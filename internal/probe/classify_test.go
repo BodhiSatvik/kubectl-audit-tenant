@@ -67,8 +67,8 @@ func TestClassifyEveryRuleOnARealServerString(t *testing.T) {
 		{"quota-must-specify", report.Skip, "-", `pods "audit-tenant-probe-b6zp4" is forbidden: failed quota`, "ResourceQuota"},
 		{"limitrange-min", report.Skip, "-", `pods "audit-tenant-probe-vxbn5" is forbidden: minimum cpu`, "LimitRange"},
 		{"limitrange-max", report.Skip, "-", `pods "audit-tenant-probe-688lv" is forbidden: maximum memory`, "LimitRange"},
-		{"allow-privileged", report.Pass, "API server (allow-privileged=false)", "spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy", ""},
-		{"privileged-escalation-false", report.Skip, "-", `Pod "audit-tenant-probe-8f4bk" is invalid`, "set allowPrivilegeEscalation: false"},
+		{"allow-privileged", report.Pass, "API server (allow-privileged=false)", `Pod "audit-tenant-probe-xtfqk" is invalid: spec.containers[0].securityContext.privileged: Forbidden`, ""},
+		{"privileged-escalation-false", report.Skip, "-", `Pod "audit-tenant-probe-8f4bk" is invalid`, "together with allowPrivilegeEscalation: false"},
 		{"bad-request", report.Error, "-", `Pod in version "v1" cannot be handled as a Pod`, "a bug in audit-tenant"},
 		{"other", report.Error, "-", `pods is forbidden: User "system:serviceaccount:tenant-a:default" cannot create resource "pods"`, "does not recognize"},
 	}
@@ -100,6 +100,25 @@ func TestClassifyLayersAreInTheVocabulary(t *testing.T) {
 	for id, err := range messages(t) {
 		if l := Classify(err).Layer; !layers.MatchString(l) {
 			t.Errorf("%s: layer %q is not in the DESIGN.md section 6 vocabulary", id, l)
+		}
+	}
+}
+
+func TestMutatedFollowsTheClassifierRuleOrder(t *testing.T) {
+	// D147: only rule 4c makes a form neutral; an earlier rule that sees the same text keeps its verdict.
+	const text = "cannot set `allowPrivilegeEscalation` to false and `privileged` to true"
+	for _, tt := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"the mutation alone", statusError(http.StatusUnprocessableEntity, "Invalid", `Pod "p" is invalid: spec.containers[0].securityContext: Invalid value: {}: `+text), true},
+		{"with --allow-privileged=false", statusError(http.StatusUnprocessableEntity, "Invalid", `Pod "p" is invalid: [spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy, spec.containers[0].securityContext: Invalid value: {}: `+text+`]`), false},
+		{"quoted by a policy that could not evaluate", statusError(http.StatusUnprocessableEntity, "Invalid", `pods "p" is forbidden: ValidatingAdmissionPolicy 'x' with binding 'b' denied request: expression 'e' resulted in error: `+text), false},
+		{"in a 400", statusError(http.StatusBadRequest, "BadRequest", text), false},
+	} {
+		if got := Mutated(tt.err); got != tt.want {
+			t.Errorf("%s: Mutated = %v, want %v", tt.name, got, tt.want)
 		}
 	}
 }
@@ -266,6 +285,19 @@ func TestClassifyAPolicyThatCannotEvaluateIsAnError(t *testing.T) {
 	} {
 		if got := Classify(statusError(http.StatusUnprocessableEntity, "Invalid", msg)); got.Verdict != report.Error || !strings.Contains(got.Hint, "ValidatingAdmissionPolicy") {
 			t.Errorf("Classify(%q) = %+v, want ERROR with a policy hint, never a PASS", msg, got)
+		}
+	}
+}
+
+// Added by the /ship test coverage audit (Phase 4), pass 1.
+// Value: protects=rule 4b (a PASS on the API server layer) reads only the API server's 422 validation answer (DESIGN.md section 5, D138);
+// fails_when=rule 4b's 422 guard is widened to any 4xx, so a 400 or 403 quoting the text becomes a false PASS; why_new=every row sends that text as a 422;
+// seam=none; no_claim=which components send such a 400 or 403
+func TestClassifyAllowPrivilegedTextOutsideA422DecidesNothing(t *testing.T) {
+	const msg = `Pod "audit-tenant-probe-x" is invalid: spec.containers[0].securityContext.privileged: Forbidden: disallowed by cluster policy`
+	for _, code := range []int32{http.StatusBadRequest, http.StatusForbidden} {
+		if got := Classify(statusError(code, "", msg)); got.Verdict != report.Error {
+			t.Errorf("HTTP %d %q = %+v, want ERROR: only the API server's 422 proves --allow-privileged=false", code, msg, got)
 		}
 	}
 }
