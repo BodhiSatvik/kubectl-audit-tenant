@@ -141,7 +141,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - Verify: `go test ./internal/checks/ -run 'Hints|ListChecks'`; `make safety`.
   - Depends on: B21. Files: `internal/checks/hints_test.go`, `internal/safety/transport_test.go`.
 
-**Checkpoint 5:** `make check-full` green in CI (vet, lint, unit, safety, floor guard, govulncheck, envtest, e2e, bench); CONSTRAINTS.md "Measured" table filled with the first real numbers.
+**Checkpoint 5:** the CI `check` job (vet, lint, unit, safety, govulncheck, envtest) and `e2e` job (e2e, bench) green; the `floor-guard` job red only for the D164 findings Satvik has read; CONSTRAINTS.md "Measured" table filled with the first real numbers.
 
 ### Phase 6: docs and release
 
@@ -159,6 +159,28 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - Depends on: B27, B28, B29, B30. Files: `CONSTRAINTS.md`, `TODOS.md`, release assets.
 
 **Checkpoint 6 (v0.1.0):** every acceptance criterion met; `evidence/` row in the lab for the first outside install when it happens.
+
+### Phase 5 /review (2026-10-21)
+
+Found by the Phase 5 /review: three cycles, each with six specialists, Red Team, Claude adversarial and Codex adversarial and structured. Decided and done in this branch:
+- D160: keep D158 (a Measured row's Today cell is a record), with its bypasses closed.
+- D161: a worse Today record is loud; D165: a "stays under N" record is worse only at N.
+- D162: the envtest binaries and their release index are pinned.
+- D163: one source for the e2e budgets (`test/e2e/budgets.sh` reads CONSTRAINTS.md); the `envtest` lint tag stays global on purpose, so lint checks `test/envtest` on every edit (about 2 s more on a cold `make check-fast`).
+- D164: cycles 1 and 2 found about 46 ways past line-by-line rules, so the floor guard fails closed on any change to CONSTRAINTS.md and the gate files; it runs in its own CI job, which also runs the base commit's copy. Cycle 3 closed the rest it found: comment lines, carriage returns, quoted paths, unit changes, more gate files and an isolated Python run.
+
+Open:
+- [ ] B26 and B27 were ticked on local runs; confirm the `make envtest` step (`check` job) and the `make bench` step (`e2e` job) green on the PR's first CI run.
+- [ ] A pull request still runs its own copy of `ci.yml`, so it can drop the `floor-guard` job. Only a required workflow or ruleset that the branch cannot edit (or a `pull_request_target` job that runs no branch code) makes "the base copy judges" hold (Claude adversarial, cycle 3; Satvik's GitHub settings, B31).
+- [ ] The request budget counts lines of the `--debug` trace, which `internal/cli/run.go` prints; that file is not protected, so a change to the printer changes the count. Count in `internal/safety` (the Recorder) or at the API server (Claude adversarial, cycle 3; B31).
+- [ ] A Measured record's reference moves with each new record: coverage can fall 0.5 points per pull request, and a size can grow 10% per pull request within one minor release. Judge coverage against its best record and size against the last release tag's record (state-machines and Codex, cycle 3; B31).
+- [ ] Outside the protected paths, a weakened test still passes the guard: an early `return`, a looser `if`, or a table row removed from a test that stays (only removed assertion calls, skips and build tags are caught). Decide whether `internal/` test files join the protected set or each test reports what it checked (Claude adversarial, cycle 2; B31).
+- [ ] Run 1's identity uses 40 of 40 requests, and client-go retries count, so one 429 or webhook 5xx retry fails e2e and bench with no code change. Count first attempts apart from retries, or win requests back (Red Team, cycle 2; B31 question-set pass).
+- [ ] A Measured record that is never updated always passes: coverage can fall below its Today value with no finding. Have `hack/coverage-gate.sh` read the coverage Today cell and fail past the tolerance (Red Team, cycle 2; B31).
+- [ ] The CI bench rows name the pull request's merge commit, which disappears; run bench on pushes to main with the commit as `BENCH_VERSION`, and copy those rows (Red Team, cycle 2; B31).
+- [ ] CI downloads the envtest binaries (about 170 MB) on every run; cache them with `actions/cache` keyed on the setup-envtest version and `ENVTEST_K8S` (performance; B31 with the D43 pinning pass).
+- [ ] On a push to main the floor guard diffs main against itself and passes, so the bar on main rests on branch protection: make `ci` and `e2e` required checks before the public release (Claude adversarial; Satvik's GitHub setting, B31).
+- [ ] `make bench` counts writes from the `--debug` trace, which holds only allowlisted requests; an object stored by a hop that drops `dryRun=All` (D79) would not show. Count the pods and Services in tenant-a before and after the runs if the "0 writes" row is to be evidence of that (Claude adversarial; B31).
 
 ### Phase 4 /review (2026-10-21)
 
@@ -230,7 +252,7 @@ Found by /ponytail-review, gstack /review (specialists, Red Team, Claude adversa
 - [ ] AT-08 does not ask whether the identity may delete, update or patch the deny policies, the gap D105 closed for AT-09's label; a PASS note like D105's (Claude adversarial; B22 or later).
 - [ ] AT-09 passes on the label alone even when the same run's AT-04 shows PSA did not enforce it (an exempt namespace or user); a note or FAIL from `spec.earlier` (Red Team; needs a decision).
 - [ ] AT-10 compares only unscoped quotas; a scoped quota that matches every counted pod (NotTerminating, NotBestEffort, a matching PriorityClass) can be tighter and block the rollout. Evaluate scopes against the pod templates, or note the skipped scoped quotas (Red Team; v0.2 with Argo Rollouts).
-- [ ] AT-10 counts a Deployment scaled to 0 with an HPA at maxReplicas plus surge, though the HPA does not scale a target at 0 (Claude adversarial; KEDA scales such targets back up, so decide with B27).
+- [ ] AT-10 counts a Deployment scaled to 0 with an HPA at maxReplicas plus surge, though the HPA does not scale a target at 0 (Claude adversarial; KEDA scales such targets back up, so decide with B27). B27 closed without it: decide in the B31 spec pass (Phase 5 /review).
 
 ### Phase 3 /ship review (2026-10-20)
 
@@ -243,7 +265,7 @@ Found by the /ship re-review (specialists, Red Team, kind QA smoke) and its Step
 - [x] Small: the AT-04 probe count comes from `at04Results`; the PSA layer is `probe.LayerPSA`; the e2e budget gate also fails when it counts no requests; comment and doc fixes.
 - [x] Cycle 2 (D125, D126): AT-09 notes a pinned enforce-version other than latest (restricted at v1.7 admitted the AT-04.5 pod on kind while AT-09 passed); AT-10 counts spec.replicas raised to the largest minReplicas when several HPAs target one workload, since the controller scales none (AmbiguousSelector on kind), and names them in the note. Small: test rows for an alias quota's PASS text, the limit-side default credit, realistic LimitRange fixtures, AT-09 reading Classify's real layers; ADR 0006 and the TODOS request count.
 - [x] Cycle 3 (D128): the AT-10 note names what the peak counts (Deployments and StatefulSets at template sizes) and what it does not (other workloads, sizes set at admission). The "several HPAs" clause names at most three workloads (D114 rule); stale comments fixed.
-- [ ] D129: the HPA controller also stops scaling HPAs whose targets' pods overlap by labels (web's app=web selector matching web-v2's pods); AT-10 counts each at its maxReplicas and can FAIL falsely. Detect overlapping selectors across counted workloads (with B27).
+- [ ] D129: the HPA controller also stops scaling HPAs whose targets' pods overlap by labels (web's app=web selector matching web-v2's pods); AT-10 counts each at its maxReplicas and can FAIL falsely. Detect overlapping selectors across counted workloads (with B27). B27 closed without it: decide in the B31 spec pass (Phase 5 /review).
 - [ ] The /ship review stopped at its 3-cycle cap without converging (D131): cycle 1 fixed 4 kind-confirmed defects, cycle 2 two, cycle 3 only wording; each cycle found smaller AT-10/AT-09 edges. Expect the same class in Phase 4 reviews.
 - [x] D132 (after the cap; no full panel read it again): a pod that sets any pod-level request or limit skips quota admission's "must specify" check, so AT-10 no longer FAILs it as refused, though unreadable LimitRanges still SKIP it, since LimitRanger fills its containers (a regression in the first D132 commit, found by the Codex adversarial re-run); a pod-level limit with a container request of 0 takes 0 as the pod's request, not the limit (Claude adversarial and Codex, both from upstream source).
 - [ ] D133: quota admission compares usage with `status.hard`, but AT-06 and AT-10 read `spec.hard`; the two differ until the quota controller syncs a new `spec.hard` (Claude adversarial).

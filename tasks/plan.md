@@ -65,7 +65,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B28 Floor tests over the registry
 
 ### Checkpoint 5
-- [ ] `make check-full` green in CI; CONSTRAINTS.md measured values recorded
+- [ ] CI `check` and `e2e` jobs green, `floor-guard` red only for the D164 findings Satvik has read; CONSTRAINTS.md measured values recorded
 
 ### Phase 6: docs and release
 - [ ] B29 README
