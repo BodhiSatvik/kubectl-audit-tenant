@@ -12,6 +12,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
   - AC: quick start works on a clean machine with Docker, kind and kubectl in five minutes (acceptance criterion 9); `hack/check-public.sh` passes.
   - Verify: fresh-machine run (Satvik or a clean VM); `make check-fast`.
   - Depends on: B21, B25. Files: `README.md`.
+  - Status (2026-10-22): built on `phase-6-docs`. `hack/check-public.sh` and `make check-fast` pass. The quick start, run word for word on this Mac with a local build in place of the release, took 17 s (node image cached) and printed the verdicts the README shows. Open: the clean-machine run with a release install, after v0.1.0 exists (Satvik or a clean VM).
 - [ ] **B30 Citation, changelog, diagrams.** `CITATION.cff` with the paper DOI; `CHANGELOG.md` v0.1.0 entry; re-render `docs/diagrams/architecture.{svg,png,excalidraw}` from the updated `.mmd` (admission label); GLOSSARY.md: deciding layer gains "policy".
   - AC: CFF validates; SVG shows "PSA, webhook or policy".
   - Verify: `cffconvert --validate` or GitHub's CFF check; visual check of the SVG.
@@ -29,14 +30,7 @@ The review sections of Phases 1 to 5 are sorted here by what they block. Each it
 
 #### 1. README (card B29)
 
-Documentation gaps the reviews sent to the README.
-- [ ] P4 /review: `-o policyreport` keeps the gate exit codes (1 on a FAIL, 2 on an ERROR), so `kubectl audit-tenant -o policyreport > r.yaml && kubectl apply -f r.yaml` or a `set -e` CI step never applies a report with a FAIL, and the dashboard keeps the last clean report. Show the apply idiom `kubectl audit-tenant -o policyreport | kubectl apply -f -` and say the exit code follows ADR 0004 for every format in the README and the `-o` help (/ship review, Red Team; B29). Deferred to B29 by D152.
-- [ ] P4 /review: A PolicyReport lives in the audited namespace; a tenant that may write `policyreports.wgpolicyk8s.io` there can rewrite its own FAIL to PASS. Check the Kyverno chart's aggregated roles, then document it in the README's "what a PASS does not prove" or write to another namespace or a ClusterPolicyReport (Claude adversarial; B29 or B31).
-- [ ] P4 /ship pass 3: An admin's self-mode PolicyReport, applied in the tenant namespace, shows the admin's username and identity provider groups to every subject that may read PolicyReports there (Kyverno's aggregated view role) (Claude adversarial). Document it, or refuse `-o policyreport` when the admin hint fires.
-- [ ] P4 /ship pass 3: Client-side `kubectl apply` copies the report into the `last-applied-configuration` annotation; long messages over 14 results can pass the 256 KiB annotation limit. Document `--server-side` or cap `message` (Claude adversarial).
-- [ ] P1 /ship: `hack/check-public.sh` passes when `git ls-files` fails (not a checkout); make it fail closed (B29).
-- [ ] P2 /review: Pods a controller creates can pass under a PSA exemption that the tenant's own probes do not have; the README's "what a PASS does not prove" must say so (B29).
-- [ ] P2 /review: The no-rights anchor (D80) passes for a misspelled `--as` user when a cluster grants `list pods` to `system:authenticated` (B25 identity warnings, D87). D141 warns for a user impersonated without `--as-group`; a misspelled service account, or a user with `--as-group`, gets no warning, so the README must say it (B29).
+All seven items are done; they are in `_archive/TODOS-done.md`.
 
 #### 2. Decide before v0.1.0 (Satvik)
 
@@ -46,7 +40,7 @@ Each one fixes a public contract (the JSON schema, the PolicyReport, the identit
 - [ ] P4 /ship pass 3: `docs/report.schema.json` sets `additionalProperties: false` at every level, so any new field (a mode, the admin hint) breaks consumers that validate against a pinned schema; decide before v0.1.0 whether the top level and `identity` stay closed (Claude adversarial rerun).
 - [ ] P4 /ship pass 3: Check whether `wgpolicyk8s.io/v1alpha2` is still the report API recent Kyverno releases install, or whether `openreports.io/v1alpha1` replaces it, before the apiVersion is frozen at release (ADR 0008; Claude adversarial, not checked upstream).
 - [ ] P4 /ship pass 2: A PolicyReport does not record the mode, so alice's self-mode report and `--as alice --as-group devs` look alike on a dashboard; add an `audit-tenant.dev/mode` annotation and a `mode` result property (Red Team).
-- [ ] P4 /ship pass 3: The PolicyReport names no cluster. Since D154 the server URL is in the name, so a report from another cluster no longer replaces this one; the object still does not say which cluster it describes. Add `audit-tenant.dev/context` and `audit-tenant.dev/server` annotations, and pass the same context to `kubectl apply` in the README idiom (Red Team).
+- [ ] P4 /ship pass 3: The PolicyReport names no cluster. Since D154 the server URL is in the name, so a report from another cluster no longer replaces this one; the object still does not say which cluster it describes. Add `audit-tenant.dev/context` and `audit-tenant.dev/server` annotations, and pass the same context to `kubectl apply` in the README idiom (Red Team). The README part is done (B29); the annotations stay open.
 - [ ] P4 /ship pass 3: The admin hint ("this identity looks like a cluster admin") reaches only the checklist; `-o json` and `-o policyreport` carry no warning for it (Red Team, Claude adversarial). Add it to the warnings.
 - [ ] P4 /review: In self mode, identities whose username changes per session (EKS access entries name the session, `assumed-role/Role/<session>`) get a new PolicyReport each run, and old reports stay. Decide what "the same identity" means there (Claude adversarial, pass 2; B31).
 - [ ] P4 /ship pass 3: A run that hits `--timeout` still prints a PolicyReport; its unfinished checks become ERROR and replace the identity's full report, the harm D147 refuses for `--checks`. The timeout hint also says "run fewer checks with --checks", which `-o policyreport` refuses (Claude adversarial rerun).
