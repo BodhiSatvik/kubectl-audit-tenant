@@ -11,8 +11,8 @@ ENVTEST_INDEX := https://raw.githubusercontent.com/kubernetes-sigs/controller-to
 .PHONY: check-fast check check-full lint vet secrets unit coverage-gate safety floor-guard vuln envtest e2e bench e2e-delete clean-room
 
 check-fast: vet lint secrets
-check: check-fast unit safety floor-guard
-check-full: check vuln envtest clean-room # then e2e and bench in order: bench needs the cluster e2e leaves
+check: check-fast unit safety floor-guard vuln clean-room
+check-full: check envtest # then e2e and bench in order: bench needs the cluster e2e leaves
 	$(MAKE) e2e E2E_DELETE=
 	$(MAKE) bench || { $(MAKE) e2e-delete; exit 1; }
 	$(MAKE) e2e-delete
@@ -41,5 +41,5 @@ e2e:
 	test/e2e/run.sh
 bench:
 	test/e2e/bench.sh --self-test && test/e2e/bench.sh
-clean-room:
-	@if [ -x ../../scripts/clean-room-check.sh ]; then ../../scripts/clean-room-check.sh . ; else echo "clean-room: lab script not present here (maintainer step)"; fi
+clean-room: # the lab is three folders above the shared .git, so a worktree finds the script too
+	@lab="$$(git rev-parse --path-format=absolute --git-common-dir)/../../.."; if [ -x "$$lab/scripts/clean-room-check.sh" ]; then "$$lab/scripts/clean-room-check.sh" . ; else echo "clean-room: lab script not present here (maintainer step)"; fi
