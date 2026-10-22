@@ -30,8 +30,8 @@ kind create cluster --name audit-demo
 kubectl create namespace team-a
 kubectl create serviceaccount dev -n team-a
 kubectl create rolebinding dev-edit -n team-a --clusterrole=edit --serviceaccount=team-a:dev
-# a new cluster fills the built-in edit role a few seconds after it starts
-until kubectl auth can-i list pods -n team-a --as system:serviceaccount:team-a:dev >/dev/null; do sleep 1; done
+# on a cluster only seconds old, the role can take a few seconds to take effect
+for i in $(seq 30); do kubectl auth can-i list pods -n team-a --as system:serviceaccount:team-a:dev >/dev/null && break; sleep 1; done
 kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
 ```
 
@@ -179,7 +179,7 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 
 **SKIP**
 
-- `this identity may not even list pods in <namespace>`: check `-n`, `--as` and `--as-group`; the identity may be misspelled, miss its identity-provider prefix, or have no role in the namespace. On a cluster that started a few seconds ago, the built-in roles may still be empty; wait and run again.
+- `this identity may not even list pods in <namespace>`: check `-n`, `--as` and `--as-group`; the identity may be misspelled, miss its identity-provider prefix, or have no role in the namespace. On a cluster only seconds old, the tenant's role can take a few seconds to take effect; wait and run again.
 - `RBAC denies create pods but allows <verb> <kind>` (or the same for Services): run with `--as` an identity that may create pods (or Services), or confirm that AT-09 and your policy engine cover controller-created pods and changes to existing Services.
 - `the namespace rejects even a compliant pod` (or `a plain ClusterIP Service`): a gate refuses the compliant control probe, so the dangerous probes would prove nothing. The reason quotes the refusal; fix that first.
 - `webhook "<name>" cannot take a dry run`: ask its owner to set `sideEffects: NoneOnDryRun` in the webhook configuration.
