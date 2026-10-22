@@ -235,3 +235,11 @@ Found by the end-of-phase review (specialists, red team, Claude and Codex advers
 - [x] A misspelled `--other-namespace` gives a silent AT-02 PASS; a tenant cannot tell a missing namespace from a forbidden one. Warn when the name differs from common system namespaces, or document it (B25, D87). Done (D141): any value other than `kube-system` gets a `warning:` line.
 - [x] `-o json` and the B23 schema must carry each result's `note` (what it did not test, D86). Done: `note` is in the schema and the JSON golden.
 - [x] A mutating policy that sets `allowPrivilegeEscalation: false` when it is absent turns AT-04.1's first form into a 422 validation error, which reads as "a bug in audit-tenant" (ERROR, exit 2), and `worse` keeps it over the second form's verdict; an API server with `--allow-privileged=false` gives the same 422 for both forms. Read these 422 texts as their own outcomes (B22; /ship final review). Done (D138): `--allow-privileged=false` is PASS on the layer `API server (allow-privileged=false)` (captured on kind); the mutated form is SKIP and AT-04.1 lets the other form decide.
+
+### Closed in the sort of 2026-10-22
+
+Checked against the code on `phase-6-docs` (from `1778b02`). One more item was merged into its Phase 2 twin (the accepted-probe mutation item, now in `TODOS.md` group 7).
+- [x] B26 and B27 were ticked on local runs; confirm the `make envtest` step (`check` job) and the `make bench` step (`e2e` job) green on the PR's first CI run. Done: PR #7's first CI run has `check` (it runs `make envtest`) and `kind` (it runs `make bench`) green.
+- [x] This file's "Phase 4 /review" header names D143 to D146 only; the two deferred items there do not name D150 and D152 (maintainability). Done: the sort gave each item its own decision id (D150 and D152).
+- [x] The /ship review stopped at its 3-cycle cap without converging (D131): cycle 1 fixed 4 kind-confirmed defects, cycle 2 two, cycle 3 only wording; each cycle found smaller AT-10/AT-09 edges. Expect the same class in Phase 4 reviews. Closed: Phases 4 and 5 hit the same limit; the review stop rule (D166) replaces this note.
+- [x] A default run drops unbuilt checks without a line saying so; D28 trims the Registry at v0.1.0, or print "not in this build" until then (B31). Done: all ten checks have a `Run` function, so a default run drops none.
