@@ -258,6 +258,10 @@ func TestHelpStartsWithThePluginName(t *testing.T) {
 	if code != 0 || !strings.HasPrefix(stdout, "kubectl audit-tenant") || !strings.Contains(stdout, "--request-timeout") {
 		t.Errorf("--help: exit %d, stdout:\n%s", code, stdout)
 	}
+	// D152: `-o policyreport > r.yaml && kubectl apply -f r.yaml` never applies a report with a FAIL.
+	if !strings.Contains(stdout, "every format keeps the exit code") {
+		t.Errorf("--help: the -o help must say the exit code does not depend on the format; stdout:\n%s", stdout)
+	}
 }
 
 func TestDebugTraceIsPrintedWhenStartupFails(t *testing.T) {

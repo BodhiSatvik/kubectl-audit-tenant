@@ -160,7 +160,7 @@ Failure rules: a read that the API server refuses with HTTP 403 is a fact about 
 |---|---|
 | 0 | No FAIL and no ERROR. SKIPs allowed (default). |
 | 1 | At least one FAIL; or, with `--fail-on-skip`, at least one SKIP. `--fail-on-skip` is the opt-in gate for pipelines that must not accept an unproven namespace; the summary line then says "N skipped, counted as failures (--fail-on-skip)" and `-o json` reports the resulting `exitCode`. |
-| 2 | At least one ERROR and no FAIL; or the run could not start: bad flags (`--as-group` with no user to impersonate, from `--as` or the kubeconfig user's `as:`; unknown check ID, unknown `-o`; `-o policyreport` with `--checks` or `--skip`, D147), kubeconfig cannot load, API server unreachable, credentials rejected (401), impersonation refused, namespace not found, the identity may not create SelfSubjectAccessReviews, or `-o policyreport` in self mode when no SelfSubjectReview answer named the identity (D151). Each with a one-line reason and hint on stderr. |
+| 2 | At least one ERROR, no FAIL and (with `--fail-on-skip`) no SKIP; or the report could not be written; or the run could not start: bad flags (`--as-group` with no user to impersonate, from `--as` or the kubeconfig user's `as:`; unknown check ID, unknown `-o`; `-o policyreport` with `--checks` or `--skip`, D147), kubeconfig cannot load, API server unreachable, credentials rejected (401), impersonation refused, namespace not found, the identity may not create SelfSubjectAccessReviews, or `-o policyreport` in self mode when no SelfSubjectReview answer named the identity (D151). Each with a one-line reason and hint on stderr. |
 
 ### Checklist output (default, chosen in the spec session)
 
@@ -182,6 +182,8 @@ Rules: counts are per result, not per check family (ten checks produce fourteen 
 `-o wide` adds two columns after the ID: MTB ID and deciding layer (`RBAC`, `admission (PSA)`, `admission (webhook: kyverno-...)`, `admission (policy: <name>)`, `admission (quota: <name>)` (D68), `API server (allow-privileged=false)` (D138), `config`, `-`). MTB IDs match kubectl-mtb's benchmark configs (checked at `kubernetes-sigs/multi-tenancy` 44dad58 on 2026-10-20); upstream gives hostPath volumes and NodePort services the same ID. Its footer drops the `MTB IDs and layers: -o wide` pointer.
 
 ### JSON (`-o json`)
+
+An abridged example: it shows one of the fourteen results, with the summary of the full run.
 
 ```json
 {
