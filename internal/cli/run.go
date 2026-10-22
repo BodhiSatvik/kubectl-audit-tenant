@@ -41,7 +41,7 @@ func addRun(root *cobra.Command, streams genericiooptions.IOStreams, info BuildI
 	o := &runOptions{flags: genericclioptions.NewConfigFlags(true)}
 	o.flags.AddFlags(root.Flags())
 	f := root.Flags()
-	f.StringVarP(&o.output, "output", "o", "checklist", "output format: checklist, wide (adds MTB IDs and deciding layers, never cuts a reason), json or policyreport (a wgpolicyk8s.io/v1alpha2 PolicyReport to apply)")
+	f.StringVarP(&o.output, "output", "o", "checklist", "output format: checklist, wide (adds MTB IDs and deciding layers, never cuts a reason), json or policyreport (a wgpolicyk8s.io/v1alpha2 PolicyReport to apply); every format keeps the exit code, so a report with a FAIL exits 1")
 	f.BoolVar(&o.plain, "plain", false, "ASCII only: no color, no special characters")
 	f.BoolVar(&o.noColor, "no-color", false, "no color (NO_COLOR in the environment does the same)")
 	f.StringSliceVar(&o.checks, "checks", nil, "run only these check IDs (AT-04 selects its sub-checks; AT-04.2 one of them)")
