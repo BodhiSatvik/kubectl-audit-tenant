@@ -253,3 +253,11 @@ Checked against the code on `phase-6-docs` (from `1778b02`). One more item was m
 - [x] P1 /ship: `hack/check-public.sh` passes when `git ls-files` fails (not a checkout); make it fail closed (B29). Done in B29 (9152f69): the tree scan writes the file list first, so `set -e` stops outside a checkout; the self-test covers it.
 - [x] P2 /review: Pods a controller creates can pass under a PSA exemption that the tenant's own probes do not have; the README's "what a PASS does not prove" must say so (B29). Done in B29: "What a PASS does not prove" names it.
 - [x] P2 /review: The no-rights anchor (D80) passes for a misspelled `--as` user when a cluster grants `list pods` to `system:authenticated` (B25 identity warnings, D87). D141 warns for a user impersonated without `--as-group`; a misspelled service account, or a user with `--as-group`, gets no warning, so the README must say it (B29). Done in B29: "What a PASS does not prove" names it and tells the reader to check the header line.
+
+### Phase 6: docs and release
+
+- [x] **B30 Citation, changelog, diagrams.** `CITATION.cff` with the paper DOI; `CHANGELOG.md` v0.1.0 entry; re-render `docs/diagrams/architecture.{svg,png,excalidraw}` from the updated `.mmd` (admission label); GLOSSARY.md: deciding layer gains "policy".
+  - AC: CFF validates; SVG shows "PSA, webhook or policy".
+  - Verify: `cffconvert --validate` or GitHub's CFF check; visual check of the SVG.
+  - Depends on: none. Files: `CITATION.cff`, `CHANGELOG.md`, `docs/diagrams/*`, `GLOSSARY.md`.
+  - Done (2026-10-22): `CITATION.cff` passes the CFF 1.2.0 JSON Schema (0 errors); `CHANGELOG.md` has the v0.1.0 entry (date set at the tag); the diagram triplet is re-rendered with gstack `/diagram` and the SVG and PNG show "PSA, webhook or policy"; the GLOSSARY deciding layer names the policy and quota gates.
