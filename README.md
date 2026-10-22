@@ -243,7 +243,7 @@ Many results have a `note` line that names what that check did not test.
 
 ## Troubleshooting
 
-Run again with `--debug` and paste the stderr into the issue. `--debug` prints one line per API request, the identity steps and the server's answers; it never prints request headers. Read it before you paste it.
+Run again with `--debug` and paste the stderr into the issue. `--debug` prints one line per API request, the identity steps and the server's answers; it never prints request headers. Read it before you paste it. For a security problem, do not open a public issue: see [SECURITY.md](SECURITY.md).
 
 **The run did not start (exit 2)**
 
@@ -316,6 +316,7 @@ Issues and pull requests are welcome. For a change in behavior, open an issue fi
 - `make check` runs vet, lint, a secret scan, the unit tests, the safety replay and the floor guard. Run it before you open a pull request.
 - `make e2e` builds a kind cluster with Kyverno and asserts every verdict for four identities; `make bench` then measures.
 - The quality bar is in [CONSTRAINTS.md](CONSTRAINTS.md), the spec in [DESIGN.md](DESIGN.md), and the changes per release in [CHANGELOG.md](CHANGELOG.md).
+- Report security problems privately, as [SECURITY.md](SECURITY.md) says.
 
 ## Using it? Tell us
 

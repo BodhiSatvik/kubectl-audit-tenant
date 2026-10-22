@@ -43,7 +43,7 @@ Each one fixes a public contract (the JSON schema, the PolicyReport, the identit
 
 #### 3. Release and repository settings (card B31)
 
-- [ ] Docs review (Codex, 2026-10-22): no `SECURITY.md`, so a security problem in the tool (or `--debug` output with sensitive server text) has no private reporting route. Satvik picks the route (GitHub private vulnerability reporting once the repo is public, or an address); then add `SECURITY.md` and link it from the README's Troubleshooting (B31).
+- [ ] Turn on GitHub private vulnerability reporting (Settings, Security) when the repo goes public. `SECURITY.md` already points reporters there (D168, 2026-10-22; Satvik, B31 with TASK-58).
 - [ ] P1 /ship: Release: goreleaser `release.draft: true`, publish only after the krew-install job passes; check the krew download checksum; release only tags on main (B31). GitHub Actions SHA pinning (D43) before the public release.
 - [ ] P1 /ship: Teleport-style access proxies (D57) are covered by unit tests only; try one live before the release (B31).
 - [ ] P5 /review: A pull request still runs its own copy of `ci.yml`, so it can drop the `floor-guard` job. Only a required workflow or ruleset that the branch cannot edit (or a `pull_request_target` job that runs no branch code) makes "the base copy judges" hold (Claude adversarial, cycle 3; Satvik's GitHub settings, B31).
