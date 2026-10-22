@@ -12,7 +12,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - Package layout (Original arrangement, D4): `cmd/`, `internal/{cli,cluster,safety,checks,probe,headroom,report}`, `test/{envtest,e2e}`.
 - Quality bar: `CONSTRAINTS.md` (D30–D33). Every task ends with `make check` green.
 
-## Task list (index; cards in TODOS.md)
+## Task list (index; open cards in TODOS.md, done cards in _archive/TODOS-done.md)
 
 ### Phase 1: walking skeleton
 - [x] B1 Module, tooling and CI
@@ -60,12 +60,12 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] Five printers golden-tested; schema and PolicyReport pass in e2e (2026-10-21 at cb82f89: goldens for checklist, plain, color, wide and wide-plain, json, policyreport and the --debug stderr trace; e2e runs 1-4 plus -o json validated against the schema and -o policyreport applied with --dry-run=server, 40/40/31/34/40/40 requests; CI check and kind green; D142 to D156)
 
 ### Phase 5: integration layer, benchmark and floor tests
-- [ ] B26 envtest layer
-- [ ] B27 Benchmark
-- [ ] B28 Floor tests over the registry
+- [x] B26 envtest layer
+- [x] B27 Benchmark
+- [x] B28 Floor tests over the registry
 
 ### Checkpoint 5
-- [ ] `make check-full` green in CI; CONSTRAINTS.md measured values recorded
+- [ ] CI `check` and `e2e` jobs green, `floor-guard` red only for the D164 findings Satvik has read; CONSTRAINTS.md measured values recorded
 
 ### Phase 6: docs and release
 - [ ] B29 README

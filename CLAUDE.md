@@ -15,7 +15,7 @@ Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pas
 ## Tools
 
 - gstack: `/office-hours` → `/plan-ceo-review` → `/plan-eng-review` → build → `/review` + `/codex` → `/qa` → `/ship`.
-- Matt Pocock's skills: run `/mattpocock-skills:setup-matt-pocock-skills` once in this repo. Then use `grill-with-docs` before design work and `tdd` while you build.
+- Matt Pocock's skills: `/mattpocock-skills:grilling` before design work, `/mattpocock-skills:domain-modeling` for `GLOSSARY.md` and the ADRs, `/mattpocock-skills:tdd` while you build.
 - Go style: load `/modern-go-guidelines:use-modern-go` (JetBrains' modern Go guidelines, installed as a user-scope plugin) before writing or reviewing any Go code in this repo.
 - Ponytail (`/ponytail`, the "lazy senior dev" plugin, installed at user scope): a hook loads it into every session at level `full`. Keep `full` while coding here and never use `ultra`: `DESIGN.md` is the ask, do not re-argue it. Its reuse ladder (does it need to exist, already in the repo, standard library, installed dependency, one line, else the minimum) is the same ladder gstack's reviews use. Never cut validation, error handling, security, tests that `DESIGN.md` or `CONSTRAINTS.md` require, or anything Satvik asked for. Mark a deliberate shortcut in code as `// shortcut: <limit>, <when to upgrade>`; this is the repo's only shortcut-comment format (add the gstack decision id in the text when one exists). Run `/ponytail-review` on a task's diff before you commit it. gstack `/review` + `/codex` stay the pre-merge gate. Run `/ponytail-debt` before each release.
 - Workflow: `../../docs/workflow/agent-tooling.md`.
@@ -28,23 +28,15 @@ Read `CONSTRAINTS.md` before writing code. Do not weaken it to make a change pas
 
 ## Commands
 
-<!-- fill in: install, test, lint, benchmark -->
+- `make check`: the task gate (stages in `CONSTRAINTS.md`). It must pass before a task is called done. `make check-fast` is the quick subset for every edit.
+- `make e2e`: the kind end-to-end test (start Docker first: `colima start`). It writes its kubeconfig to `bin/e2e-kubeconfig` and never changes yours. Run the plugin against that cluster with `KUBECONFIG=bin/e2e-kubeconfig bin/kubectl-audit_tenant ...`. `E2E_DELETE=1` deletes the cluster at the end.
+- `make vuln`: govulncheck over the module.
 
 ## Skill routing
 
-When the user's request matches an available skill, invoke it via the Skill tool. Route only to skills in the session's available-skills list; answer directly for quick questions or small scoped edits.
+When the request matches one of these skills, invoke it with the Skill tool. Answer quick questions and small scoped edits directly.
 
-Key routing rules:
-- Product ideas/brainstorming → invoke /office-hours
-- Strategy/scope → invoke /plan-ceo-review
-- Architecture → invoke /plan-eng-review
-- Design system/plan review → invoke /design-consultation or /plan-design-review
-- Full review pipeline → invoke /autoplan
-- Bugs/errors → invoke /investigate
-- QA/testing site behavior → invoke /qa or /qa-only
-- Code review/diff check → invoke /review
-- Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
-- Save progress → invoke /context-save
-- Resume context → invoke /context-restore
-- Author a backlog-ready spec/issue → invoke /spec
+- Bugs and errors → `/investigate`
+- Code review or a diff check → `/review`
+- A second opinion from Codex → `/codex`
+- Push and open the PR → `/ship`

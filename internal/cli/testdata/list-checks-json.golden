@@ -1,0 +1,162 @@
+[
+  {
+    "id": "AT-01",
+    "name": "No cluster-scoped access",
+    "kind": "behavioral",
+    "severity": "high",
+    "method": "SSAR with no namespace: list nodes, create namespaces, create clusterrolebindings, create persistentvolumes; before a PASS, a control: create selfsubjectaccessreviews must be allowed",
+    "results": [
+      {
+        "id": "AT-01",
+        "name": "No cluster-scoped access",
+        "mtb": "MTB-PL1-CC-CPI-1"
+      }
+    ]
+  },
+  {
+    "id": "AT-02",
+    "name": "No cross-namespace secret access",
+    "kind": "behavioral",
+    "severity": "high",
+    "method": "SSAR: get, list and watch secrets in --other-namespace",
+    "results": [
+      {
+        "id": "AT-02",
+        "name": "No cross-namespace secret access",
+        "mtb": "MTB-PL1-CC-TI-2"
+      }
+    ]
+  },
+  {
+    "id": "AT-03",
+    "name": "No privilege escalation",
+    "kind": "behavioral",
+    "severity": "high",
+    "method": "SSAR with no namespace: escalate and bind on clusterroles; impersonate users, groups, serviceaccounts; * on * in every API group",
+    "results": [
+      {
+        "id": "AT-03",
+        "name": "No privilege escalation",
+        "mtb": "MTB-PL2-CC-TI-1"
+      }
+    ]
+  },
+  {
+    "id": "AT-04",
+    "name": "Dangerous pod settings blocked",
+    "kind": "behavioral",
+    "severity": "high",
+    "method": "dry-run pods after a compliant control pod: privileged (two forms), hostPath, hostPID, hostNetwork, allowPrivilegeEscalation",
+    "results": [
+      {
+        "id": "AT-04.1",
+        "name": "Privileged container blocked",
+        "mtb": "MTB-PL1-BC-CPI-5"
+      },
+      {
+        "id": "AT-04.2",
+        "name": "hostPath volume blocked",
+        "mtb": "MTB-PL1-BC-HI-1"
+      },
+      {
+        "id": "AT-04.3",
+        "name": "hostPID blocked",
+        "mtb": "MTB-PL1-BC-HI-4"
+      },
+      {
+        "id": "AT-04.4",
+        "name": "hostNetwork blocked",
+        "mtb": "MTB-PL1-BC-HI-3"
+      },
+      {
+        "id": "AT-04.5",
+        "name": "Privilege escalation blocked",
+        "mtb": "MTB-PL1-BC-CPI-6"
+      }
+    ]
+  },
+  {
+    "id": "AT-05",
+    "name": "NodePort services blocked",
+    "kind": "behavioral",
+    "severity": "medium",
+    "method": "dry-run Service of type NodePort after a ClusterIP control Service",
+    "results": [
+      {
+        "id": "AT-05",
+        "name": "NodePort services blocked",
+        "mtb": "MTB-PL1-BC-HI-1"
+      }
+    ]
+  },
+  {
+    "id": "AT-06",
+    "name": "ResourceQuota present and complete",
+    "kind": "config",
+    "severity": "medium",
+    "method": "LIST resourcequotas: the unscoped quotas together set requests.cpu, requests.memory, limits.cpu, limits.memory, pods",
+    "results": [
+      {
+        "id": "AT-06",
+        "name": "ResourceQuota present and complete",
+        "mtb": "MTB-PL1-CC-FNS-1"
+      }
+    ]
+  },
+  {
+    "id": "AT-07",
+    "name": "LimitRange with defaults",
+    "kind": "config",
+    "severity": "low",
+    "method": "LIST limitranges: the Container items together set default and defaultRequest for cpu and memory",
+    "results": [
+      {
+        "id": "AT-07",
+        "name": "LimitRange with defaults",
+        "mtb": "-"
+      }
+    ]
+  },
+  {
+    "id": "AT-08",
+    "name": "Default-deny NetworkPolicy",
+    "kind": "config",
+    "severity": "medium",
+    "method": "LIST networkpolicies: an empty-selector deny for Ingress and one for Egress",
+    "results": [
+      {
+        "id": "AT-08",
+        "name": "Default-deny NetworkPolicy",
+        "mtb": "-"
+      }
+    ]
+  },
+  {
+    "id": "AT-09",
+    "name": "Pod Security Admission enforced",
+    "kind": "config",
+    "severity": "high",
+    "method": "GET namespace labels: pod-security.kubernetes.io/enforce is baseline or restricted",
+    "results": [
+      {
+        "id": "AT-09",
+        "name": "Pod Security Admission enforced",
+        "mtb": "-"
+      }
+    ]
+  },
+  {
+    "id": "AT-10",
+    "name": "Quota covers rollout peak",
+    "kind": "computed",
+    "severity": "low",
+    "method": "LIST deployments, statefulsets, horizontalpodautoscalers, resourcequotas, limitranges; sum the rollout peak",
+    "results": [
+      {
+        "id": "AT-10",
+        "name": "Quota covers rollout peak",
+        "mtb": "-"
+      }
+    ]
+  }
+]
