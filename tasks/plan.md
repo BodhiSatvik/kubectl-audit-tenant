@@ -12,7 +12,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - Package layout (Original arrangement, D4): `cmd/`, `internal/{cli,cluster,safety,checks,probe,headroom,report}`, `test/{envtest,e2e}`.
 - Quality bar: `CONSTRAINTS.md` (D30–D33). Every task ends with `make check` green.
 
-## Task list (index; cards in TODOS.md)
+## Task list (index; open cards in TODOS.md, done cards in _archive/TODOS-done.md)
 
 ### Phase 1: walking skeleton
 - [x] B1 Module, tooling and CI
