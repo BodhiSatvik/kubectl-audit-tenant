@@ -43,6 +43,7 @@ Each one fixes a public contract (the JSON schema, the PolicyReport, the identit
 
 #### 3. Release and repository settings (card B31)
 
+- [ ] Docs review (Codex, 2026-10-22): no `SECURITY.md`, so a security problem in the tool (or `--debug` output with sensitive server text) has no private reporting route. Satvik picks the route (GitHub private vulnerability reporting once the repo is public, or an address); then add `SECURITY.md` and link it from the README's Troubleshooting (B31).
 - [ ] P1 /ship: Release: goreleaser `release.draft: true`, publish only after the krew-install job passes; check the krew download checksum; release only tags on main (B31). GitHub Actions SHA pinning (D43) before the public release.
 - [ ] P1 /ship: Teleport-style access proxies (D57) are covered by unit tests only; try one live before the release (B31).
 - [ ] P5 /review: A pull request still runs its own copy of `ci.yml`, so it can drop the `floor-guard` job. Only a required workflow or ruleset that the branch cannot edit (or a `pull_request_target` job that runs no branch code) makes "the base copy judges" hold (Claude adversarial, cycle 3; Satvik's GitHub settings, B31).
@@ -51,6 +52,8 @@ Each one fixes a public contract (the JSON schema, the PolicyReport, the identit
 #### 4. Small fixes, no decision needed
 
 Wording, hints, edge cases and tests. None changes a public contract; do them before v0.1.0 if time allows, else in v0.1.1.
+- [ ] Docs review (Codex, 2026-10-22): `test/e2e/bench.sh` writes "kind v1.37.0" in BENCHMARK.md's Setup column, but v1.37.0 is the Kubernetes node image, not the kind version (CI uses kind v0.33.0). Write "Kubernetes v1.37.0 on kind <version>" in new rows.
+- [ ] Docs review (2026-10-22): cobra adds a default `completion` command, but its script completes `audit-tenant`, not `kubectl audit-tenant`. Hide it (`CompletionOptions.DisableDefaultCmd`), or ship a `kubectl_complete-audit_tenant` script as krew plugins do.
 - [ ] P4 /ship pass 2: The D151 refusal text says "use --as, or -o json"; on a transient SelfSubjectReview 5xx or 429 the fix is a re-run, a tenant can rarely impersonate, an in-cluster run prints `user entry ""`, and the `--debug` identity line still mentions a header that never prints (Red Team).
 - [ ] P4 /ship pass 3: A control pod refused by `--allow-privileged=false` (a webhook added a privileged container to every pod) gets the hint "the namespace rejects even a compliant pod", not the added-privileged hint (Claude adversarial).
 - [ ] P4 /ship pass 3: Service accounts are found by the `system:serviceaccount:` prefix only; a name the API server does not split (`system:serviceaccount:ns:name:x`, an upper-case namespace) is impersonated as a plain user but warned and keyed as a service account (Claude adversarial).

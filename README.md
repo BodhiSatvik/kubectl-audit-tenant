@@ -1,29 +1,56 @@
 # kubectl audit-tenant
 
-Prove, from the tenant's side, that a Kubernetes namespace is fenced.
+Check, from the tenant's side, whether a Kubernetes namespace is fenced.
 
 > Status: pre-release. v0.1.0 is not tagged yet, so the install commands below work from v0.1.0 on.
+
+[Why](#why) · [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start-kind-about-five-minutes) · [Usage](#usage) · [The checks](#the-checks) · [Verdicts and exit codes](#verdicts-and-exit-codes) · [Output formats](#output-formats) · [Safety](#safety) · [What a PASS does not prove](#what-a-pass-does-not-prove) · [Troubleshooting](#troubleshooting) · [How it differs](#how-it-differs) · [Contributing](#development-and-contributing)
 
 ## Why
 
 A platform team that shares one cluster between teams must show that team A cannot reach team B, and today the proof usually comes from the admin's side: tools that read roles and policies and infer what a tenant could do. `kubectl audit-tenant` asks the cluster directly, as the tenant, with permission checks and server-side dry runs, and prints one verdict per fence with the layer that decided it, a benchmark ID and a fix. It never changes the cluster.
 
-## Quick start (kind, about five minutes)
+The results cover the fourteen checks below. They do not prove complete tenant isolation.
 
-You need Docker, [kind](https://kind.sigs.k8s.io/) and kubectl. Install the plugin one of three ways:
+## Requirements
+
+- kubectl, and a cluster that runs Kubernetes 1.28 or newer. 1.28 is the intended minimum: from 1.28 on, the tool can confirm the identity with a SelfSubjectReview. The automated tests run on Kubernetes 1.37.0 only.
+- For the install: [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/), or Go 1.26 or newer.
+- Release binaries: Linux and macOS (amd64 and arm64) and Windows (amd64).
+
+## Install
+
+With krew, once the plugin is in the krew index:
 
 ```bash
-# 1. krew, once the plugin is in the krew index
 kubectl krew install audit-tenant
+```
 
-# 2. krew, from the release (works from the first release on)
+With krew, from the release (works from the first release on):
+
+```bash
 kubectl krew install --manifest-url https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/download/v0.1.0/audit-tenant.yaml
+```
 
-# 3. Go 1.26 or newer; kubectl finds kubectl-audit_tenant on your PATH
+With Go:
+
+```bash
 go install github.com/BodhiSatvik/kubectl-audit-tenant/cmd/kubectl-audit_tenant@v0.1.0
 ```
 
-Make a cluster with one tenant namespace and run the audit as the tenant's service account:
+`go install` puts `kubectl-audit_tenant` in `$(go env GOBIN)`, or in `$(go env GOPATH)/bin` when `GOBIN` is empty. That directory must be on your `PATH`, so that kubectl finds the plugin.
+
+Check the install:
+
+```bash
+kubectl audit-tenant version
+```
+
+To uninstall, run `kubectl krew uninstall audit-tenant`, or remove the `kubectl-audit_tenant` binary that `go install` made.
+
+## Quick start (kind, about five minutes)
+
+You need Docker, [kind](https://kind.sigs.k8s.io/), kubectl and the plugin. Make a cluster with one tenant namespace, and run the audit as the tenant's service account:
 
 ```bash
 kind create cluster --name audit-demo
@@ -35,7 +62,7 @@ for i in $(seq 30); do kubectl auth can-i list pods -n team-a --as system:servic
 kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
 ```
 
-The namespace has no fences yet, so most checks fail. An excerpt of a real run on kind v1.37.0:
+The namespace has no fences yet, so most checks fail. An excerpt of a real run on Kubernetes v1.37.0 on kind:
 
 ```text
 namespace team-a · as system:serviceaccount:team-a:dev (groups: system:serviceaccounts, system:serviceaccounts:team-a, system:authenticated) · cluster kind-audit-demo
@@ -58,18 +85,49 @@ kubectl label namespace team-a pod-security.kubernetes.io/enforce=restricted
 kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
 ```
 
-AT-04.1 to AT-04.5 and AT-09 now pass, and each reason quotes the Pod Security Admission message that refused the probe. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`.
+AT-04.1 to AT-04.5 and AT-09 now pass. Each AT-04 reason quotes the Pod Security Admission message that refused the probe, and AT-09 names the label. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`.
 
 ## Who runs it, and how
 
 | Who | Command | Gets |
 |---|---|---|
 | Platform engineer, when a namespace is created | `kubectl audit-tenant -n team-a --as team-a-admin -o json --fail-on-skip` in the provisioning pipeline | A failed step when the new namespace is not fenced |
-| Security or an auditor | `kubectl audit-tenant -n team-a --as team-a-admin` | One page of verdicts with benchmark IDs, repeatable next quarter |
+| Security or an auditor | `kubectl audit-tenant -n team-a --as team-a-admin -o wide` | One page of verdicts with benchmark IDs, repeatable next quarter |
 | A tenant team with kubectl | `kubectl audit-tenant -n team-a` with its own kubeconfig | "Is my namespace governed?" and "why was my pod rejected?" |
 | A policy dashboard owner | `-o policyreport`, applied with kubectl | The verdicts next to Kyverno's results in Policy Reporter |
 
-Without `--as` the tool runs as the kubeconfig's own identity ("self mode"). With `--as` and `--as-group` it impersonates the tenant: you need `impersonate` rights, and you should pass the tenant's groups from your identity provider, because the API server does not add them for you.
+The tool runs as the identity that your kubeconfig and flags give it:
+
+- **Self mode.** With no impersonation, the tool runs as your own login.
+- **Impersonation.** With `--as` (or `as:` in the kubeconfig user), the tool impersonates the tenant. This needs `impersonate` rights.
+  - For a user, also pass the groups that the identity provider gives it with `--as-group`. The API server does not add them.
+  - For a service account, give no groups. The API server then adds `system:serviceaccounts` and `system:serviceaccounts:<namespace>` itself.
+- **The header line** names the identity. `(unverified)` means that the API server's SelfSubjectReview did not confirm it.
+
+To find the username and groups that the cluster gives a tenant, run `kubectl auth whoami` with the tenant's own login (kubectl and Kubernetes 1.28 or newer). On EKS, GKE and AKS, it shows the names that the cluster maps the cloud identity to. Use those names with `--as` and `--as-group`.
+
+## Usage
+
+```text
+kubectl audit-tenant -n NAMESPACE [--as USER [--as-group GROUP ...]] [-o checklist|wide|json|policyreport] [flags]
+kubectl audit-tenant list-checks [-o table|json]
+kubectl audit-tenant version
+```
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-n`, `--namespace` | the context's namespace | The namespace to audit. One is required. |
+| `--as`, `--as-group`, `--as-uid`, `--as-user-extra` | none | Impersonate the tenant (kubectl's own flags). |
+| `-o`, `--output` | `checklist` | `checklist`, `wide`, `json` or `policyreport`. |
+| `--plain` | off | ASCII only, with no color. |
+| `--no-color` | off | No color. `NO_COLOR` in the environment does the same. Color shows only on a terminal. |
+| `--checks`, `--skip` | all checks | Comma-separated IDs, for example `--checks AT-01,AT-04 --skip AT-04.2`. A family such as `AT-04` selects its sub-checks. `--skip` removes IDs from the set that `--checks` kept. An unknown ID exits 2. |
+| `--other-namespace` | `kube-system` | The namespace where AT-02 checks that the tenant cannot read Secrets. |
+| `--fail-on-skip` | off | Exit 1 on any SKIP. |
+| `--timeout` | `30s` | The deadline for the whole run. kubectl's `--request-timeout` bounds each request; the shorter one wins. |
+| `--debug` | off | Each API request and the identity steps on stderr. |
+
+kubectl's connection flags (`--kubeconfig`, `--context`, `--cluster`, `--user` and the TLS and token flags) and `KUBECONFIG` work as in kubectl. `kubectl audit-tenant --help` lists them all.
 
 ## The checks
 
@@ -90,37 +148,50 @@ Ten checks give fourteen results (AT-04 has five). Behavioral checks ask the clu
 | AT-07 | The LimitRanges set `default` and `defaultRequest` for cpu and memory | read | - | low |
 | AT-08 | A default-deny NetworkPolicy exists for ingress and for egress | read | - | medium |
 | AT-09 | The namespace label `pod-security.kubernetes.io/enforce` is `baseline` or `restricted` | read | - | high |
-| AT-10 | The rollout peak of the Deployments and StatefulSets (replicas, or the HPA's `maxReplicas`, plus `maxSurge`) fits every unscoped ResourceQuota | read and compute | - | low |
+| AT-10 | The estimated rollout peak of the Deployments and StatefulSets fits the CPU, memory and pod limits of every unscoped ResourceQuota | read and estimate | - | low |
 
-AT-04.5 needs `restricted` or a policy: Pod Security Admission at `baseline` does not block privilege escalation. The MTB IDs are those of the archived [Kubernetes multi-tenancy benchmarks](https://github.com/kubernetes-retired/multi-tenancy/tree/master/benchmarks); upstream gives hostPath volumes and NodePort Services the same ID.
+AT-04.5 needs `restricted` or a policy: Pod Security Admission at `baseline` does not block privilege escalation. AT-10 is an estimate. It counts replicas (or the HPA's `maxReplicas`) plus `maxSurge` for rolling-update Deployments. It does not count terminating pods, other workload kinds, or sizes set at admission. The MTB IDs are those of the archived [Kubernetes multi-tenancy benchmarks](https://github.com/kubernetes-retired/multi-tenancy/tree/master/benchmarks). Upstream gives hostPath volumes and NodePort Services the same ID.
 
-Before an AT-04 or AT-05 probe, the tool asks whether the tenant may create pods (or Services) at all. If RBAC denies that, the result is an RBAC PASS, but only after a control question (`list pods` in the namespace) proves the identity has some rights there; an identity with no rights at all gets SKIP, because an RBAC PASS would prove nothing. Each probe follows a compliant control probe, so a rejection by a quota or a LimitRange is never read as a security fence.
+Before an AT-04 or AT-05 probe, the tool asks whether the tenant may create pods (or Services):
+
+- If RBAC denies that, and also denies the other ways to get one, the result is an RBAC PASS. The other ways are creating, updating or scaling pod controllers and adding ephemeral containers (for Services: updating or patching them).
+- An RBAC PASS needs a control question first: `list pods` in the namespace must be allowed. So an identity with no rights at all gets SKIP.
+- If one of the other ways is allowed, the result is SKIP, because admission was not exercised.
+
+Each probe follows a compliant control probe. A probe stopped by a full quota or by a LimitRange proves no fence and gives SKIP. A `services.nodeports` quota of zero does prove the AT-05 fence.
 
 ## Verdicts and exit codes
 
 | Verdict | Means |
 |---|---|
-| PASS | The fence held. The reason names the layer that decided: RBAC, admission (PSA, webhook, policy or quota) or the API server. |
-| FAIL | The cluster allowed it. The `fix` line says what to add. |
+| PASS | The fence held. The reason names the layer that decided: RBAC, admission (PSA, webhook, policy or quota), the API server, or config (an object the tool read). |
+| FAIL | The check's requirement was not met: the cluster accepted a dangerous probe or granted the access, or a required object is missing. The `fix` line says what to change. |
 | SKIP | The tool could not test it, for example it may not read the object, or a webhook cannot take a dry run. The `fix` line says what to change. |
 | ERROR | A request failed, the run timed out, or the tool hit a bug. |
 
+A mutating webhook or policy that removes the dangerous field and then accepts the probe still gives FAIL in v0.1.0. `--debug` shows the security fields of the accepted object.
+
 | Exit code | When |
 |---|---|
-| 0 | No FAIL and no ERROR. SKIPs are allowed. |
-| 1 | At least one FAIL; with `--fail-on-skip`, also any SKIP. |
-| 2 | An ERROR and no FAIL, or the run could not start (bad flags, kubeconfig, credentials, impersonation, namespace not found). |
+| 0 | No FAIL and no ERROR. SKIPs are allowed, unless `--fail-on-skip` is set. |
+| 1 | Any FAIL, or, with `--fail-on-skip`, any SKIP. This wins over 2: a run with a FAIL and an ERROR exits 1. |
+| 2 | Any ERROR, when nothing above gives 1. Also when the run could not start (bad flags, kubeconfig, credentials, impersonation, namespace not found) or could not write its report. |
 
-Every output format keeps the exit code.
+Every output format keeps the exit code. A run that cannot start prints the reason on stderr and no report.
 
 ## Output formats
 
-- Checklist (default): one line per result, with a `fix` line under each FAIL, SKIP and ERROR and a `note` line that names what the check did not test.
-- `-o wide`: adds the MTB ID and the deciding layer, and never cuts a reason. `--plain` gives ASCII only, with no color.
+- Checklist (default): one line per result, with a `fix` line under each FAIL, SKIP and ERROR and, for many results, a `note` line that names what the check did not test.
+- `-o wide`: adds the MTB ID and the deciding layer, and never cuts a reason. `--plain` gives ASCII only. Color shows only on a terminal; `--no-color` or `NO_COLOR` turns it off.
 - `-o json`: one object per run. The schema is [`docs/report.schema.json`](docs/report.schema.json).
 - `-o policyreport`: a `wgpolicyk8s.io/v1alpha2` PolicyReport for dashboards such as Policy Reporter. The tool only prints it; you apply it.
 
 ### Applying a PolicyReport
+
+Applying a report needs two things:
+
+- The `wgpolicyk8s.io/v1alpha2` PolicyReport CRD in the cluster. The Kyverno Helm chart installs it; the CRD itself is in [wg-policy-prototypes](https://github.com/kubernetes-sigs/wg-policy-prototypes). A plain kind cluster has no CRD, so the apply fails there.
+- An identity for `kubectl apply` that may create and patch PolicyReports in the namespace.
 
 ```bash
 set -o pipefail
@@ -131,9 +202,11 @@ kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev -o policyre
 - Use a pipe. The report is applied even when it holds a FAIL, and with `pipefail` the step still exits 1. With `> r.yaml && kubectl apply -f r.yaml`, a FAIL stops the apply, and the dashboard keeps the last clean report.
 - Use `--server-side`. Client-side apply copies the whole report into an annotation, which has a 256 KiB limit.
 - If you pass `--context` to the audit, pass the same `--context` to `kubectl apply`. The report itself does not name the cluster.
-- The report lives in the audited namespace. Any subject that may write PolicyReports there can change it. The Kyverno Helm chart (checked on v1.19.1) gives the built-in `admin` role create, update, patch and delete on PolicyReports, so a tenant bound to `admin` can turn its own FAIL into a PASS. For an audit, keep the `-o json` output outside the cluster.
+- The report lives in the audited namespace. Any subject that may write PolicyReports there can change it. The Kyverno Helm chart (checked on v1.19.1) gives the built-in `admin` role create, update, patch and delete on PolicyReports. So a tenant bound to `admin` can turn its own FAIL into a PASS. For an audit, keep the `-o json` output outside the cluster.
 - A report names the identity and its groups. A self-mode report from an admin shows the admin's username and groups to every subject that may read PolicyReports in that namespace. Use `--as` for reports you apply.
-- One report exists per set of run inputs (mode, user, groups, `--other-namespace`, server URL), and a re-run with the same inputs replaces it. `-o policyreport` refuses `--checks` and `--skip`. A run that hits `--timeout` still prints a report, with ERROR for every check that did not finish.
+- Each set of run inputs has its own report, and a re-run with the same inputs replaces it. The inputs are the mode, the server URL and `--other-namespace`, plus the requested user, groups, UID and extras when impersonating, or the verified username and groups in self mode.
+- `-o policyreport` needs all fourteen results, so it refuses a `--checks` or `--skip` that leaves any out.
+- After startup, a run that hits `--timeout` still prints a report, with ERROR for every check that did not finish. A run that fails during startup prints no report, so the previous report stays.
 
 ## In a pipeline
 
@@ -142,23 +215,31 @@ kubectl audit-tenant -n "$NAMESPACE" --as "$TENANT_USER" --as-group "$TENANT_GRO
   -o json --fail-on-skip > audit.json
 ```
 
-The step fails (exit 1) on any FAIL, and with `--fail-on-skip` also on any SKIP, so a namespace the tool could not prove does not pass. `audit.json` keeps every reason and hint for the record.
+Any non-zero exit fails the step: 1 for a FAIL (or for a SKIP with `--fail-on-skip`), and 2 for an ERROR or a run that could not start. With `--fail-on-skip`, a namespace that the tool could not prove does not pass. `audit.json` keeps every reason and hint for the record. It is empty when the run could not start.
 
 ## Safety
 
-- **Read-only by construction.** The HTTP transport has an exact allowlist: `GET /version`, the target namespace, lists of quotas, LimitRanges, NetworkPolicies, Deployments, StatefulSets and HPAs in the target namespace, SSAR and SelfSubjectReview creates, and pod and Service creates in the target namespace only with `dryRun=All`. Everything else is refused before it leaves the process: every subresource (such as `pods/exec`), every Secret path, every other namespace, and every PUT, PATCH and DELETE. The tool never reads a Secret.
+- **Read-only by construction.** The HTTP transport has an exact allowlist:
+  - `GET /version` and the target namespace.
+  - Lists of quotas, LimitRanges, NetworkPolicies, Deployments, StatefulSets and HPAs in the target namespace.
+  - SSAR and SelfSubjectReview creates.
+  - Pod and Service creates in the target namespace, only with `dryRun=All`.
+
+  Everything else is refused before it leaves the process: every subresource (such as `pods/exec`), every Secret path, every other namespace, and every PUT, PATCH and DELETE. The tool never reads a Secret.
 - **Every create answer is checked.** A dry-run answer must have a generated `audit-tenant-probe-` name and no `resourceVersion`. If a proxy drops `dryRun=All` and the server stores an object, the check reports ERROR with the object's name, and the run sends no further create.
 - **What a run leaves in the API audit log.** SSARs, one SelfSubjectReview, and dry-run creates of pods and Services named `audit-tenant-probe-*`, labeled `app.kubernetes.io/managed-by=audit-tenant`, all under the tenant identity. With `--as`, the audit log also records the user who impersonated. Admission webhooks see the dry-run requests too.
-- A full run sends at most 40 API requests in the end-to-end tests and finishes in well under a second on kind (see [Benchmarks](#benchmarks)).
+- **Request count.** In the end-to-end tests, a full run sends at most 40 API requests and takes well under a second on kind (see [Benchmarks](#benchmarks)). A tenant that may not create pods needs more requests (about 63), because AT-04 then asks about each pod controller.
 
 ## What a PASS does not prove
 
 - **Grants limited to named objects.** SSARs carry no resource name, so a role that grants access to specific Secrets or roles by `resourceNames` is not seen.
 - **That the network plugin enforces NetworkPolicy.** AT-08 reads the policy objects only.
+- **That PSA applies to the tenant.** AT-09 passes on the namespace label. Whether Pod Security Admission really refuses the tenant's pods is what AT-04 tests: an exemption for the identity or the namespace shows there, not in AT-09.
 - **Pods created by controllers.** If the tenant may not create pods but may create or scale Deployments, Jobs or other pod controllers, AT-04 shows SKIP: those pods bypass the tenant's own RBAC. A PASS also says nothing about pods that a controller's service account creates under a Pod Security Admission exemption that the tenant's own probes do not have.
 - **The identity you meant.** The control question needs `list pods`. On a cluster that grants `list pods` to every authenticated user, a misspelled `--as` user passes it. The tool warns when it impersonates a user with no groups, but not for a misspelled service account or a user given with `--as-group`. Check that the header line names the identity you meant.
 - **The future.** A PASS is true for the policies, roles and labels at the time of the run.
-- Each PASS has a `note` line that names what that check did not test.
+
+Many results have a `note` line that names what that check did not test.
 
 ## Troubleshooting
 
@@ -202,21 +283,39 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 
 ## How it differs
 
-Admin-side scanners describe what exists. [Popeye](https://github.com/derailed/popeye) and [Kubescape](https://github.com/kubescape/kubescape) read the cluster's objects with your rights and report misconfigurations against best practices or frameworks such as NSA-CISA, MITRE ATT&CK and CIS. [Kyverno](https://kyverno.io/docs/policy-types/cluster-policy/validate/) policies in `Audit` mode record violations of new and existing resources in PolicyReports. [NamespaceHound](https://github.com/wiz-sec-public/namespacehound) finds possible paths between namespaces from RBAC objects and pod host mounts, with read access to every resource type. None of them, by its own docs, asks the cluster as a tenant what that tenant may do. A `kubectl auth can-i --as <user>` script does, but it answers RBAC questions only; AT-04 and AT-05 also send dry-run creates through admission (PSA, webhooks and ValidatingAdmissionPolicy). [kubectl-mtb](https://github.com/kubernetes-retired/multi-tenancy/tree/master/benchmarks/kubectl-mtb) ran behavioral checks with `--as`; its repository was archived in June 2023, and its module no longer installs with `go install` ([BENCHMARK.md](BENCHMARK.md)). This tool uses its benchmark IDs. [kuota-calc](https://github.com/postfinance/kuota-calc) computes the quota that a set of manifests needs; AT-10 reads the live workloads and HPAs and compares their rollout peak with the namespace's real ResourceQuota.
+Admin-side scanners describe what exists:
+
+- [Popeye](https://github.com/derailed/popeye) and [Kubescape](https://github.com/kubescape/kubescape) read the cluster's objects with your rights. They report misconfigurations against best practices or frameworks such as NSA-CISA, MITRE ATT&CK and CIS.
+- [Kyverno](https://kyverno.io/docs/policy-types/cluster-policy/validate/) policies in `Audit` mode record violations of new and existing resources in PolicyReports.
+- [NamespaceHound](https://github.com/wiz-sec-public/namespacehound) finds possible paths between namespaces from RBAC objects and pod host mounts, with read access to every resource type.
+
+None of them, by its own docs, asks the cluster as a tenant what that tenant may do. Nearer tools:
+
+- A `kubectl auth can-i --as <user>` script does ask as the tenant, but it answers RBAC questions only. AT-04 and AT-05 also send dry-run creates through admission (PSA, webhooks and ValidatingAdmissionPolicy).
+- [kubectl-mtb](https://github.com/kubernetes-retired/multi-tenancy/tree/master/benchmarks/kubectl-mtb) ran behavioral checks with `--as`. Its repository was archived in June 2023, and its module no longer installs with `go install` ([BENCHMARK.md](BENCHMARK.md)). This tool uses its benchmark IDs.
+- [kuota-calc](https://github.com/postfinance/kuota-calc) computes the quota that a set of manifests needs. AT-10 reads the live workloads and HPAs and compares their rollout peak with the namespace's real ResourceQuota.
 
 ## How it works
 
-The check runner runs the ten checks in order, one at a time. Every request goes through the read-only transport to the API server, where RBAC, admission or the stored objects answer. The report holds one verdict, reason and hint per result, and the printers turn it into the checklist, wide, JSON or PolicyReport output. Diagram: [`docs/diagrams/architecture.svg`](docs/diagrams/architecture.svg). Design and decisions: [`DESIGN.md`](DESIGN.md) and [`docs/adr/`](docs/adr/).
+The check runner runs the ten checks in order, one at a time. Every request goes through the read-only transport to the API server, where RBAC, admission or the stored objects answer. The report holds one verdict, reason and hint per result, and the printers turn it into the checklist, wide, JSON or PolicyReport output.
+
+![Architecture: the CLI and check runner send every request through the read-only transport to the API server, where RBAC, admission or the stored objects answer; the report goes to the printers](docs/diagrams/architecture.svg)
+
+The design and its decisions are in [`DESIGN.md`](DESIGN.md) and [`docs/adr/`](docs/adr/), and the terms in [`GLOSSARY.md`](GLOSSARY.md).
 
 The tool is a runnable form of the audit step of the Governed Namespace Lifecycle Framework (GNLF) in the paper below: after the request, policy validation, template, RBAC binding and quota steps produce a namespace, it checks the result from the tenant's side.
 
 ## Benchmarks
 
-On kind v1.37.0 with Kyverno, a full run of every check took 0.10 s at the median and 0.68 s at most over five runs, with 40 API requests and 0 writes. All numbers in [BENCHMARK.md](BENCHMARK.md) come from runs of this code, with the command to repeat them. They are not copied from the paper.
+On Kubernetes v1.37.0 on kind, with Kyverno, a full run of every check took 0.10 s at the median and 0.68 s at most over five runs, with 40 API requests and 0 writes. All numbers in [BENCHMARK.md](BENCHMARK.md) come from runs of this code, with the command to repeat them. They are not copied from the paper.
 
-## Development
+## Development and contributing
 
-`make check` runs vet, lint, a secret scan, the unit tests, the safety replay and the floor guard. `make e2e` builds a kind cluster with Kyverno and asserts every verdict for four identities; `make bench` then measures. Rules for changes are in [CONSTRAINTS.md](CONSTRAINTS.md).
+Issues and pull requests are welcome. For a change in behavior, open an issue first.
+
+- `make check` runs vet, lint, a secret scan, the unit tests, the safety replay and the floor guard. Run it before you open a pull request.
+- `make e2e` builds a kind cluster with Kyverno and asserts every verdict for four identities; `make bench` then measures.
+- The quality bar is in [CONSTRAINTS.md](CONSTRAINTS.md), the spec in [DESIGN.md](DESIGN.md), and the changes per release in [CHANGELOG.md](CHANGELOG.md).
 
 ## Using it? Tell us
 

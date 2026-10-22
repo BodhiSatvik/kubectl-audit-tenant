@@ -12,9 +12,9 @@ The first release.
   - AT-01 to AT-03: cluster-scoped access, Secret access in another namespace, and privilege escalation, asked with SelfSubjectAccessReviews.
   - AT-04.1 to AT-04.5 and AT-05: privileged containers, hostPath volumes, hostPID, hostNetwork, privilege escalation and NodePort Services, sent as server-side dry runs after a compliant control probe.
   - AT-06 to AT-09: a complete ResourceQuota, LimitRange defaults, default-deny NetworkPolicies and the Pod Security Admission label.
-  - AT-10: whether the quota covers the rollout peak of the Deployments and StatefulSets.
+  - AT-10: an estimate of whether the quota covers the rollout peak of the Deployments and StatefulSets.
 - Self mode (the kubeconfig's identity) and impersonation (`--as`, `--as-group`), with warnings for impersonation flags that leave out groups.
-- Four verdicts (PASS, FAIL, SKIP, ERROR). Each result has the deciding layer, the MTB ID, a reason and a hint, and a note when part of the check was not tested.
+- Four verdicts (PASS, FAIL, SKIP, ERROR). Each result has the deciding layer, the MTB ID (`-` when none exists) and a reason. Every FAIL, SKIP and ERROR also has a hint, and a note says when part of a check was not tested.
 - Exit codes 0, 1 and 2, and `--fail-on-skip` for pipelines.
 - Output formats: checklist (default), `-o wide`, `--plain`, `-o json` with a JSON Schema (`docs/report.schema.json`), and `-o policyreport` (`wgpolicyk8s.io/v1alpha2`).
 - `--debug`: one line per API request and the identity steps on stderr, without request headers.
