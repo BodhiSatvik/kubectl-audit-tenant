@@ -169,25 +169,31 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if len(results) == 0 {
 		return exit2("no check produced a result; this is a bug in audit-tenant")
 	}
-	if o.output == "policyreport" && ctx.Err() != nil && slices.ContainsFunc(results, func(r report.Result) bool { return r.Verdict == report.Error }) {
-		// D175: as D147, a partial report would replace the identity's full one. D178: the refusal keeps
-		// what the report would have said: a proven FAIL (exit 1, D63) and where leftovers may be (D103).
+	verdict := func(v report.Verdict) func(report.Result) bool {
+		return func(r report.Result) bool { return r.Verdict == v }
+	}
+	if o.output == "policyreport" && ctx.Err() != nil && slices.ContainsFunc(results, verdict(report.Error)) && !slices.ContainsFunc(results, verdict(report.Fail)) {
+		// D175: as D147, a partial report would replace the identity's full one. D182: a stopped run that
+		// proved a FAIL prints, since its FAIL can only make the dashboard look worse. D178: the refusal
+		// keeps where leftovers may be (D103); D185: and the SKIPs that make --fail-on-skip exit 1.
 		stopped := "was interrupted"
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			stopped = "hit --timeout " + o.timeout.String()
 		}
 		msg := "-o policyreport needs a finished run, and this run " + stopped + ": a partial report would replace the identity's full report; re-run, with a longer --timeout if it timed out"
-		var failed []string
-		for _, r := range results {
-			if r.Verdict == report.Fail {
-				failed = append(failed, r.ID)
+		if o.failOnSkip {
+			var skipped []string
+			for _, r := range results {
+				if r.Verdict == report.Skip {
+					skipped = append(skipped, r.ID)
+				}
+			}
+			if len(skipped) > 0 {
+				msg += "; before it stopped, it proved SKIP for " + strings.Join(skipped, ", ") + ", which --fail-on-skip counts as a failure"
 			}
 		}
-		if len(failed) > 0 {
-			msg += "; before it stopped, it proved FAIL for " + strings.Join(failed, ", ") + " (-o json shows the reasons)"
-		}
 		if c.Unverified.Load() {
-			msg += "; a create was not verified as a dry run, so list leftovers: kubectl get pods,services -n " + c.Namespace + " -l app.kubernetes.io/managed-by=audit-tenant"
+			msg += "; " + checks.LeftoverHint(c.Namespace)
 		}
 		return &exitError{code: report.Summarize(results, o.failOnSkip).ExitCode, msg: msg}
 	}
@@ -216,6 +222,9 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	}
 	if err != nil {
 		return exit2("cannot write the report: %v", err)
+	}
+	if o.output == "policyreport" && c.Unverified.Load() { // D182: stdout goes to kubectl apply, so stderr is what a person reads
+		return &exitError{code: rep.Summary.ExitCode, msg: checks.LeftoverHint(c.Namespace)}
 	}
 	if rep.Summary.ExitCode == 0 {
 		return nil

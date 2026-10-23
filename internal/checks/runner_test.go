@@ -162,6 +162,19 @@ func TestRunnerInterruptedAfterAnUnverifiedCreateNamesTheLeftovers(t *testing.T)
 	}
 }
 
+func TestRunnerDeadlineAfterAnUnverifiedCreateNamesTheLeftovers(t *testing.T) {
+	// D182: a stopped run's printed report keeps where leftovers may be after a timeout too (D103).
+	ctx, cancel := context.WithTimeout(t.Context(), 0)
+	defer cancel()
+	c := &cluster.Client{Namespace: "tenant-a"}
+	c.Unverified.Store(true)
+	for _, r := range Run(ctx, c, []Spec{fake("AT-04", 2, func(context.Context, Spec) []report.Result { return nil })}, time.Second) {
+		if r.Reason != "not run: timeout after 1s" || !strings.Contains(r.Hint, "raise --timeout") || !strings.Contains(r.Hint, "-n tenant-a -l app.kubernetes.io/managed-by=audit-tenant") {
+			t.Errorf("%s = %+v, want the timeout ERROR with a hint that lists leftovers", r.ID, r)
+		}
+	}
+}
+
 func TestRunnerDeadlineMarksUnfinishedChecksNotRun(t *testing.T) {
 	routes := map[string]http.HandlerFunc{
 		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),

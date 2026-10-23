@@ -91,14 +91,22 @@ func runOne(ctx context.Context, c *cluster.Client, s Spec) (results []report.Re
 	}
 }
 
+// LeftoverHint names the probe objects a create that was not verified as a dry run may have left (D103).
+func LeftoverHint(namespace string) string {
+	return "a create was not verified as a dry run, so list leftovers: kubectl get pods,services -n " + namespace + " -l app.kubernetes.io/managed-by=audit-tenant"
+}
+
 // notRun explains a result the check did not produce. After a create answer that was not a
-// verified dry run, an interruption cannot claim the cluster is unchanged.
+// verified dry run, a timeout or an interruption cannot claim the cluster is unchanged (D182).
 func notRun(ctx context.Context, timeout time.Duration, c *cluster.Client) (reason, hint string) {
+	unverified := c != nil && c.Unverified.Load()
 	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) && unverified:
+		return fmt.Sprintf("not run: timeout after %s", timeout), "raise --timeout, or run fewer checks with --checks; " + LeftoverHint(c.Namespace)
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return fmt.Sprintf("not run: timeout after %s", timeout), "raise --timeout, or run fewer checks with --checks"
-	case ctx.Err() != nil && c != nil && c.Unverified.Load():
-		return "interrupted", "re-run; a create was not verified as a dry run, so list leftovers: kubectl get pods,services -n " + c.Namespace + " -l app.kubernetes.io/managed-by=audit-tenant"
+	case ctx.Err() != nil && unverified:
+		return "interrupted", "re-run; " + LeftoverHint(c.Namespace)
 	case ctx.Err() != nil:
 		return "interrupted", "re-run; the cluster was not changed"
 	}

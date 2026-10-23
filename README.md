@@ -196,20 +196,22 @@ Applying a report needs two things:
 - An identity for `kubectl apply` that may create and patch PolicyReports in the namespace.
 
 ```bash
-set -o pipefail
-kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev -o policyreport \
-  | kubectl apply --server-side -f -
+code=0
+kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev -o policyreport > report.yaml || code=$?
+if [ -s report.yaml ]; then kubectl apply --server-side -f report.yaml || exit 2; fi
+exit $code
 ```
 
-- Use a pipe. The report is applied even when it holds a FAIL, and with `pipefail` the step still exits 1. With `> r.yaml && kubectl apply -f r.yaml`, a FAIL stops the apply, and the dashboard keeps the last clean report.
+- The script applies the report even when it holds a FAIL, then exits with the audit's own code: 1 for a proven FAIL, 2 for a run that could not decide. It also works under `bash -e`, the GitHub Actions default. When the tool prints no report (a refusal or a startup failure), nothing is applied, the previous report stays, and the exit code still says why. Do not pipe into `kubectl apply`: it fails on empty input with exit 1, which would read as a FAIL. Do not use `> report.yaml && kubectl apply`: a FAIL would skip the apply, and the dashboard would keep the last clean report.
 - Use `--server-side`. Client-side apply copies the whole report into an annotation, which has a 256 KiB limit.
 - If you pass `--context` to the audit, pass the same `--context` to `kubectl apply`. The report names the context and the server in its `audit-tenant.dev/context` and `audit-tenant.dev/server` annotations, but `kubectl apply` writes to its own context.
 - The report lives in the audited namespace. Any subject that may write PolicyReports there can change it. The Kyverno Helm chart (checked on v1.19.1) gives the built-in `admin` role create, update, patch and delete on PolicyReports. So a tenant bound to `admin` can turn its own FAIL into a PASS. For an audit, keep the `-o json` output outside the cluster.
 - A report names the identity and its groups, the kubeconfig context and the server URL. Every subject that may read PolicyReports in that namespace sees them: a self-mode report from an admin shows the admin's username and groups, and a context name can hold a cloud account ID. Use `--as` for reports you apply.
 - Each set of run inputs has its own report, and a re-run with the same inputs replaces it. The inputs are the mode, the server URL and `--other-namespace`, plus the requested user, groups, UID and extras when impersonating, or the verified username and groups in self mode. The `audit-tenant.dev/mode` annotation says which mode made the report.
-- Some identities get a new username for each session, such as an EKS access entry for an IAM role (`assumed-role/<role>/<session>`). In self mode, each session then makes a new report, and the old ones stay with their old verdicts. Delete them before you apply: `kubectl delete policyreports -n team-a -l app.kubernetes.io/managed-by=audit-tenant`. That deletes the reports of every identity in the namespace, so re-run the others too, or use `--as` with a stable name.
+- Some identities get a new username for each session, such as an EKS access entry for an IAM role (`assumed-role/<role>/<session>`). In self mode, each session then makes a new report, and the old ones stay with their old verdicts. To clear them, audit every identity to its own file first. Only when every file is non-empty, delete the namespace's audit-tenant reports (`kubectl delete policyreports -n team-a -l app.kubernetes.io/managed-by=audit-tenant`) and apply all the files. If you delete first and a re-run is then refused, that identity has no report, and a dashboard shows no rows instead of its FAIL. Or use `--as` with a stable name.
 - `-o policyreport` needs all fourteen results, so it refuses a `--checks` or `--skip` that leaves any out.
-- `-o policyreport` also refuses a run that `--timeout` or Ctrl-C stopped before every check finished, and a run that fails during startup prints no report. In both cases the previous report stays. The refusal names any FAIL the run proved before it stopped (and then exits 1) and, after a create that was not verified as a dry run, the command that lists leftover probe objects.
+- `-o policyreport` also refuses a run that `--timeout` or Ctrl-C stopped before every check finished, unless the run proved a FAIL: that partial report prints (exit 1), because its FAIL can only make the dashboard look worse. A refused run, like a run that fails during startup, prints no report, so the previous report stays. The refusal names the SKIPs that `--fail-on-skip` counts. After a create that was not verified as a dry run, stderr names the command that lists leftover probe objects.
+- An ERROR row from any other cause (kubectl's `--request-timeout`, a server error that outlasts client-go's retries) stays in the printed report. Once applied, it replaces the identity's earlier row for that check, so a FAIL can show as ERROR until the next complete run.
 
 ## In a pipeline
 

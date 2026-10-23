@@ -18,7 +18,7 @@ The first release.
 - Exit codes 0, 1 and 2, and `--fail-on-skip` for pipelines.
 - Output formats: checklist (default), `-o wide`, `--plain`, `-o json` with a JSON Schema (`docs/report.schema.json`), and `-o policyreport` (`wgpolicyk8s.io/v1alpha2`).
 - Machine output: `-o json` and `-o policyreport` show a control or format character in server text as `<U+XXXX>`. A PolicyReport names its mode, kubeconfig context and server in annotations. Both formats carry the "looks like a cluster admin" warning. The JSON Schema allows added fields; a removed or renamed field gets a new `apiVersion`.
-- `-o policyreport` refuses a run that `--timeout` or a signal stopped before every check finished, so an applied partial report never replaces a full one. The refusal names any FAIL proven before the stop (exit 1) and the command that lists leftover probe objects after an unverified create.
+- `-o policyreport` refuses a run that `--timeout` or a signal stopped before every check finished, unless the run proved a FAIL: then it prints the partial report (exit 1). The refusal names the SKIPs that `--fail-on-skip` counts. After a create that was not verified as a dry run, stderr and the timeout hints name the command that lists leftover probe objects.
 - The tool refuses a kubeconfig server URL that holds user info (a name or token before the `@`), so no error message can print it.
 - `--debug`: one line per API request and the identity steps on stderr, without request headers.
 - `--checks`, `--skip`, `--other-namespace` and `--timeout`.
