@@ -205,11 +205,11 @@ kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev -o policyre
 - Use `--server-side`. Client-side apply copies the whole report into an annotation, which has a 256 KiB limit.
 - If you pass `--context` to the audit, pass the same `--context` to `kubectl apply`. The report names the context and the server in its `audit-tenant.dev/context` and `audit-tenant.dev/server` annotations, but `kubectl apply` writes to its own context.
 - The report lives in the audited namespace. Any subject that may write PolicyReports there can change it. The Kyverno Helm chart (checked on v1.19.1) gives the built-in `admin` role create, update, patch and delete on PolicyReports. So a tenant bound to `admin` can turn its own FAIL into a PASS. For an audit, keep the `-o json` output outside the cluster.
-- A report names the identity and its groups. A self-mode report from an admin shows the admin's username and groups to every subject that may read PolicyReports in that namespace. Use `--as` for reports you apply.
+- A report names the identity and its groups, the kubeconfig context and the server URL. Every subject that may read PolicyReports in that namespace sees them: a self-mode report from an admin shows the admin's username and groups, and a context name can hold a cloud account ID. Use `--as` for reports you apply.
 - Each set of run inputs has its own report, and a re-run with the same inputs replaces it. The inputs are the mode, the server URL and `--other-namespace`, plus the requested user, groups, UID and extras when impersonating, or the verified username and groups in self mode. The `audit-tenant.dev/mode` annotation says which mode made the report.
 - Some identities get a new username for each session, such as an EKS access entry for an IAM role (`assumed-role/<role>/<session>`). In self mode, each session then makes a new report, and the old ones stay with their old verdicts. Delete them before you apply: `kubectl delete policyreports -n team-a -l app.kubernetes.io/managed-by=audit-tenant`. That deletes the reports of every identity in the namespace, so re-run the others too, or use `--as` with a stable name.
 - `-o policyreport` needs all fourteen results, so it refuses a `--checks` or `--skip` that leaves any out.
-- `-o policyreport` also refuses a run that `--timeout` or Ctrl-C stopped before every check finished, and a run that fails during startup prints no report. In both cases the previous report stays.
+- `-o policyreport` also refuses a run that `--timeout` or Ctrl-C stopped before every check finished, and a run that fails during startup prints no report. In both cases the previous report stays. The refusal names any FAIL the run proved before it stopped (and then exits 1) and, after a create that was not verified as a dry run, the command that lists leftover probe objects.
 
 ## In a pipeline
 
@@ -259,8 +259,8 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 - `cannot ask the cluster "may I?"`: the identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has.
 - `--as-group and --as-uid need a user to impersonate`: the API needs a user with the groups. To test a group alone, use `--as audit-probe --as-group <group>`.
 - `-o policyreport needs every check`: drop `--checks` and `--skip`.
-- `-o policyreport needs every check to finish`: the run hit `--timeout` or was interrupted. Run again, with a longer `--timeout` if it timed out.
-- `the kubeconfig server URL holds user info`: the server URL has a name or token before the `@`. Remove it from the URL, and put the token in the kubeconfig user entry. The tool refuses such a URL because a failed request would print it in the report.
+- `-o policyreport needs a finished run`: the run hit `--timeout` or was interrupted. Run again, with a longer `--timeout` if it timed out. If the message lists leftovers, run that `kubectl get` command first.
+- `the kubeconfig server URL holds user info`: the server URL has a name or token before the `@`. Remove it from the URL. Put a token in the kubeconfig user entry's `token` field, or a basic-auth user and password in its `username` and `password` fields. The tool refuses such a URL because a failed request would print it in the report.
 - `-o policyreport needs to know who runs the tool`: no SelfSubjectReview named the identity. Use `--as`, or `-o json`.
 
 **SKIP**

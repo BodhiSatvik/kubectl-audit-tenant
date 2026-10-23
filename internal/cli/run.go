@@ -169,12 +169,27 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if len(results) == 0 {
 		return exit2("no check produced a result; this is a bug in audit-tenant")
 	}
-	if o.output == "policyreport" && ctx.Err() != nil { // D175: as D147, a partial report would replace the identity's full one
+	if o.output == "policyreport" && ctx.Err() != nil && slices.ContainsFunc(results, func(r report.Result) bool { return r.Verdict == report.Error }) {
+		// D175: as D147, a partial report would replace the identity's full one. D178: the refusal keeps
+		// what the report would have said: a proven FAIL (exit 1, D63) and where leftovers may be (D103).
 		stopped := "was interrupted"
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			stopped = "hit --timeout " + o.timeout.String()
 		}
-		return exit2("-o policyreport needs every check to finish, and this run %s: a partial report would replace the identity's full report; re-run, with a longer --timeout if it timed out", stopped)
+		msg := "-o policyreport needs a finished run, and this run " + stopped + ": a partial report would replace the identity's full report; re-run, with a longer --timeout if it timed out"
+		var failed []string
+		for _, r := range results {
+			if r.Verdict == report.Fail {
+				failed = append(failed, r.ID)
+			}
+		}
+		if len(failed) > 0 {
+			msg += "; before it stopped, it proved FAIL for " + strings.Join(failed, ", ") + " (-o json shows the reasons)"
+		}
+		if c.Unverified.Load() {
+			msg += "; a create was not verified as a dry run, so list leftovers: kubectl get pods,services -n " + c.Namespace + " -l app.kubernetes.io/managed-by=audit-tenant"
+		}
+		return &exitError{code: report.Summarize(results, o.failOnSkip).ExitCode, msg: msg}
 	}
 	rep := report.Report{
 		Tool:      report.Tool{Name: "audit-tenant", Version: info.Version},

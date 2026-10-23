@@ -146,8 +146,38 @@ func TestPolicyReportRefusesARunThatHitTheTimeout(t *testing.T) {
 		}
 	}))
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport")
-	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs every check to finish") || !strings.Contains(stderr, "--timeout 1s") {
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs a finished run") || !strings.Contains(stderr, "--timeout 1s") {
 		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2 and no report", code, stdout, stderr)
+	}
+}
+
+func TestPolicyReportRefusalKeepsTheFailAndTheLeftoverHint(t *testing.T) {
+	// D178: the refusal keeps what the report would have said: a FAIL proven before the stop wins
+	// (exit 1, D63), and a create that was not verified as a dry run still names its leftovers (D103).
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"kind-dev"}}}`),
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":true}`), // AT-01 FAIL, and AT-04 sends its probes
+		"POST /api/v1/namespaces/tenant-a/pods": func(_ http.ResponseWriter, r *http.Request) { // a create that never answers: unverified
+			_, _ = io.Copy(io.Discard, r.Body)
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+			}
+		},
+	}))
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "proved FAIL for AT-01") ||
+		!strings.Contains(stderr, "list leftovers: kubectl get pods,services -n tenant-a -l app.kubernetes.io/managed-by=audit-tenant") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want exit 1, no report, the FAIL IDs and the leftover command", code, stdout, stderr)
+	}
+}
+
+func TestPolicyReportRefusesAnInterruptedRunAndKeepsItsFail(t *testing.T) {
+	code, stdout, stderr, err := interruptedRun(t, `{"allowed":true}`, "-o", "policyreport")
+	if code != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "this run was interrupted") || !strings.Contains(stderr.String(), "proved FAIL for AT-01") {
+		t.Errorf("exit %d (%v), stdout %q, stderr %q; want exit 1, no report, and the proven FAIL", code, err, stdout, stderr)
 	}
 }
 
@@ -163,7 +193,7 @@ func TestHelperProcess(_ *testing.T) {
 
 // interruptedRun runs the CLI in a child process, answers the startup question (list nodes) with
 // first, holds the next "may I?" and sends SIGINT while it hangs.
-func interruptedRun(t *testing.T, first string) (code int, stdout, stderr *bytes.Buffer, err error) {
+func interruptedRun(t *testing.T, first string, extra ...string) (code int, stdout, stderr *bytes.Buffer, err error) {
 	t.Helper()
 	reached := make(chan struct{})
 	var once sync.Once
@@ -172,7 +202,7 @@ func interruptedRun(t *testing.T, first string) (code int, stdout, stderr *bytes
 		once.Do(func() { close(reached) })
 		<-r.Context().Done() // hold the second question until the client gives up
 	}))
-	child := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--no-color") //nolint:gosec // the test re-executes its own binary as the helper process
+	child := exec.Command(os.Args[0], append([]string{"-test.run=^TestHelperProcess$", "--", "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--no-color"}, extra...)...) //nolint:gosec // the test re-executes its own binary as the helper process
 	child.Env = append(os.Environ(), "AUDIT_TENANT_HELPER=1")
 	stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
 	child.Stdout, child.Stderr = stdout, stderr

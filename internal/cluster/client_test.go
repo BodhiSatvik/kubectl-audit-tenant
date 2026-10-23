@@ -84,6 +84,14 @@ func TestConnectRefusesUserinfoInTheServerURL(t *testing.T) {
 	}
 }
 
+func TestConnectKeepsUserinfoOutOfAServerURLThatDoesNotParse(t *testing.T) {
+	// D179: client-go's parse error quotes the whole URL, so it would print the token D169 refuses.
+	_, err := cluster.Connect(t.Context(), &rest.Config{Host: "https://t0ken@127.0.0.1:badport"}, opts)
+	if err == nil || !strings.Contains(err.Error(), "user info") || strings.Contains(err.Error(), "t0ken") {
+		t.Errorf("Connect() error %v; want the user-info refusal without the token", err)
+	}
+}
+
 func TestConnectResolvesIdentityVersionNamespaceAndCaches(t *testing.T) {
 	srv, c, err := connect(t, happy(), opts)
 	if err != nil {

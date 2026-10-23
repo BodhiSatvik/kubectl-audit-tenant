@@ -139,12 +139,12 @@ func TestMachineOutputMarksControlAndFormatCharacters(t *testing.T) {
 		t.Fatal(err)
 	}
 	// One marker per string: JSON has 19 (tool, cluster 3, identity 2, warning, 4 per result); the
-	// PolicyReport 21 (6 annotations, 5 per result). Its JSON-in-annotation strings escape < and >.
+	// PolicyReport 21 (6 annotations, 5 per result), its JSON-in-annotation strings not HTML-escaped.
 	for name, tc := range map[string]struct {
 		out     string
 		markers int
 	}{"-o json": {string(out), 19}, "-o policyreport": {pr.String(), 21}} {
-		if strings.ContainsAny(tc.out, rlo+"\x7f\u0085\r") || strings.Count(tc.out, "U+202E") != tc.markers || !strings.Contains(tc.out, "<U+007F><U+0085><U+000D>") {
+		if strings.ContainsAny(tc.out, rlo+"\x7f\u0085\r") || strings.Count(tc.out, "<U+202E>") != tc.markers || !strings.Contains(tc.out, "<U+007F><U+0085><U+000D>") {
 			t.Errorf("%s keeps a raw control or format character, or has not %d markers:\n%s", name, tc.markers, tc.out)
 		}
 	}
@@ -163,10 +163,12 @@ func TestMachineOutputCarriesTheAdminHint(t *testing.T) {
 	// D173: a self run as a cluster admin reads as a wide-open cluster; the reason travels with the report.
 	r := sample()
 	r.AdminHint = true
+	r.Warnings = make([]string, 1, 2) // spare capacity: the hint must not land in the caller's array
+	r.Warnings[0] = "--other-namespace prod is not checked"
 	out := printJSON(t, r)
 	var got struct{ Warnings []string }
-	if err := json.Unmarshal(out, &got); err != nil || len(got.Warnings) != 1 || got.Warnings[0] != adminHint {
-		t.Errorf("err %v, warnings %q; want the admin hint", err, got.Warnings)
+	if err := json.Unmarshal(out, &got); err != nil || len(got.Warnings) != 2 || got.Warnings[0] != r.Warnings[0] || got.Warnings[1] != adminHint || r.Warnings[:2][1] != "" {
+		t.Errorf("err %v, warnings %q; want the run's caveat, then the admin hint, and the caller's slice untouched", err, got.Warnings)
 	}
 	var pr bytes.Buffer
 	if err := PolicyReport(&pr, r); err != nil || !strings.Contains(pr.String(), "looks like a cluster admin") {

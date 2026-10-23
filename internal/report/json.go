@@ -35,7 +35,7 @@ func forMachines(r Report) Report {
 		r.Warnings = append(slices.Clip(r.Warnings), adminHint)
 	}
 	r.Tool.Version = mark(r.Tool.Version)
-	r.Cluster = Cluster{Context: mark(r.Cluster.Context), Server: mark(r.Cluster.Server), Version: mark(r.Cluster.Version)}
+	r.Cluster.Context, r.Cluster.Server, r.Cluster.Version = mark(r.Cluster.Context), mark(r.Cluster.Server), mark(r.Cluster.Version)
 	r.Identity.Username, r.Identity.Groups = mark(r.Identity.Username), markAll(r.Identity.Groups)
 	r.Warnings = markAll(r.Warnings)
 	r.Results = slices.Clone(r.Results)

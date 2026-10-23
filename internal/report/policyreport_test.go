@@ -182,3 +182,20 @@ func TestPolicyReportEscapesServerControlBytes(t *testing.T) {
 		t.Errorf("the message must round-trip whole: err %v, got %q", err, got.Results[1].Message)
 	}
 }
+
+func TestPolicyReportNameHashesTheInputsBeforeMarking(t *testing.T) {
+	// D154 hashes the inputs exactly as given; D170's markers must not rename a report.
+	r := self("dev\u202e", "devs")
+	r.Namespace = "team-a"
+	var buf bytes.Buffer
+	if err := PolicyReport(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	var got struct{ Metadata struct{ Name string } }
+	if err := yaml.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if marked := self("dev<U+202E>", "devs"); got.Metadata.Name != reportName(r) || got.Metadata.Name == reportName(marked) {
+		t.Errorf("name %q; want the hash of the raw input %q, not of the marked text", got.Metadata.Name, reportName(r))
+	}
+}

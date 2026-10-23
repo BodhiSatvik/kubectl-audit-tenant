@@ -69,7 +69,7 @@ Wording, hints, edge cases and tests. None changes a public contract; do them be
 - [ ] P3 /ship: D133: a ValidatingAdmissionPolicy whose message quotes "violates PodSecurity" is classified as PSA, because that rule comes before the policy rule in `probe/classify.go`; AT-09's FAIL then names a PSA cluster default that does not exist (Claude adversarial; D102 class).
 - [ ] P3 /ship: D133: a Deployment scaled to 0 whose containers leave a tracked value unset gets the AT-10 refusal FAIL, though its peak is 0 and the quota refuses nothing until it scales up (Claude adversarial).
 - [ ] P3 /ship: D133: quota admission compares usage with `status.hard`, but AT-06 and AT-10 read `spec.hard`; the two differ until the quota controller syncs a new `spec.hard` (Claude adversarial).
-- [ ] P4 /ship pass 3: `TestServerLeavesOutUserinfo` reads `c.Server` when `Connect` failed, so a failing change panics instead of failing the test; split the check (testing).
+- [x] P4 /ship pass 3: `TestServerLeavesOutUserinfo` reads `c.Server` when `Connect` failed, so a failing change panics instead of failing the test; split the check (testing). Done on `b31-pre-release`: `TestServerLeavesOutQueryAndFragment` stops on the error first (D169 replaced the userinfo case).
 - [ ] P4 /ship pass 2: `TestPolicyReportNeedsAVerifiedIdentityInSelfMode` does not prove the refusal comes before any check; assert the server saw only the startup requests (testing).
 - [ ] P4 /ship pass 2: `TestAT04OneResultTakesTheWorstOfItsForms` keeps the row "rejected, then mutated", which the stronger test also covers (testing).
 
@@ -112,6 +112,7 @@ The floor guard and the benchmark evidence. None changes what a user sees.
 
 #### 7. Later (v0.2 or after)
 
+- [ ] B31 /review (Claude adversarial, 2026-10-23): D170 marks every format character, so a username with a zero-width joiner or non-joiner (U+200C, U+200D: Persian and Indic names, emoji) reads `<U+200C>` in `identity` fields and no longer equals the real username for a consumer that joins on it. A newline in server text is kept and can still forge a line in `jq -r` output. Decide whether identity fields keep ZWJ and ZWNJ, or carry the raw value next to the marked one.
 - [ ] P2 /review, P4 /review: A mutating webhook can remove the dangerous field, so an accepted dry run is not proof of FAIL; check the returned object before calling it FAIL, and report PASS "admission (mutation)" when the field is gone (Later; the error is a false FAIL, the safe direction). Phase 4 /review found it again; D145 makes it visible in `--debug`.
 - [ ] P2 /review: AT-05 probes only `type: NodePort`; `type: LoadBalancer` also allocates node ports by default. The PASS note says so now; decide whether to add a LoadBalancer probe (Later).
 - [ ] P2 /review: On OpenShift (restricted-v2 SCC) or with registry allowlists, the control pod's fixed `runAsUser: 65532` and the public pause image are rejected, so AT-04 is SKIP; an SCC 403 on a probe matches no classifier rule (ERROR). Consider dropping `runAsUser`, adding `readOnlyRootFilesystem: true`, an SCC classifier rule and a `--probe-image` flag (Later).

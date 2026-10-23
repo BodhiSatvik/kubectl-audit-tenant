@@ -51,13 +51,13 @@ func PolicyReport(w io.Writer, r Report) error {
 	name := reportName(r) // from the inputs as given, before their control characters are marked
 	r = forMachines(r)
 	id := r.Identity
-	groups, err := json.Marshal(append([]string{}, id.Groups...)) // a JSON array, [] when none: a group name may hold a comma (an LDAP DN)
+	groups, err := compactJSON(append([]string{}, id.Groups...)) // a JSON array, [] when none: a group name may hold a comma (an LDAP DN)
 	if err != nil {
 		return err
 	}
 	annotations := map[string]string{
 		"audit-tenant.dev/identity":        id.Username,
-		"audit-tenant.dev/groups":          string(groups),
+		"audit-tenant.dev/groups":          groups,
 		"audit-tenant.dev/verified":        strconv.FormatBool(id.Verified),
 		"audit-tenant.dev/tool-version":    r.Tool.Version,
 		"audit-tenant.dev/other-namespace": r.OtherNamespace,
@@ -66,11 +66,11 @@ func PolicyReport(w io.Writer, r Report) error {
 		"audit-tenant.dev/server":          r.Cluster.Server,
 	}
 	if len(r.Warnings) > 0 { // the run's caveats travel with the report (D146)
-		warnings, err := json.Marshal(r.Warnings)
+		warnings, err := compactJSON(r.Warnings)
 		if err != nil {
 			return err
 		}
-		annotations["audit-tenant.dev/warnings"] = string(warnings)
+		annotations["audit-tenant.dev/warnings"] = warnings
 	}
 	pr := policyReport{
 		APIVersion: "wgpolicyk8s.io/v1alpha2",
@@ -138,4 +138,16 @@ func reportName(r Report) string {
 	}, strings.ToLower(user)) // the request, so a verified and an unverified run share the slug too
 	slug = strings.Trim(slug[:min(len(slug), 54)], "-")
 	return strings.Join(slices.DeleteFunc([]string{"audit-tenant", slug, hex.EncodeToString(sum[:16])}, func(s string) bool { return s == "" }), "-")
+}
+
+// compactJSON is json.Marshal without HTML escaping, as -o json writes, so a <U+XXXX> marker
+// (D170) or "--as <admin>" reads as itself in an annotation.
+func compactJSON(v any) (string, error) {
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(b.String(), "\n"), nil
 }
