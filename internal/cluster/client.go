@@ -93,9 +93,12 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 	if err != nil {
 		return nil, fmt.Errorf("cannot load the kubeconfig: %w", err)
 	}
+	if base.User != nil { // D169: Go hides only a password in a failed request's URL, so a token here would reach the report
+		return nil, errors.New("the kubeconfig server URL holds user info (a name or token before the @); remove it from the URL: audit-tenant refuses it so that no error message can print it")
+	}
 	rec := cmp.Or(opts.Recorder, &safety.Recorder{})
 	server := *base
-	server.User, server.RawQuery, server.Fragment = nil, "", "" // a kubeconfig server URL may carry user:password or a token; -o json prints Server
+	server.RawQuery, server.Fragment = "", "" // client-go never sends them; -o json prints Server
 	c := &Client{Recorder: rec, Namespace: opts.Namespace, OtherNamespace: opts.OtherNamespace, Server: server.String()}
 	cfg.Wrap(safety.Wrap(opts.Namespace, base, rec, &c.Unverified))
 	cs, err := kubernetes.NewForConfig(cfg)

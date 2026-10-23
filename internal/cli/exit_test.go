@@ -134,6 +134,23 @@ func TestTimeoutEndsARunWhoseServerStopsAnswering(t *testing.T) {
 	}
 }
 
+func TestPolicyReportRefusesARunThatHitTheTimeout(t *testing.T) {
+	// D175: an applied partial report would replace the identity's full one, turning a FAIL into
+	// ERROR on the dashboard: the harm D147 refuses for --checks.
+	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(`{"allowed":false}`), func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // as above: the startup SSAR answers, then the server stops answering
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+			http.Error(w, "the test server gave up", http.StatusInternalServerError)
+		}
+	}))
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport")
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs every check to finish") || !strings.Contains(stderr, "--timeout 1s") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2 and no report", code, stdout, stderr)
+	}
+}
+
 // TestHelperProcess is the child of TestInterruptPrintsAPartialReportAndExitsTwo: it runs the
 // real CLI with the arguments after "--".
 func TestHelperProcess(_ *testing.T) {

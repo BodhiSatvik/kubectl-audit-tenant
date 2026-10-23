@@ -3,6 +3,7 @@ package cli
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -167,6 +168,13 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	results := checks.Run(ctx, c, specs, o.timeout)
 	if len(results) == 0 {
 		return exit2("no check produced a result; this is a bug in audit-tenant")
+	}
+	if o.output == "policyreport" && ctx.Err() != nil { // D175: as D147, a partial report would replace the identity's full one
+		stopped := "was interrupted"
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			stopped = "hit --timeout " + o.timeout.String()
+		}
+		return exit2("-o policyreport needs every check to finish, and this run %s: a partial report would replace the identity's full report; re-run, with a longer --timeout if it timed out", stopped)
 	}
 	rep := report.Report{
 		Tool:      report.Tool{Name: "audit-tenant", Version: info.Version},

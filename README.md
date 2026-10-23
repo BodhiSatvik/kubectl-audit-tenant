@@ -183,8 +183,10 @@ Every output format keeps the exit code. A run that cannot start prints the reas
 
 - Checklist (default): one line per result, with a `fix` line under each FAIL, SKIP and ERROR and, for many results, a `note` line that names what the check did not test.
 - `-o wide`: adds the MTB ID and the deciding layer, and never cuts a reason. `--plain` gives ASCII only. Color shows only on a terminal; `--no-color` or `NO_COLOR` turns it off.
-- `-o json`: one object per run. The schema is [`docs/report.schema.json`](docs/report.schema.json).
+- `-o json`: one object per run. The schema is [`docs/report.schema.json`](docs/report.schema.json). A minor release may add fields, so ignore fields you do not know; a removed or renamed field gets a new `apiVersion`.
 - `-o policyreport`: a `wgpolicyk8s.io/v1alpha2` PolicyReport for dashboards such as Policy Reporter. The tool only prints it; you apply it.
+
+In `-o json` and `-o policyreport`, a control or format character in server text (for example the right-to-left override U+202E) shows as `<U+202E>`. Such text cannot hide or reorder what a terminal or dashboard displays.
 
 ### Applying a PolicyReport
 
@@ -201,12 +203,13 @@ kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev -o policyre
 
 - Use a pipe. The report is applied even when it holds a FAIL, and with `pipefail` the step still exits 1. With `> r.yaml && kubectl apply -f r.yaml`, a FAIL stops the apply, and the dashboard keeps the last clean report.
 - Use `--server-side`. Client-side apply copies the whole report into an annotation, which has a 256 KiB limit.
-- If you pass `--context` to the audit, pass the same `--context` to `kubectl apply`. The report itself does not name the cluster.
+- If you pass `--context` to the audit, pass the same `--context` to `kubectl apply`. The report names the context and the server in its `audit-tenant.dev/context` and `audit-tenant.dev/server` annotations, but `kubectl apply` writes to its own context.
 - The report lives in the audited namespace. Any subject that may write PolicyReports there can change it. The Kyverno Helm chart (checked on v1.19.1) gives the built-in `admin` role create, update, patch and delete on PolicyReports. So a tenant bound to `admin` can turn its own FAIL into a PASS. For an audit, keep the `-o json` output outside the cluster.
 - A report names the identity and its groups. A self-mode report from an admin shows the admin's username and groups to every subject that may read PolicyReports in that namespace. Use `--as` for reports you apply.
-- Each set of run inputs has its own report, and a re-run with the same inputs replaces it. The inputs are the mode, the server URL and `--other-namespace`, plus the requested user, groups, UID and extras when impersonating, or the verified username and groups in self mode.
+- Each set of run inputs has its own report, and a re-run with the same inputs replaces it. The inputs are the mode, the server URL and `--other-namespace`, plus the requested user, groups, UID and extras when impersonating, or the verified username and groups in self mode. The `audit-tenant.dev/mode` annotation says which mode made the report.
+- Some identities get a new username for each session, such as an EKS access entry for an IAM role (`assumed-role/<role>/<session>`). In self mode, each session then makes a new report, and the old ones stay with their old verdicts. Delete them before you apply: `kubectl delete policyreports -n team-a -l app.kubernetes.io/managed-by=audit-tenant`. That deletes the reports of every identity in the namespace, so re-run the others too, or use `--as` with a stable name.
 - `-o policyreport` needs all fourteen results, so it refuses a `--checks` or `--skip` that leaves any out.
-- After startup, a run that hits `--timeout` still prints a report, with ERROR for every check that did not finish. A run that fails during startup prints no report, so the previous report stays.
+- `-o policyreport` also refuses a run that `--timeout` or Ctrl-C stopped before every check finished, and a run that fails during startup prints no report. In both cases the previous report stays.
 
 ## In a pipeline
 
@@ -256,6 +259,8 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 - `cannot ask the cluster "may I?"`: the identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has.
 - `--as-group and --as-uid need a user to impersonate`: the API needs a user with the groups. To test a group alone, use `--as audit-probe --as-group <group>`.
 - `-o policyreport needs every check`: drop `--checks` and `--skip`.
+- `-o policyreport needs every check to finish`: the run hit `--timeout` or was interrupted. Run again, with a longer `--timeout` if it timed out.
+- `the kubeconfig server URL holds user info`: the server URL has a name or token before the `@`. Remove it from the URL, and put the token in the kubeconfig user entry. The tool refuses such a URL because a failed request would print it in the report.
 - `-o policyreport needs to know who runs the tool`: no SelfSubjectReview named the identity. Use `--as`, or `-o json`.
 
 **SKIP**

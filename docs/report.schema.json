@@ -1,15 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "audit-tenant report (kubectl audit-tenant -o json)",
-  "description": "One run of kubectl audit-tenant: one result per check result, in ID order (DESIGN.md section 6). The apiVersion is one-way after release.",
+  "description": "One run of kubectl audit-tenant: one result per check result, in ID order (DESIGN.md section 6). The apiVersion is one-way after release. A minor release may add fields at any level, so a consumer must ignore fields it does not know; a removed or renamed field gets a new apiVersion (D171).",
   "type": "object",
-  "additionalProperties": false,
   "required": ["apiVersion", "tool", "cluster", "namespace", "otherNamespace", "identity", "timestamp", "results", "summary"],
   "properties": {
     "apiVersion": {"const": "audit-tenant.dev/v1alpha1"},
     "tool": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["name", "version"],
       "properties": {
         "name": {"const": "audit-tenant"},
@@ -18,7 +16,6 @@
     },
     "cluster": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["context", "server", "version"],
       "properties": {
         "context": {"type": "string", "description": "kubeconfig context name"},
@@ -30,7 +27,6 @@
     "otherNamespace": {"type": "string", "minLength": 1, "description": "--other-namespace, the namespace AT-02 asks about"},
     "identity": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["mode", "username", "groups", "verified"],
       "properties": {
         "mode": {"enum": ["self", "impersonation"]},
@@ -44,7 +40,6 @@
     "results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/result"}},
     "summary": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["pass", "fail", "skip", "error", "exitCode", "results", "checks"],
       "properties": {
         "pass": {"type": "integer", "minimum": 0},
@@ -60,7 +55,6 @@
   "$defs": {
     "result": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["id", "name", "kind", "mtb", "severity", "verdict", "layer", "reason", "hint"],
       "properties": {
         "id": {"type": "string", "pattern": "^AT-[0-9]{2}(\\.[0-9])?$"},
@@ -70,7 +64,7 @@
         "severity": {"enum": ["high", "medium", "low"]},
         "verdict": {"enum": ["PASS", "FAIL", "SKIP", "ERROR"]},
         "layer": {"type": "string", "minLength": 1, "description": "the deciding layer: RBAC, admission (...), API server (allow-privileged=false), config, or -"},
-        "reason": {"type": "string", "minLength": 1, "description": "the full text, never cut; it can quote the server"},
+        "reason": {"type": "string", "minLength": 1, "description": "the full text, never cut; it can quote the server. A control or format character other than newline and tab shows as <U+XXXX> (D170)"},
         "hint": {"type": "string", "description": "empty only on PASS"},
         "note": {"type": "string", "minLength": 1, "description": "what the check did not test (D86); absent when nothing"}
       },

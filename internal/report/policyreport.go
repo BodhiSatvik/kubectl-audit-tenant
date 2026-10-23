@@ -48,6 +48,8 @@ type (
 // PolicyReport writes the report as a PolicyReport in YAML (DESIGN.md section 6) for the user
 // to apply; the tool never writes it to the cluster.
 func PolicyReport(w io.Writer, r Report) error {
+	name := reportName(r) // from the inputs as given, before their control characters are marked
+	r = forMachines(r)
 	id := r.Identity
 	groups, err := json.Marshal(append([]string{}, id.Groups...)) // a JSON array, [] when none: a group name may hold a comma (an LDAP DN)
 	if err != nil {
@@ -59,6 +61,9 @@ func PolicyReport(w io.Writer, r Report) error {
 		"audit-tenant.dev/verified":        strconv.FormatBool(id.Verified),
 		"audit-tenant.dev/tool-version":    r.Tool.Version,
 		"audit-tenant.dev/other-namespace": r.OtherNamespace,
+		"audit-tenant.dev/mode":            id.Mode, // D173: self and --as runs of one user look alike otherwise
+		"audit-tenant.dev/context":         r.Cluster.Context,
+		"audit-tenant.dev/server":          r.Cluster.Server,
 	}
 	if len(r.Warnings) > 0 { // the run's caveats travel with the report (D146)
 		warnings, err := json.Marshal(r.Warnings)
@@ -71,7 +76,7 @@ func PolicyReport(w io.Writer, r Report) error {
 		APIVersion: "wgpolicyk8s.io/v1alpha2",
 		Kind:       "PolicyReport",
 		Metadata: prMetadata{
-			Name:        reportName(r),
+			Name:        name,
 			Namespace:   r.Namespace,
 			Labels:      map[string]string{"app.kubernetes.io/managed-by": "audit-tenant"},
 			Annotations: annotations,
@@ -80,7 +85,7 @@ func PolicyReport(w io.Writer, r Report) error {
 		Summary: map[string]int{"pass": r.Summary.Pass, "fail": r.Summary.Fail, "warn": 0, "error": r.Summary.Error, "skip": r.Summary.Skip},
 	}
 	for _, res := range r.Results {
-		props := map[string]string{"layer": res.Layer, "name": res.Name, "identity": id.Username}
+		props := map[string]string{"layer": res.Layer, "name": res.Name, "identity": id.Username, "mode": id.Mode}
 		if res.Hint != "" {
 			props["hint"] = res.Hint
 		}
