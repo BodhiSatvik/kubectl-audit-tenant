@@ -29,7 +29,7 @@ func Select(include, skip []string) ([]Spec, error) {
 			if slices.ContainsFunc(s.Results, func(r ResultSpec) bool { return in[r.ID] }) {
 				return nil, fmt.Errorf("check %s is not in this build yet; it lands in a later release", s.ID)
 			}
-			continue // shortcut: catalog-only until its task lands; at v0.1.0 drop unshipped checks from Registry instead (D28)
+			continue // catalog-only (D28); v0.1.0 ships every check, and the guard keeps its tests for a later one
 		}
 		var results []ResultSpec
 		for _, r := range s.Results {

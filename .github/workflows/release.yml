@@ -4,63 +4,120 @@ on:
     tags: ["v*"]
 permissions:
   contents: read
+# One run per tag: a second run waits, so it never replaces the draft that this run tests and publishes (D188).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  KUBECTL_VERSION: v1.37.1
+# The release stays a draft until krew installs its archives on both platforms; then publish makes it
+# public and manifest-url installs from the published URL, which a draft does not serve.
 jobs:
-  goreleaser:
+  test: # read-only: no dependency's test or init code runs in a job that holds the write token (D190)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # publishes the release
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          fetch-depth: 0
-          persist-credentials: false # tests run in this job; goreleaser reads GITHUB_TOKEN from env
-      - uses: actions/setup-go@v6 # v6 builds with go.mod's toolchain directive
+          fetch-depth: 0 # also fetches origin/main for the next step
+          persist-credentials: false
+      - name: Release only commits of main, not commits from inside a merged branch (D188)
+        run: git rev-list --first-parent origin/main | grep -x "$(git rev-parse HEAD)" >/dev/null || { echo "::error::$GITHUB_REF_NAME is not a commit of main"; exit 1; } # no -q: an early exit would break rev-list's pipe
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0; builds with go.mod's toolchain directive
         with:
           go-version-file: go.mod
+          cache: false # main's CI writes that cache; the release path never reads it (D188)
       - run: go test ./... && make safety # never publish a binary whose read-only guarantee was not tested
-      - uses: goreleaser/goreleaser-action@v6
+  goreleaser:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the draft release
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          version: v2.18.3 # pinned like every other tool; bump on purpose
-          args: release --clean
+          fetch-depth: 0 # goreleaser reads the tags
+          persist-credentials: false # goreleaser reads GITHUB_TOKEN from env
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0; builds with go.mod's toolchain directive
+        with:
+          go-version-file: go.mod
+          cache: false # main's CI writes that cache; the release build never reads it (D188)
+      # The Go checksum database verifies this build of goreleaser; goreleaser-action downloads an unchecked binary (D190).
+      - run: go install github.com/goreleaser/goreleaser/v2@v2.18.3 # pinned like every other tool; bump on purpose
+      - run: goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }} # never another v* tag on the same commit (D188)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist # the same files the draft holds; krew-install reads them without a token that sees drafts
+          path: |
+            dist/*.tar.gz
+            dist/checksums.txt
+            dist/krew/audit-tenant.yaml
+          if-no-files-found: error
   krew-install:
     needs: goreleaser
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read # downloads public release assets only
-    env:
-      GH_TOKEN: ${{ github.token }}
-      KREW_VERSION: v0.5.0
     steps:
-      - uses: azure/setup-kubectl@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          version: v1.37.1
-      - name: Install krew
+          persist-credentials: false
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+      - run: hack/install-krew.sh
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+      - name: Install from the draft's manifest and archive in a clean KREW_ROOT
         run: |
           set -euo pipefail
           os=$(uname | tr '[:upper:]' '[:lower:]')
           arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-          cd "$(mktemp -d)"
-          curl -fsSLO "https://github.com/kubernetes-sigs/krew/releases/download/${KREW_VERSION}/krew-${os}_${arch}.tar.gz"
-          tar zxf "krew-${os}_${arch}.tar.gz"
-          "./krew-${os}_${arch}" install krew
-          echo "$HOME/.krew/bin" >> "$GITHUB_PATH"
-      - name: Install from the manifest and archive, then from the manifest URL, each in a clean KREW_ROOT
-        run: |
-          set -euo pipefail
-          tag="$GITHUB_REF_NAME"
-          os=$(uname | tr '[:upper:]' '[:lower:]')
-          arch=$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')
-          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern audit-tenant.yaml --pattern "*_${os}_${arch}.tar.gz"
           export KREW_ROOT
           KREW_ROOT=$(mktemp -d)
-          archive=$(ls ./*_"${os}_${arch}".tar.gz) # a glob inside --archive=... never expands
-          kubectl krew install --manifest=audit-tenant.yaml --archive="$archive"
-          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "${tag#v}"
+          archive=$(ls dist/*_"${os}_${arch}".tar.gz) # a glob inside --archive=... never expands
+          kubectl krew install --manifest=dist/krew/audit-tenant.yaml --archive="$archive"
+          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "audit-tenant ${GITHUB_REF_NAME#v} (commit "
+  publish:
+    needs: krew-install
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publishes the draft
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
+      - name: Publish the draft only when it holds the build that krew-install tested (D188)
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern checksums.txt --output draft-checksums.txt
+          cmp dist/checksums.txt draft-checksums.txt
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+        env:
+          GH_TOKEN: ${{ github.token }}
+  manifest-url: # krew downloads with no token, so this needs a public repo; re-run it after the repo goes public
+    needs: publish
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+      - run: hack/install-krew.sh
+      - name: Install from the published manifest URL in a clean KREW_ROOT
+        run: |
+          set -euo pipefail
+          export KREW_ROOT
           KREW_ROOT=$(mktemp -d)
-          kubectl krew install --manifest-url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/audit-tenant.yaml"
-          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "${tag#v}"
+          kubectl krew install --manifest-url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/audit-tenant.yaml"
+          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F "audit-tenant ${GITHUB_REF_NAME#v} (commit "
