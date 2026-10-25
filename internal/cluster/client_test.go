@@ -46,18 +46,49 @@ func connect(t *testing.T, routes map[string]http.HandlerFunc, o cluster.Options
 	return srv, c, err
 }
 
-func TestServerLeavesOutUserinfo(t *testing.T) {
-	// -o json prints Server; a kubeconfig server URL may carry user:password (security review).
+func TestServerLeavesOutQueryAndFragment(t *testing.T) {
 	srv := testutil.NewServer(t, happy())
 	u, err := url.Parse(srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	u.User = url.UserPassword("admin", "s3cret")
 	u.RawQuery, u.Fragment = "token=s3cret", "s3cret" // client-go never sends these; -o json must not print them either
 	c, err := cluster.Connect(t.Context(), &rest.Config{Host: u.String()}, opts)
-	if err != nil || c.Server != srv.URL {
-		t.Errorf("Connect() error %v; Server = %q, want %s without the userinfo", err, c.Server, srv.URL)
+	if err != nil {
+		t.Fatalf("Connect() error %v", err)
+	}
+	if c.Server != srv.URL {
+		t.Errorf("Server = %q, want %s", c.Server, srv.URL)
+	}
+}
+
+func TestConnectRefusesUserinfoInTheServerURL(t *testing.T) {
+	// D169: Go hides only a password in a failed request's URL, so a token before the @ would
+	// reach the reasons of -o json and -o policyreport. The run stops before any request.
+	for name, user := range map[string]*url.Userinfo{"a token": url.User("t0ken"), "a user and password": url.UserPassword("admin", "s3cret")} {
+		t.Run(name, func(t *testing.T) {
+			srv := testutil.NewServer(t, happy())
+			u, err := url.Parse(srv.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			u.User = user
+			_, err = cluster.Connect(t.Context(), &rest.Config{Host: u.String()}, opts)
+			if err == nil || !strings.Contains(err.Error(), "user info") || strings.Contains(err.Error(), u.Host) || strings.Contains(err.Error(), "t0ken") || strings.Contains(err.Error(), "admin") {
+				t.Errorf("Connect() error %v; want a refusal that names user info and not the URL", err)
+			}
+			if hits := srv.Hits(); len(hits) != 0 {
+				t.Errorf("requests %v; want none", hits)
+			}
+		})
+	}
+}
+
+func TestConnectKeepsUserinfoOutOfAServerURLThatDoesNotParse(t *testing.T) {
+	// D179: client-go's parse error quotes the whole URL, so it would print the token D169 refuses.
+	_, err := cluster.Connect(t.Context(), &rest.Config{Host: "https://t0ken@127.0.0.1:badport"}, opts)
+	if err == nil || !strings.Contains(err.Error(), "user info") || strings.Contains(err.Error(), "t0ken") {
+		t.Errorf("Connect() error %v; want the user-info refusal without the token", err)
 	}
 }
 

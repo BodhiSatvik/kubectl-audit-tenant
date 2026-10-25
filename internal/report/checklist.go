@@ -27,7 +27,7 @@ func (p Checklist) Print(r Report) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "namespace %s%s%s%scluster %s\n", Sanitize(r.Namespace), dot, identity(r.Identity), dot, Sanitize(r.Cluster.Context))
 	if r.AdminHint {
-		b.WriteString("this identity looks like a cluster admin; add --as to test a tenant\n")
+		b.WriteString(adminHint + "\n")
 	}
 	for _, w := range r.Warnings {
 		b.WriteString("warning: " + Sanitize(w) + "\n") // flag values are user text

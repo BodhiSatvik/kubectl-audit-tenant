@@ -44,7 +44,8 @@ func TestPolicyReportSample(t *testing.T) {
 	}
 	if got.Metadata.Labels["app.kubernetes.io/managed-by"] != "audit-tenant" || got.Metadata.Annotations["audit-tenant.dev/groups"] != `["team-a","system:authenticated"]` ||
 		got.Metadata.Annotations["audit-tenant.dev/other-namespace"] != "kube-system" || got.Metadata.Annotations["audit-tenant.dev/warnings"] != `["--checks or --skip left out results"]` ||
-		got.Metadata.Annotations["audit-tenant.dev/verified"] != "true" || got.Metadata.Annotations["audit-tenant.dev/identity"] != "team-a-dev" || got.Metadata.Annotations["audit-tenant.dev/tool-version"] != "0.1.0" {
+		got.Metadata.Annotations["audit-tenant.dev/verified"] != "true" || got.Metadata.Annotations["audit-tenant.dev/identity"] != "team-a-dev" || got.Metadata.Annotations["audit-tenant.dev/tool-version"] != "0.1.0" ||
+		got.Metadata.Annotations["audit-tenant.dev/mode"] != "impersonation" || got.Metadata.Annotations["audit-tenant.dev/context"] != "kind-dev" || got.Metadata.Annotations["audit-tenant.dev/server"] != "https://127.0.0.1:6443" { // D173
 		t.Errorf("labels %v, annotations %v", got.Metadata.Labels, got.Metadata.Annotations)
 	}
 	if got.Scope["kind"] != "Namespace" || got.Scope["name"] != "team-a" || got.Scope["apiVersion"] != "v1" {
@@ -56,7 +57,7 @@ func TestPolicyReportSample(t *testing.T) {
 	pass, fail, skip := got.Results[0], got.Results[1], got.Results[2]
 	if pass.Policy != "AT-01" || pass.Rule != "MTB-PL1-CC-CPI-1" || pass.Result != "pass" || pass.Severity != "high" || pass.Category != "multi-tenancy" || pass.Source != "audit-tenant" ||
 		pass.Message != "RBAC denied all 4 actions" || pass.Timestamp.Seconds != r.Timestamp.Unix() || pass.Properties["layer"] != "RBAC" ||
-		pass.Properties["identity"] != "team-a-dev" || pass.Properties["name"] != "No cluster-scoped access" || pass.Properties["note"] == "" {
+		pass.Properties["identity"] != "team-a-dev" || pass.Properties["mode"] != "impersonation" || pass.Properties["name"] != "No cluster-scoped access" || pass.Properties["note"] == "" {
 		t.Errorf("PASS result = %+v", pass)
 	}
 	if _, ok := pass.Properties["hint"]; ok {
@@ -176,7 +177,25 @@ func TestPolicyReportEscapesServerControlBytes(t *testing.T) {
 		t.Errorf("-o policyreport carries raw control bytes:\n%q", buf.String())
 	}
 	var got struct{ Results []struct{ Message string } }
-	if err := yaml.Unmarshal(buf.Bytes(), &got); err != nil || got.Results[1].Message != r.Results[1].Reason {
+	// D170: whole, with its control characters marked
+	if err := yaml.Unmarshal(buf.Bytes(), &got); err != nil || got.Results[1].Message != "line one\nline <U+001B>[31mtwo<U+001B>[0m<U+0007><U+000D>" {
 		t.Errorf("the message must round-trip whole: err %v, got %q", err, got.Results[1].Message)
+	}
+}
+
+func TestPolicyReportNameHashesTheInputsBeforeMarking(t *testing.T) {
+	// D154 hashes the inputs exactly as given; D170's markers must not rename a report.
+	r := self("dev\u202e", "devs")
+	r.Namespace = "team-a"
+	var buf bytes.Buffer
+	if err := PolicyReport(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	var got struct{ Metadata struct{ Name string } }
+	if err := yaml.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if marked := self("dev<U+202E>", "devs"); got.Metadata.Name != reportName(r) || got.Metadata.Name == reportName(marked) {
+		t.Errorf("name %q; want the hash of the raw input %q, not of the marked text", got.Metadata.Name, reportName(r))
 	}
 }

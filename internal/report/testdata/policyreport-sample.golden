@@ -2,9 +2,12 @@ apiVersion: wgpolicyk8s.io/v1alpha2
 kind: PolicyReport
 metadata:
   annotations:
+    audit-tenant.dev/context: kind-dev
     audit-tenant.dev/groups: '["team-a","system:authenticated"]'
     audit-tenant.dev/identity: team-a-dev
+    audit-tenant.dev/mode: impersonation
     audit-tenant.dev/other-namespace: kube-system
+    audit-tenant.dev/server: https://127.0.0.1:6443
     audit-tenant.dev/tool-version: 0.1.0
     audit-tenant.dev/verified: "true"
     audit-tenant.dev/warnings: '["--checks or --skip left out results"]'
@@ -19,6 +22,7 @@ results:
   properties:
     identity: team-a-dev
     layer: RBAC
+    mode: impersonation
     name: No cluster-scoped access
     note: 'not tested: grants limited to named objects (resourceNames)'
   result: pass
@@ -36,6 +40,7 @@ results:
       the tenant role'
     identity: team-a-dev
     layer: '-'
+    mode: impersonation
     name: NodePort services blocked
   result: fail
   rule: MTB-PL1-BC-HI-1
@@ -51,6 +56,7 @@ results:
     hint: grant `get` on namespace team-a to this identity, or run with --as <admin>
     identity: team-a-dev
     layer: '-'
+    mode: impersonation
     name: Pod Security Admission enforced
   result: skip
   severity: high

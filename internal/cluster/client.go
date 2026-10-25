@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,6 +83,9 @@ func Connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 	}
 }
 
+// errUserinfo refuses a server URL with a name or token before the @, and never prints the URL.
+var errUserinfo = errors.New("the kubeconfig server URL holds user info (a name or token before the @); remove it from the URL: audit-tenant refuses it so that no error message can print it")
+
 func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, error) {
 	cfg = rest.CopyConfig(cfg)
 	cfg.QPS, cfg.Burst = 50, 300 // kubectl's values; client-go's defaults would throttle the run
@@ -90,12 +94,18 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 	// JSON on the wire, so --debug can print the SSAR and probe answers as text.
 	cfg.ContentType, cfg.AcceptContentTypes = runtime.ContentTypeJSON, runtime.ContentTypeJSON
 	base, _, err := rest.DefaultServerUrlFor(cfg)
+	if err != nil && strings.Contains(cfg.Host, "@") { // D179: client-go's parse error quotes the whole URL
+		return nil, errUserinfo
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot load the kubeconfig: %w", err)
 	}
+	if base.User != nil { // D169: Go hides only a password in a failed request's URL, so a token here would reach the report
+		return nil, errUserinfo
+	}
 	rec := cmp.Or(opts.Recorder, &safety.Recorder{})
 	server := *base
-	server.User, server.RawQuery, server.Fragment = nil, "", "" // a kubeconfig server URL may carry user:password or a token; -o json prints Server
+	server.RawQuery, server.Fragment = "", "" // client-go never sends them; -o json and the PolicyReport server annotation print Server
 	c := &Client{Recorder: rec, Namespace: opts.Namespace, OtherNamespace: opts.OtherNamespace, Server: server.String()}
 	cfg.Wrap(safety.Wrap(opts.Namespace, base, rec, &c.Unverified))
 	cs, err := kubernetes.NewForConfig(cfg)

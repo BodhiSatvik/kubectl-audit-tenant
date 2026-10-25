@@ -134,6 +134,122 @@ func TestTimeoutEndsARunWhoseServerStopsAnswering(t *testing.T) {
 	}
 }
 
+func TestPolicyReportRefusesARunThatHitTheTimeout(t *testing.T) {
+	// D175: an applied partial report would replace the identity's full one, turning a FAIL into
+	// ERROR on the dashboard: the harm D147 refuses for --checks.
+	srv := clusterWithSSAR(t, nthSSAR(1, testutil.SSAR(`{"allowed":false}`), func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // as above: the startup SSAR answers, then the server stops answering
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+			http.Error(w, "the test server gave up", http.StatusInternalServerError)
+		}
+	}))
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport")
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs a finished run") || !strings.Contains(stderr, "--timeout 1s") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2 and no report", code, stdout, stderr)
+	}
+}
+
+func TestPolicyReportPrintsAStoppedRunThatProvedAFail(t *testing.T) {
+	// D182: a proven FAIL can only make the dashboard look worse, so a stopped run that proved one
+	// prints its partial report (exit 1, D63). stdout goes to kubectl apply, so the leftover command
+	// after a create that was not verified as a dry run goes to stderr too (D103, D178).
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"kind-dev"}}}`),
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":true}`), // AT-01 FAIL, and AT-04 sends its probes
+		"POST /api/v1/namespaces/tenant-a/pods": func(_ http.ResponseWriter, r *http.Request) { // a create that never answers: unverified
+			_, _ = io.Copy(io.Discard, r.Body)
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+			}
+		},
+	}))
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport")
+	leftovers := "list leftovers: kubectl get pods,services -n tenant-a -l app.kubernetes.io/managed-by=audit-tenant"
+	if code != 1 || !strings.Contains(stdout, "kind: PolicyReport") || !strings.Contains(stdout, "result: fail") || !strings.Contains(stdout, leftovers) || !strings.Contains(stderr, leftovers) {
+		t.Errorf("exit %d, stderr %q; want exit 1, the partial report with its FAIL, and the leftover command in the report and on stderr:\n%s", code, stderr, stdout)
+	}
+}
+
+func TestPolicyReportRefusalNamesTheLeftovers(t *testing.T) {
+	// D178: a refused run (no FAIL) after a create that was not verified as a dry run still says
+	// where leftovers may be (D103). The identity may create pods and nothing else, so AT-01 to
+	// AT-03 PASS and AT-04's control pod is the create that never answers.
+	podCreator := func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var q struct {
+			Spec struct {
+				ResourceAttributes struct{ Verb, Resource, Subresource string }
+			}
+		}
+		_ = json.Unmarshal(body, &q)
+		a, answer := q.Spec.ResourceAttributes, `{"allowed":false}`
+		if a.Verb == "create" && a.Resource == "pods" && a.Subresource == "" {
+			answer = `{"allowed":true}`
+		}
+		testutil.SSAR(answer)(w, r)
+	}
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"kind-dev"}}}`),
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": podCreator,
+		"POST /api/v1/namespaces/tenant-a/pods": func(_ http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+			}
+		},
+	}))
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport")
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "needs a finished run") ||
+		!strings.Contains(stderr, "list leftovers: kubectl get pods,services -n tenant-a -l app.kubernetes.io/managed-by=audit-tenant") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2, no report, and the leftover command", code, stdout, stderr)
+	}
+}
+
+func TestPolicyReportAfterAnInterruptPrintsOnlyAProvenFail(t *testing.T) {
+	code, stdout, stderr, err := interruptedRun(t, `{"allowed":false}`, "-o", "policyreport")
+	if code != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "-o policyreport needs a finished run, and this run was interrupted") {
+		t.Errorf("exit %d (%v), stdout %q, stderr %q; want exit 2 and no report", code, err, stdout, stderr)
+	}
+	code, stdout, stderr, err = interruptedRun(t, `{"allowed":true}`, "-o", "policyreport") // D182: AT-01 FAIL before the signal
+	if code != 1 || !strings.Contains(stdout.String(), "result: fail") {
+		t.Errorf("exit %d (%v), stderr %q; want exit 1 and the partial report:\n%s", code, err, stderr, stdout)
+	}
+}
+
+func TestPolicyReportRefusalNamesTheSkipsThatFailOnSkipCounts(t *testing.T) {
+	// D185: with --fail-on-skip a SKIP proven before the stop makes the refusal exit 1; it says so.
+	routes := unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"kind-dev"}}}`),
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
+	}) // AT-06 and AT-07 SKIP: their lists are forbidden
+	routes["GET /apis/networking.k8s.io/v1/namespaces/tenant-a/networkpolicies"] = func(_ http.ResponseWriter, r *http.Request) { // AT-08 never answers
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}
+	srv := testutil.NewServer(t, routes)
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport", "--fail-on-skip")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "needs a finished run") || !strings.Contains(stderr, "proved SKIP for AT-06, AT-07") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want exit 1, no report, and the SKIP IDs", code, stdout, stderr)
+	}
+	code, _, stderr = run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--timeout", "1s", "-o", "policyreport")
+	if code != 2 || strings.Contains(stderr, "SKIP") {
+		t.Errorf("exit %d, stderr %q; without --fail-on-skip the refusal exits 2 and names no SKIP", code, stderr)
+	}
+}
+
 // TestHelperProcess is the child of TestInterruptPrintsAPartialReportAndExitsTwo: it runs the
 // real CLI with the arguments after "--".
 func TestHelperProcess(_ *testing.T) {
@@ -146,7 +262,7 @@ func TestHelperProcess(_ *testing.T) {
 
 // interruptedRun runs the CLI in a child process, answers the startup question (list nodes) with
 // first, holds the next "may I?" and sends SIGINT while it hangs.
-func interruptedRun(t *testing.T, first string) (code int, stdout, stderr *bytes.Buffer, err error) {
+func interruptedRun(t *testing.T, first string, extra ...string) (code int, stdout, stderr *bytes.Buffer, err error) {
 	t.Helper()
 	reached := make(chan struct{})
 	var once sync.Once
@@ -155,7 +271,7 @@ func interruptedRun(t *testing.T, first string) (code int, stdout, stderr *bytes
 		once.Do(func() { close(reached) })
 		<-r.Context().Done() // hold the second question until the client gives up
 	}))
-	child := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "--", "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--no-color") //nolint:gosec // the test re-executes its own binary as the helper process
+	child := exec.Command(os.Args[0], append([]string{"-test.run=^TestHelperProcess$", "--", "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--no-color"}, extra...)...) //nolint:gosec // the test re-executes its own binary as the helper process
 	child.Env = append(os.Environ(), "AUDIT_TENANT_HELPER=1")
 	stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
 	child.Stdout, child.Stderr = stdout, stderr
