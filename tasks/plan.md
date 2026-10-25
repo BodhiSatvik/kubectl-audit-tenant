@@ -48,7 +48,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B21 e2e: all ten checks
 
 ### Checkpoint 3
-- [x] Full verdict matrix green; `make check` under 90 s (2026-10-20 at 9d44fcb: real e2e with upstream Kyverno matches runs 1-4, 37/37/31/34 requests; `make check` 16.9 s with a cold cache; D117)
+- [x] Full verdict matrix green; `make check` under 90 s (2026-10-20 at 9499843: real e2e with upstream Kyverno matches runs 1-4, 37/37/31/34 requests; `make check` 16.9 s with a cold cache; D117)
 
 ### Phase 4: output formats and flags
 - [x] B22 `-o wide`
@@ -57,7 +57,7 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B25 `--debug` and `--fail-on-skip`
 
 ### Checkpoint 4
-- [x] Five printers golden-tested; schema and PolicyReport pass in e2e (2026-10-21 at cb82f89: goldens for checklist, plain, color, wide and wide-plain, json, policyreport and the --debug stderr trace; e2e runs 1-4 plus -o json validated against the schema and -o policyreport applied with --dry-run=server, 40/40/31/34/40/40 requests; CI check and kind green; D142 to D156)
+- [x] Five printers golden-tested; schema and PolicyReport pass in e2e (2026-10-21 at ba59419: goldens for checklist, plain, color, wide and wide-plain, json, policyreport and the --debug stderr trace; e2e runs 1-4 plus -o json validated against the schema and -o policyreport applied with --dry-run=server, 40/40/31/34/40/40 requests; CI check and kind green; D142 to D156)
 
 ### Phase 5: integration layer, benchmark and floor tests
 - [x] B26 envtest layer

@@ -40,9 +40,9 @@ Every row names the command that produces the verdict. A dimension with a number
 
 | Metric | Today | Direction |
 |--------|-------|-----------|
-| Project statement coverage (all packages) | 98.0% (`make unit`, then `go tool cover -func coverage.out`; maintainer's Mac at 7c11d28, 2026-10-21) | must not fall (0.5% tolerance) |
-| Binary size, linux/amd64 | 49.5 MB (49,533,088 bytes, 1 MB = 10^6 bytes; `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build` with the `.goreleaser.yaml` ldflags, go1.27.3; Go code at 7e037e6, the v0.1.0 candidate, 2026-10-25) | must not grow more than 10% per minor release without a note in CHANGELOG |
-| `make check` wall time on the maintainer's Mac | 16.9 s (M1 Pro, 8 cores, test cache cleared; Phase 3 at 9d44fcb, 2026-10-20) | stays under 90 s |
+| Project statement coverage (all packages) | 98.0% (`make unit`, then `go tool cover -func coverage.out`; maintainer's Mac at d154d15, 2026-10-21) | must not fall (0.5% tolerance) |
+| Binary size, linux/amd64 | 49.5 MB (49,533,088 bytes, 1 MB = 10^6 bytes; `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build` with the `.goreleaser.yaml` ldflags, go1.27.3; Go code at 7f885aa, the v0.1.0 candidate, 2026-10-25) | must not grow more than 10% per minor release without a note in CHANGELOG |
+| `make check` wall time on the maintainer's Mac | 16.9 s (M1 Pro, 8 cores, test cache cleared; Phase 3 at 9499843, 2026-10-20) | stays under 90 s |
 
 ## Stages and budgets
 

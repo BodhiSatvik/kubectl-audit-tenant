@@ -22,7 +22,7 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Open review items, sorted (2026-10-22)
 
-The review sections of Phases 1 to 5 are sorted here by what they block. Each item keeps its text; the prefix names the review that found it. Done items are in `_archive/TODOS-done.md`; the old grouping is in git history (`1778b02`).
+The review sections of Phases 1 to 5 are sorted here by what they block. Each item keeps its text; the prefix names the review that found it. Done items are in `_archive/TODOS-done.md`; the old grouping is in git history (`3f24d79`).
 
 #### 1. README (card B29)
 
