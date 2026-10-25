@@ -53,3 +53,11 @@ jobs:
         run: |
           test "$(ls dist/*.tar.gz dist/*.zip | wc -l)" -eq 5
           test -s dist/checksums.txt && test -s dist/krew/audit-tenant.yaml
+      - run: hack/install-krew.sh
+      - name: krew installs the snapshot from its manifest and archive, as release.yml does before publish (D189)
+        run: |
+          export KREW_ROOT
+          KREW_ROOT=$(mktemp -d)
+          archive=$(ls dist/*_linux_amd64.tar.gz) # a glob inside --archive=... never expands
+          kubectl krew install --manifest=dist/krew/audit-tenant.yaml --archive="$archive"
+          PATH="$KREW_ROOT/bin:$PATH" kubectl audit-tenant version | grep -F -- "-snapshot (commit "
