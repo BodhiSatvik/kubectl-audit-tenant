@@ -52,5 +52,7 @@ krews:
       Run it against your own namespace with your own kubeconfig, or as an admin with
       --as <tenant identity>. Exit code 1 means a FAIL; 2 means an ERROR or the run could not start.
 release:
+  draft: true # release.yml publishes it after the krew-install job passes
+  replace_existing_draft: true # a re-run replaces its own draft, so publish finds one release per tag
   extra_files:
     - glob: dist/krew/audit-tenant.yaml
