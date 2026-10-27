@@ -204,7 +204,7 @@ func TestConnectExitReasons(t *testing.T) {
 		{"first SSAR 403", "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "selfsubjectaccessreviews.authorization.k8s.io is forbidden"),
 			"this identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has"},
 		{"/version answers HTML (a login proxy)", "GET /version", func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "<html>sign in</html>") },
-			"API server unreachable: /version returned no version"},
+			"the API server, or a proxy in front of it, answered /version with HTTP 200 but no version"},
 		{"403 on /version", "GET /version", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "forbidden"),
 			"the API server refused /version for this identity"},
 		{"first SSAR 500", "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews", testutil.Status(http.StatusInternalServerError, metav1.StatusReasonInternalError, "etcd unavailable"),
@@ -217,6 +217,15 @@ func TestConnectExitReasons(t *testing.T) {
 			"unauthorized: the cluster rejected your credentials"},
 		{"cannot impersonate without a user name", "GET /version", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "cannot impersonate"),
 			"your identity may not impersonate team-a-dev"},
+		{"/version answers 500 in plain text (Teleport refusing an impersonation, D196)", "GET /version", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `impersonation request has been denied, user header "team-a-dev" is not allowed in roles`)
+		}, `the API server, or a proxy in front of it, answered /version with HTTP 500: an error on the server ("impersonation request has been denied`},
+		{"/version answers a Status without a code (a proxy)", "GET /version", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"upstream refused"}`)
+		}, "answered /version with HTTP 502: upstream refused"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

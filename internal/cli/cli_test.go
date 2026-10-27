@@ -53,6 +53,42 @@ func cluster(t *testing.T) *testutil.Server {
 	}))
 }
 
+// impersonatingCluster is cluster(t) whose SelfSubjectReview answers as the API server does (D196).
+func impersonatingCluster(t *testing.T) *testutil.Server {
+	t.Helper()
+	return testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      selfSubjectReview,
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
+	}))
+}
+
+// selfSubjectReview answers team-a-dev, or the impersonated user with the groups asked for plus what
+// the API server's impersonation adds: a service account's own groups when none were asked for, and
+// system:unauthenticated for system:anonymous, else system:authenticated unless asked for unauthenticated.
+func selfSubjectReview(w http.ResponseWriter, r *http.Request) {
+	user, groups := "team-a-dev", []string{"team-a"}
+	if as := r.Header.Get("Impersonate-User"); as != "" {
+		user, groups = as, r.Header.Values("Impersonate-Group")
+		if ns, ok := strings.CutPrefix(as, "system:serviceaccount:"); ok && len(groups) == 0 {
+			ns, _, _ = strings.Cut(ns, ":")
+			groups = []string{"system:serviceaccounts", "system:serviceaccounts:" + ns}
+		}
+		switch {
+		case as == "system:anonymous":
+			groups = append(groups, "system:unauthenticated")
+		case !slices.Contains(groups, "system:unauthenticated"):
+			groups = append(groups, "system:authenticated")
+		}
+	}
+	body, err := json.Marshal(map[string]any{"status": map[string]any{"userInfo": map[string]any{"username": user, "groups": groups}}})
+	if err != nil {
+		panic(err)
+	}
+	testutil.JSON(http.StatusCreated, string(body))(w, r)
+}
+
 // unreadable refuses with 403 every object the configuration checks read (the namespace and the
 // LISTs), as for a tenant that may not read them: those checks SKIP, which leaves the exit code alone.
 func unreadable(routes map[string]http.HandlerFunc) map[string]http.HandlerFunc {

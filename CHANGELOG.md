@@ -2,7 +2,7 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-26
 
 The first release.
 
@@ -14,6 +14,7 @@ The first release.
   - AT-06 to AT-09: a complete ResourceQuota, LimitRange defaults, default-deny NetworkPolicies and the Pod Security Admission label.
   - AT-10: an estimate of whether the quota covers the rollout peak of the Deployments and StatefulSets.
 - Self mode (the kubeconfig's identity) and impersonation (`--as`, `--as-group`), with warnings for impersonation flags that leave out groups.
+- Tested behind Teleport 18: tenant runs through the proxy give the same verdicts as direct runs when the proxy role passes the requests through. For an impersonated user that the SelfSubjectReview confirms, a warning names the groups the proxy adds. A startup answer from the server or a proxy (an HTTP error, or a page with no version) is reported with its HTTP status, not as an unreachable server.
 - Four verdicts (PASS, FAIL, SKIP, ERROR). Each result has the deciding layer, the MTB ID (`-` when none exists) and a reason. Every FAIL, SKIP and ERROR also has a hint, and a note says when part of a check was not tested.
 - Exit codes 0, 1 and 2, and `--fail-on-skip` for pipelines.
 - Output formats: checklist (default), `-o wide`, `--plain`, `-o json` with a JSON Schema (`docs/report.schema.json`), and `-o policyreport` (`wgpolicyk8s.io/v1alpha2`).

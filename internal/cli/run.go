@@ -105,7 +105,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	// The effective impersonation: the --as flags or the kubeconfig's as and as-groups entries
 	// (clientcmd already refuses groups without a user there).
 	as, asGroups := cfg.Impersonate.UserName, cfg.Impersonate.Groups
-	var warnings []string // D141, D146, D147: what the flags leave untested; no request needed
+	var warnings []string // D141, D146, D147: what the flags leave untested, no request needed; D196 adds one from the SelfSubjectReview
 	saNamespace, sa := strings.CutPrefix(as, "system:serviceaccount:")
 	saNamespace, _, _ = strings.Cut(saNamespace, ":")
 	switch missing := slices.DeleteFunc([]string{"system:serviceaccounts", "system:serviceaccounts:" + saNamespace}, func(g string) bool { return slices.Contains(asGroups, g) }); {
@@ -164,6 +164,23 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	}
 	if o.output == "policyreport" && c.Identity.Mode == report.ModeSelf && !c.Identity.Verified { // D151: the report name needs the identity
 		return exit2("-o policyreport needs to know who runs the tool: no SelfSubjectReview answer named the identity, and the kubeconfig names only its user entry %q; use --as, or -o json", c.Identity.Username)
+	}
+	if c.Identity.Mode == report.ModeImpersonation && c.Identity.Verified { // D196: an access proxy such as Teleport adds its role's groups to the impersonated user
+		asked := slices.Clone(asGroups) // plus the groups the API server's impersonation adds itself
+		if sa && len(asGroups) == 0 {
+			asked = append(asked, "system:serviceaccounts", "system:serviceaccounts:"+saNamespace)
+		}
+		switch {
+		case as == "system:anonymous":
+			asked = append(asked, "system:unauthenticated")
+		case !slices.Contains(asked, "system:unauthenticated"):
+			asked = append(asked, "system:authenticated")
+		}
+		added := slices.DeleteFunc(slices.Clone(c.Identity.Groups), func(g string) bool { return slices.Contains(asked, g) })
+		slices.Sort(added)
+		if added = slices.Compact(added); len(added) > 0 {
+			warnings = append(warnings, "the cluster gives "+c.Identity.Username+" groups that the run did not ask for: "+strings.Join(added, ", ")+"; an access proxy such as Teleport adds its own role's groups to the impersonated user, so the results describe the identity with those groups")
+		}
 	}
 	results := checks.Run(ctx, c, specs, o.timeout)
 	if len(results) == 0 {

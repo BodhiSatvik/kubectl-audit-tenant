@@ -92,7 +92,7 @@ func TestIdentityWarnings(t *testing.T) {
 		{[]string{"--other-namespace", "prod"}, []string{other}},
 		{[]string{"--as", "team-a-dev", "--other-namespace", "prod"}, []string{user, other}},
 	} {
-		srv := cluster(t)
+		srv := impersonatingCluster(t)
 		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, "")}, tt.args...)...)
 		if code != 0 || strings.Count(stdout, "\nwarning: ") != len(tt.want) {
 			t.Errorf("%v: exit %d, stderr %q; want %d warning lines:\n%s", tt.args, code, stderr, len(tt.want), stdout)
@@ -104,7 +104,7 @@ func TestIdentityWarnings(t *testing.T) {
 		}
 	}
 	// A kubeconfig user's as: impersonates too; the warning names no flag the user never passed.
-	srv := cluster(t)
+	srv := impersonatingCluster(t)
 	path := filepath.Join(t.TempDir(), "kubeconfig")
 	cfg := fmt.Sprintf("apiVersion: v1\nkind: Config\nclusters: [{name: dev, cluster: {server: %q}}]\ncontexts: [{name: kind-dev, context: {cluster: dev, user: kind-dev}}]\ncurrent-context: kind-dev\nusers: [{name: kind-dev, user: {token: test-token, as: team-a-dev}}]\n", srv.URL)
 	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
@@ -117,6 +117,38 @@ func TestIdentityWarnings(t *testing.T) {
 	var rep struct{ Warnings []string }
 	if err := json.Unmarshal([]byte(stdout), &rep); err != nil || len(rep.Warnings) != 1 || !strings.HasPrefix("warning: "+rep.Warnings[0], user) {
 		t.Errorf("err %v, warnings %q; -o json must carry the warning:\n%s", err, rep.Warnings, stdout)
+	}
+}
+
+// D196: an access proxy such as Teleport adds its role's groups to an impersonated user (live:
+// system:masters). The run names groups nobody asked for, and none for the groups the API server's
+// impersonation adds itself (a service account's own groups, system:authenticated or, for
+// system:anonymous, system:unauthenticated) or in self mode.
+func TestWarningNamesGroupsTheClusterAddedToAnImpersonatedUser(t *testing.T) {
+	const sa = "system:serviceaccount:tenant-a:tenant-a-dev"
+	for _, tt := range []struct {
+		user, groups string
+		args         []string
+		want         string // the warning after "the cluster gives ", or "" for none
+	}{
+		{sa, `["system:masters","system:authenticated"]`, []string{"--as", sa}, sa + " groups that the run did not ask for: system:masters;"},
+		{sa, `["system:serviceaccounts","system:serviceaccounts:tenant-a","system:authenticated"]`, []string{"--as", sa}, ""},
+		{sa, `["system:serviceaccounts","system:serviceaccounts:tenant-a","system:masters","system:authenticated"]`, []string{"--as", sa}, sa + " groups that the run did not ask for: system:masters;"},
+		{sa, `["system:masters","system:authenticated"]`, []string{"--as", sa, "--as-group", "system:masters"}, ""},
+		{sa, `["system:masters","system:authenticated"]`, nil, ""},
+		{"system:anonymous", `["system:unauthenticated"]`, []string{"--as", "system:anonymous"}, ""},
+		{"bob", `["system:unauthenticated","system:authenticated"]`, []string{"--as", "bob", "--as-group", "system:unauthenticated"}, "bob groups that the run did not ask for: system:authenticated;"},
+	} {
+		srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+			"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+			"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"`+tt.user+`","groups":`+tt.groups+`}}}`),
+			"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
+		}))
+		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, "")}, tt.args...)...)
+		got := strings.Contains(stdout, "\nwarning: the cluster gives ")
+		if code != 0 || got != (tt.want != "") || (tt.want != "" && !strings.Contains(stdout, "\nwarning: the cluster gives "+tt.want)) {
+			t.Errorf("%s %s, %v: exit %d, stderr %q; want exit 0 and the added-groups warning %q:\n%s", tt.user, tt.groups, tt.args, code, stderr, tt.want, stdout)
+		}
 	}
 }
 
