@@ -120,28 +120,34 @@ func TestIdentityWarnings(t *testing.T) {
 	}
 }
 
-// D196: an access proxy such as Teleport adds its role's groups to --as (live: system:masters). The
-// run names groups nobody asked for, and none for the groups the API server adds itself or in self mode.
+// D196: an access proxy such as Teleport adds its role's groups to an impersonated user (live:
+// system:masters). The run names groups nobody asked for, and none for the groups the API server's
+// impersonation adds itself (a service account's own groups, system:authenticated or, for
+// system:anonymous, system:unauthenticated) or in self mode.
 func TestWarningNamesGroupsTheClusterAddedToAnImpersonatedUser(t *testing.T) {
-	const added = "warning: the cluster gives system:serviceaccount:tenant-a:tenant-a-dev groups that the run did not ask for: system:masters;"
+	const sa = "system:serviceaccount:tenant-a:tenant-a-dev"
 	for _, tt := range []struct {
-		groups string
-		args   []string
-		want   bool
+		user, groups string
+		args         []string
+		want         string // the warning after "the cluster gives ", or "" for none
 	}{
-		{`["system:masters","system:authenticated"]`, []string{"--as", "system:serviceaccount:tenant-a:tenant-a-dev"}, true},
-		{`["system:serviceaccounts","system:serviceaccounts:tenant-a","system:authenticated"]`, []string{"--as", "system:serviceaccount:tenant-a:tenant-a-dev"}, false},
-		{`["system:masters","system:authenticated"]`, []string{"--as", "system:serviceaccount:tenant-a:tenant-a-dev", "--as-group", "system:masters"}, false},
-		{`["system:masters","system:authenticated"]`, nil, false},
+		{sa, `["system:masters","system:authenticated"]`, []string{"--as", sa}, sa + " groups that the run did not ask for: system:masters;"},
+		{sa, `["system:serviceaccounts","system:serviceaccounts:tenant-a","system:authenticated"]`, []string{"--as", sa}, ""},
+		{sa, `["system:serviceaccounts","system:serviceaccounts:tenant-a","system:masters","system:authenticated"]`, []string{"--as", sa}, sa + " groups that the run did not ask for: system:masters;"},
+		{sa, `["system:masters","system:authenticated"]`, []string{"--as", sa, "--as-group", "system:masters"}, ""},
+		{sa, `["system:masters","system:authenticated"]`, nil, ""},
+		{"system:anonymous", `["system:unauthenticated"]`, []string{"--as", "system:anonymous"}, ""},
+		{"bob", `["system:unauthenticated","system:authenticated"]`, []string{"--as", "bob", "--as-group", "system:unauthenticated"}, "bob groups that the run did not ask for: system:authenticated;"},
 	} {
 		srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
 			"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
-			"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"system:serviceaccount:tenant-a:tenant-a-dev","groups":`+tt.groups+`}}}`),
+			"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"`+tt.user+`","groups":`+tt.groups+`}}}`),
 			"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
 		}))
 		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, "")}, tt.args...)...)
-		if got := strings.Contains(stdout, "\n"+added); code != 0 || got != tt.want {
-			t.Errorf("groups %s, %v: exit %d, stderr %q, added-groups warning %v; want exit 0 and %v:\n%s", tt.groups, tt.args, code, stderr, got, tt.want, stdout)
+		got := strings.Contains(stdout, "\nwarning: the cluster gives ")
+		if code != 0 || got != (tt.want != "") || (tt.want != "" && !strings.Contains(stdout, "\nwarning: the cluster gives "+tt.want)) {
+			t.Errorf("%s %s, %v: exit %d, stderr %q; want exit 0 and the added-groups warning %q:\n%s", tt.user, tt.groups, tt.args, code, stderr, tt.want, stdout)
 		}
 	}
 }

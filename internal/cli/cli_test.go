@@ -64,8 +64,9 @@ func impersonatingCluster(t *testing.T) *testutil.Server {
 	}))
 }
 
-// selfSubjectReview answers team-a-dev, or the impersonated user with the groups asked for, a
-// service account's own groups when none were, and system:authenticated.
+// selfSubjectReview answers team-a-dev, or the impersonated user with the groups asked for plus what
+// the API server's impersonation adds: a service account's own groups when none were asked for, and
+// system:unauthenticated for system:anonymous, else system:authenticated unless asked for unauthenticated.
 func selfSubjectReview(w http.ResponseWriter, r *http.Request) {
 	user, groups := "team-a-dev", []string{"team-a"}
 	if as := r.Header.Get("Impersonate-User"); as != "" {
@@ -74,7 +75,12 @@ func selfSubjectReview(w http.ResponseWriter, r *http.Request) {
 			ns, _, _ = strings.Cut(ns, ":")
 			groups = []string{"system:serviceaccounts", "system:serviceaccounts:" + ns}
 		}
-		groups = append(groups, "system:authenticated")
+		switch {
+		case as == "system:anonymous":
+			groups = append(groups, "system:unauthenticated")
+		case !slices.Contains(groups, "system:unauthenticated"):
+			groups = append(groups, "system:authenticated")
+		}
 	}
 	body, err := json.Marshal(map[string]any{"status": map[string]any{"userInfo": map[string]any{"username": user, "groups": groups}}})
 	if err != nil {

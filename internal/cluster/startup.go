@@ -23,6 +23,8 @@ var FirstQuestion = Attributes{Verb: "list", Resource: "nodes"}
 func (c *Client) startup(ctx context.Context, opts Options) error {
 	// Error() decodes the server's Status body; Raw() alone would report "unknown" on a 401 or 403.
 	res := c.Clientset.Discovery().RESTClient().Get().AbsPath("/version").Do(ctx)
+	var code int // the HTTP status, 0 when no answer came; an error's Status may lack it or be client-made
+	res.StatusCode(&code)
 	if err := res.Error(); err != nil {
 		if fatal := opts.fatal(ctx, err); fatal != nil {
 			return fatal
@@ -31,15 +33,15 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 			return fmt.Errorf("the API server refused /version for this identity: %w", err)
 		}
 		// An HTTP answer is not a network failure: Teleport answers 500 when it refuses an impersonation (D196).
-		if status, ok := errors.AsType[*apierrors.StatusError](err); ok && status.ErrStatus.Code != 0 {
-			return fmt.Errorf("the API server, or a proxy in front of it, answered /version with HTTP %d: %w", status.ErrStatus.Code, err)
+		if code != 0 {
+			return fmt.Errorf("the API server, or a proxy in front of it, answered /version with HTTP %d: %w", code, err)
 		}
 		return fmt.Errorf("API server unreachable: %w", err)
 	}
 	raw, _ := res.Raw()
 	var info version.Info
-	if err := json.Unmarshal(raw, &info); err != nil {
-		return fmt.Errorf("API server unreachable: /version returned no version: %w", err)
+	if err := json.Unmarshal(raw, &info); err != nil { // a login page from an authenticating proxy, say
+		return fmt.Errorf("the API server, or a proxy in front of it, answered /version with HTTP %d but no version: %w", code, err)
 	}
 	c.Version = info.GitVersion
 
