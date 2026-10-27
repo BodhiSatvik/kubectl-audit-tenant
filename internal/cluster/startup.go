@@ -30,6 +30,10 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 		if apierrors.IsForbidden(err) {
 			return fmt.Errorf("the API server refused /version for this identity: %w", err)
 		}
+		// An HTTP answer is not a network failure: Teleport answers 500 when it refuses an impersonation (D196).
+		if status, ok := errors.AsType[*apierrors.StatusError](err); ok && status.ErrStatus.Code != 0 {
+			return fmt.Errorf("the API server, or a proxy in front of it, answered /version with HTTP %d: %w", status.ErrStatus.Code, err)
+		}
 		return fmt.Errorf("API server unreachable: %w", err)
 	}
 	raw, _ := res.Raw()

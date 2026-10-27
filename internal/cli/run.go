@@ -165,6 +165,15 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if o.output == "policyreport" && c.Identity.Mode == report.ModeSelf && !c.Identity.Verified { // D151: the report name needs the identity
 		return exit2("-o policyreport needs to know who runs the tool: no SelfSubjectReview answer named the identity, and the kubeconfig names only its user entry %q; use --as, or -o json", c.Identity.Username)
 	}
+	if c.Identity.Mode == report.ModeImpersonation && c.Identity.Verified { // D196: an access proxy such as Teleport adds its role's groups to --as
+		asked := append([]string{"system:authenticated"}, asGroups...)
+		if sa && len(asGroups) == 0 {
+			asked = append(asked, "system:serviceaccounts", "system:serviceaccounts:"+saNamespace)
+		}
+		if added := slices.DeleteFunc(slices.Clone(c.Identity.Groups), func(g string) bool { return slices.Contains(asked, g) }); len(added) > 0 {
+			warnings = append(warnings, "the cluster gives "+c.Identity.Username+" groups that the run did not ask for: "+strings.Join(added, ", ")+"; an access proxy such as Teleport adds its own role's groups to --as, so the results describe the identity with those groups")
+		}
+	}
 	results := checks.Run(ctx, c, specs, o.timeout)
 	if len(results) == 0 {
 		return exit2("no check produced a result; this is a bug in audit-tenant")

@@ -10,7 +10,7 @@ Check, from the tenant's side, whether a Kubernetes namespace is fenced.
 
 A platform team that shares one cluster between teams must show that team A cannot reach team B, and today the proof usually comes from the admin's side: tools that read roles and policies and infer what a tenant could do. `kubectl audit-tenant` asks the cluster directly, as the tenant, with permission checks and server-side dry runs, and prints one verdict per fence with the layer that decided it, a benchmark ID and a fix. It never changes the cluster.
 
-The results cover the fourteen checks below. They do not prove complete tenant isolation.
+The results cover the ten checks below (fourteen results). They do not prove complete tenant isolation.
 
 ## Requirements
 
@@ -102,6 +102,7 @@ The tool runs as the identity that your kubeconfig and flags give it:
 - **Impersonation.** With `--as` (or `as:` in the kubeconfig user), the tool impersonates the tenant. This needs `impersonate` rights.
   - For a user, also pass the groups that the identity provider gives it with `--as-group`. The API server does not add them.
   - For a service account, give no groups. The API server then adds `system:serviceaccounts` and `system:serviceaccounts:<namespace>` itself.
+- **Behind an access proxy** such as Teleport (tested with Teleport 18), run in self mode with the tenant's own proxy login: the verdicts match a direct run. With `--as`, the proxy can add its own role's groups to the impersonated user; the run then warns and names them.
 - **The header line** names the identity. `(unverified)` means that the API server's SelfSubjectReview did not confirm it.
 
 To find the username and groups that the cluster gives a tenant, run `kubectl auth whoami` with the tenant's own login (kubectl and Kubernetes 1.28 or newer). On EKS, GKE and AKS, it shows the names that the cluster maps the cloud identity to. Use those names with `--as` and `--as-group`.
@@ -253,6 +254,7 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 **The run did not start (exit 2)**
 
 - `API server unreachable`: check the server URL, the network, and `--context`.
+- `the API server, or a proxy in front of it, answered /version with HTTP <code>`: the server or an access proxy answered and refused. The quoted text says why; Teleport, for one, answers 500 when its role does not allow the `--as` user or group.
 - `unauthorized: the cluster rejected your credentials`: your token expired; log in again.
 - `timed out during startup`: the credential plugin of your kubeconfig (a cloud login) or the API server did not answer within `--timeout`. A hung credential helper can keep running after the tool exits; stop it yourself.
 - `<user> may not impersonate <name>`: ask a cluster admin for `impersonate` on users, groups and service accounts, or run without `--as`.

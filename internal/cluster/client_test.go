@@ -217,6 +217,10 @@ func TestConnectExitReasons(t *testing.T) {
 			"unauthorized: the cluster rejected your credentials"},
 		{"cannot impersonate without a user name", "GET /version", testutil.Status(http.StatusForbidden, metav1.StatusReasonForbidden, "cannot impersonate"),
 			"your identity may not impersonate team-a-dev"},
+		{"/version answers 500 in plain text (Teleport refusing an impersonation, D196)", "GET /version", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `impersonation request has been denied, user header "team-a-dev" is not allowed in roles`)
+		}, `the API server, or a proxy in front of it, answered /version with HTTP 500: an error on the server ("impersonation request has been denied`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
