@@ -294,6 +294,20 @@ func TestHelpStartsWithThePluginName(t *testing.T) {
 	if code != 0 || !strings.HasPrefix(stdout, "kubectl audit-tenant") || !strings.Contains(stdout, "--request-timeout") {
 		t.Errorf("--help: exit %d, stdout:\n%s", code, stdout)
 	}
+	// D197: the usage line shows the namespace, and examples cover a service account, a user with
+	// groups, self mode and a pipeline, so --help alone is enough to start.
+	for _, want := range []string{
+		"  kubectl audit-tenant -n NAMESPACE [--as USER [--as-group GROUP ...]] [flags]\n",
+		"Examples:\n",
+		"kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev\n",
+		"kubectl audit-tenant -n team-a --as alice --as-group team-a-devs\n",
+		"--fail-on-skip > audit.json\n",
+		"where every check was SKIP, or a run that could not start",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("--help lacks %q; stdout:\n%s", want, stdout)
+		}
+	}
 	// D152: `-o policyreport > r.yaml && kubectl apply -f r.yaml` never applies a report with a FAIL.
 	if !strings.Contains(stdout, "every format keeps the exit code") {
 		t.Errorf("--help: the -o help must say the exit code does not depend on the format; stdout:\n%s", stdout)

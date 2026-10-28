@@ -240,8 +240,15 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if err != nil {
 		return exit2("cannot write the report: %v", err)
 	}
+	var msgs []string
+	if rep.Summary.NothingProven() { // D197: on stderr, so a pipeline log shows it whatever stdout goes to
+		msgs = append(msgs, "nothing was proven: every check was SKIP; check -n, --as and --as-group (a misspelled namespace or identity skips every check)")
+	}
 	if o.output == "policyreport" && c.Unverified.Load() { // D182: stdout goes to kubectl apply, so stderr is what a person reads
-		return &exitError{code: rep.Summary.ExitCode, msg: checks.LeftoverHint(c.Namespace)}
+		msgs = append(msgs, checks.LeftoverHint(c.Namespace))
+	}
+	if len(msgs) > 0 {
+		return &exitError{code: rep.Summary.ExitCode, msg: strings.Join(msgs, "; ")}
 	}
 	if rep.Summary.ExitCode == 0 {
 		return nil

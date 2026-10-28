@@ -65,7 +65,7 @@ func forbidden(resource string) http.HandlerFunc {
 
 func TestAT06(t *testing.T) {
 	spec := at06Spec()
-	const failHint = "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods"
+	const failHint = "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods; first make sure a LimitRange gives defaults (AT-07): with this quota, the API server refuses new pods that set no cpu or memory"
 	tests := []struct {
 		name   string
 		answer http.HandlerFunc

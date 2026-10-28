@@ -78,13 +78,13 @@ func TestErrorExitsTwoWithNoErrorLine(t *testing.T) {
 }
 
 // Added by the /ship test coverage audit, pass 1 (Phase 2).
-// Value: protects=a SKIP exits 0, and exits 1 with --fail-on-skip (pipelines must not accept an unproven namespace); fails_when=the flag stops reaching report.Summarize;
+// Value: protects=a run of only SKIPs exits 2 (nothing was proven, D197), and exits 1 with --fail-on-skip (pipelines must not accept an unproven namespace); fails_when=the flag stops reaching report.Summarize;
 // why_new=only report tests set FailOnSkip; Phase 1 had no check that could SKIP; seam=none; no_claim=the summary wording (checklist goldens own it)
 func TestFailOnSkipTurnsASkipIntoExitOne(t *testing.T) {
 	for _, tt := range []struct {
 		flags []string
 		want  int
-	}{{nil, 0}, {[]string{"--fail-on-skip"}, 1}} {
+	}{{nil, 2}, {[]string{"--fail-on-skip"}, 1}} {
 		// Startup's question and create services are denied, update services is allowed: AT-05 is SKIP.
 		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
 		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05"}, tt.flags...)...)
@@ -98,7 +98,7 @@ func TestJSONReportsTheExitCodeTheProcessReturns(t *testing.T) {
 	for _, tt := range []struct {
 		flags []string
 		want  int
-	}{{nil, 0}, {[]string{"--fail-on-skip"}, 1}} {
+	}{{nil, 2}, {[]string{"--fail-on-skip"}, 1}} {
 		// As above: AT-05 is SKIP.
 		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
 		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05", "-o", "json"}, tt.flags...)...)
@@ -111,6 +111,20 @@ func TestJSONReportsTheExitCodeTheProcessReturns(t *testing.T) {
 		}
 		if err := json.Unmarshal([]byte(stdout), &rep); err != nil || code != tt.want || rep.Summary.ExitCode != tt.want || rep.Summary.Skip != 1 || rep.APIVersion != "audit-tenant.dev/v1alpha1" {
 			t.Errorf("flags %v: exit %d, err %v, stderr %q; want exit %d and the same exitCode in the JSON summary:\n%s", tt.flags, code, err, stderr, tt.want, stdout)
+		}
+	}
+}
+
+// D197: a typo in -n, --as or --as-group skips every check; stderr says so in every format, so a
+// pipeline log shows it even when stdout goes to a file.
+func TestARunOfOnlySkipsSaysNothingWasProven(t *testing.T) {
+	const want = "error: nothing was proven: every check was SKIP; check -n, --as and --as-group (a misspelled namespace or identity skips every check)\n"
+	for _, flags := range [][]string{nil, {"--fail-on-skip"}, {"-o", "json"}} {
+		// As above: AT-05 is SKIP.
+		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
+		_, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05"}, flags...)...)
+		if stderr != want || stdout == "" {
+			t.Errorf("flags %v: stderr %q, want %q, and the report on stdout:\n%s", flags, stderr, want, stdout)
 		}
 	}
 }

@@ -2,6 +2,18 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- A run where every result is SKIP now exits 2, not 0, and says `nothing was proven` on stderr in every output format. A misspelled `-n`, `--as` or `--as-group` gives such a run, and exit 0 let it pass a pipeline. With `--fail-on-skip` it still exits 1 (ADR 0004, amended).
+- The AT-09 fix line starts with `kubectl label --dry-run=server ...`, which lists the running pods that the level would refuse, so a pasted fix changes nothing. The AT-06 fix line says to make sure a LimitRange gives defaults first.
+- `--help` shows the namespace in the usage line and four examples.
+
+### Added
+
+- README: "Run it in a pod", with a kubeconfig for `--as` in a CronJob or a pipeline step.
+
 ## [0.1.0] - 2026-10-26
 
 The first release.

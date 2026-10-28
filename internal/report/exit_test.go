@@ -13,6 +13,8 @@ func TestSummarizeExitCode(t *testing.T) {
 		{"all pass", []Verdict{Pass, Pass}, false, 0},
 		{"skip is fine by default", []Verdict{Pass, Skip}, false, 0},
 		{"skip fails with --fail-on-skip", []Verdict{Pass, Skip}, true, 1},
+		{"only skips prove nothing (D197)", []Verdict{Skip, Skip}, false, 2},
+		{"only skips with --fail-on-skip: 1 wins over 2", []Verdict{Skip, Skip}, true, 1},
 		{"fail", []Verdict{Pass, Fail}, false, 1},
 		{"error only", []Verdict{Pass, Error}, false, 2},
 		{"fail wins over error", []Verdict{Error, Fail}, false, 1},

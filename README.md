@@ -4,7 +4,7 @@ Check, from the tenant's side, whether a Kubernetes namespace is fenced.
 
 > Status: v0.1.0, the first release (2026-10-26).
 
-[Why](#why) · [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start-kind-about-five-minutes) · [Usage](#usage) · [The checks](#the-checks) · [Verdicts and exit codes](#verdicts-and-exit-codes) · [Output formats](#output-formats) · [Safety](#safety) · [What a PASS does not prove](#what-a-pass-does-not-prove) · [Troubleshooting](#troubleshooting) · [How it differs](#how-it-differs) · [Contributing](#development-and-contributing)
+[Why](#why) · [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start-kind-about-five-minutes) · [Usage](#usage) · [The checks](#the-checks) · [Verdicts and exit codes](#verdicts-and-exit-codes) · [Output formats](#output-formats) · [Run it in a pod](#run-it-in-a-pod) · [Safety](#safety) · [What a PASS does not prove](#what-a-pass-does-not-prove) · [Troubleshooting](#troubleshooting) · [How it differs](#how-it-differs) · [Contributing](#development-and-contributing)
 
 ## Why
 
@@ -73,7 +73,7 @@ FAIL  AT-04.1  Privileged container blocked        a privileged container was ac
       fix      set the namespace label pod-security.kubernetes.io/enforce=baseline (or restricted), or add a policy that blocks privileged containers
 ...
 FAIL  AT-09    Pod Security Admission enforced     namespace team-a has no pod-security.kubernetes.io/enforce label
-      fix      kubectl label --overwrite namespace team-a pod-security.kubernetes.io/enforce=restricted (baseline also passes, but does not block AT-04.5)
+      fix      kubectl label --dry-run=server --overwrite namespace team-a pod-security.kubernetes.io/enforce=restricted lists the running pods that the level would refuse; fix them, then run it without --dry-run=server (baseline also passes, but does not block AT-04.5)
 ...
 3 passed · 11 failed (AT-04.1, AT-04.2, AT-04.3 and 8 more) · 0 skipped · 0 errors · exit 1
 ```
@@ -86,6 +86,8 @@ kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
 ```
 
 AT-04.1 to AT-04.5 and AT-09 now pass. Each AT-04 reason quotes the Pod Security Admission message that refused the probe, and AT-09 names the label. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`.
+
+On a namespace that already runs pods, read each `fix` line before you apply it: a Pod Security level or a compute quota also applies to the next pods of your running workloads. The AT-09 fix starts with a `--dry-run=server` that lists the pods the level would refuse.
 
 ## Who runs it, and how
 
@@ -174,11 +176,11 @@ A mutating webhook or policy that removes the dangerous field and then accepts t
 
 | Exit code | When |
 |---|---|
-| 0 | No FAIL and no ERROR. SKIPs are allowed, unless `--fail-on-skip` is set. |
+| 0 | No FAIL and no ERROR, and at least one result is not SKIP. SKIPs are allowed, unless `--fail-on-skip` is set. |
 | 1 | Any FAIL, or, with `--fail-on-skip`, any SKIP. This wins over 2: a run with a FAIL and an ERROR exits 1. |
-| 2 | Any ERROR, when nothing above gives 1. Also when the run could not start (bad flags, kubeconfig, credentials, impersonation, namespace not found) or could not write its report. |
+| 2 | Any ERROR, or every result is SKIP, when nothing above gives 1. Also when the run could not start (bad flags, kubeconfig, credentials, impersonation, namespace not found) or could not write its report. |
 
-Every output format keeps the exit code. A run that cannot start prints the reason on stderr and no report.
+Every output format keeps the exit code. A run that cannot start prints the reason on stderr and no report. A run where every result is SKIP proved nothing, so it exits 2 and stderr says `nothing was proven`; this is what a misspelled `-n`, `--as` or `--as-group` usually gives.
 
 ## Output formats
 
@@ -221,7 +223,41 @@ kubectl audit-tenant -n "$NAMESPACE" --as "$TENANT_USER" --as-group "$TENANT_GRO
   -o json --fail-on-skip > audit.json
 ```
 
-Any non-zero exit fails the step: 1 for a FAIL (or for a SKIP with `--fail-on-skip`), and 2 for an ERROR or a run that could not start. With `--fail-on-skip`, a namespace that the tool could not prove does not pass. `audit.json` keeps every reason and hint for the record. It is empty when the run could not start.
+Any non-zero exit fails the step: 1 for a FAIL (or for a SKIP with `--fail-on-skip`), and 2 for an ERROR, a run where every result is SKIP, or a run that could not start. With `--fail-on-skip`, a namespace that the tool could not prove does not pass. `audit.json` keeps every reason and hint for the record. It is empty when the run could not start.
+
+## Run it in a pod
+
+A CronJob, or a Tekton or Argo Workflows step, runs the tool in a pod. Self mode works with the pod's own service account and no kubeconfig. With `--as`, v0.1.0 needs a kubeconfig file in the pod: without one, the tool calls `http://localhost:8080` and reports `API server unreachable`. This kubeconfig uses the pod's own service-account token:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: audit-tenant-kubeconfig, namespace: platform-audit}
+data:
+  config: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+    - name: in-cluster
+      cluster:
+        server: https://kubernetes.default.svc
+        certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+    - name: pod
+      user:
+        tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    contexts:
+    - name: in-cluster
+      context: {cluster: in-cluster, user: pod}
+    current-context: in-cluster
+```
+
+- Mount the ConfigMap, for example at `/kubeconfig`, and set the environment variable `KUBECONFIG=/kubeconfig/config` in the container.
+- The pod's service account needs `impersonate` on `users`, `groups` and `serviceaccounts` (one ClusterRole) and nothing else: every request runs as the tenant.
+- The release binary is static. An image `FROM scratch` with `COPY kubectl-audit_tenant /` and a non-root `USER` runs under Pod Security `restricted`. Its entrypoint is the binary itself, so the arguments start with `-n`.
+- The report goes to the pod log, and the Job fails on exit 1 or 2.
+
+Checked on kind with Kubernetes 1.37: a Job with `--as` and this kubeconfig gave the same 14 results as a run from a laptop.
 
 ## Safety
 
@@ -269,6 +305,7 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 
 **SKIP**
 
+- `nothing was proven: every check was SKIP` (exit 2): look at the first SKIP reason. Most often `-n` names a namespace that does not exist, or `--as` or `--as-group` is misspelled.
 - `this identity may not even list pods in <namespace>`: check `-n`, `--as` and `--as-group`; the identity may be misspelled, miss its identity-provider prefix, or have no role in the namespace. On a cluster only seconds old, the tenant's role can take a few seconds to take effect; wait and run again.
 - `RBAC denies create pods but allows <verb> <kind>` (or the same for Services): run with `--as` an identity that may create pods (or Services), or confirm that AT-09 and your policy engine cover controller-created pods and changes to existing Services.
 - `the namespace rejects even a compliant pod` (or `a plain ClusterIP Service`): a gate refuses the compliant control probe, so the dangerous probes would prove nothing. The reason quotes the refusal; fix that first.

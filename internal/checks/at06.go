@@ -73,7 +73,7 @@ func at06(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		reason += " (scoped: " + strings.Join(scopedNames, ", ") + ")"
 	}
 	return []report.Result{spec.result(spec.Results[0], report.Fail, layerConfig, reason,
-		"add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods")}
+		"add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods; first make sure a LimitRange gives defaults (AT-07): with this quota, the API server refuses new pods that set no cpu or memory")} // D197
 }
 
 // andList joins items as "a, b and c".
