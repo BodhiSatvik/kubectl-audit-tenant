@@ -131,11 +131,11 @@ func TestAT10(t *testing.T) {
 		note   string
 	}{
 		{"no quota", map[string]http.HandlerFunc{quotasPath: listOf[corev1.ResourceQuota]()},
-			configResult(spec, report.Fail, "config", estimate+"no ResourceQuota to compare against", "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods (see AT-06)"), notCounted},
+			configResult(spec, report.Fail, "config", estimate+"no ResourceQuota to compare against", "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods; first make sure a LimitRange gives defaults (AT-07): with this quota, the API server refuses new pods that set no cpu or memory (see AT-06)"), notCounted},
 		{"scoped quotas only", map[string]http.HandlerFunc{quotasPath: listOf(notTerminating(quota("long-running", fiveKeys...)))},
-			configResult(spec, report.Fail, "config", estimate+"no ResourceQuota to compare against (scoped: long-running)", "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods (see AT-06)"), notCounted},
+			configResult(spec, report.Fail, "config", estimate+"no ResourceQuota to compare against (scoped: long-running)", "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods; first make sure a LimitRange gives defaults (AT-07): with this quota, the API server refuses new pods that set no cpu or memory (see AT-06)"), notCounted},
 		{"an unscoped quota with none of the five keys has nothing to compare", map[string]http.HandlerFunc{quotasPath: listOf(quota("configmaps-cap", "count/configmaps"))},
-			configResult(spec, report.Fail, "config", estimate+"no ResourceQuota to compare against", "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods (see AT-06)"), notCounted},
+			configResult(spec, report.Fail, "config", estimate+"no ResourceQuota to compare against", "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods; first make sure a LimitRange gives defaults (AT-07): with this quota, the API server refuses new pods that set no cpu or memory (see AT-06)"), notCounted},
 		{"an empty scopeSelector matches every pod, so the quota is compared (D110)", map[string]http.HandlerFunc{quotasPath: listOf(everyPod(fixtureQuota())), deploymentsPath: listOf[appsv1.Deployment](), statefulSetsPath: listOf[appsv1.StatefulSet]()},
 			configResult(spec, report.Pass, "config", estimate+"no Deployments or StatefulSets; nothing to compare", ""), notCounted},
 		{"no workloads", map[string]http.HandlerFunc{quotasPath: listOf(fixtureQuota()), deploymentsPath: listOf[appsv1.Deployment](), statefulSetsPath: listOf[appsv1.StatefulSet]()},

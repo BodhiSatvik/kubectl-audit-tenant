@@ -297,12 +297,13 @@ func TestHelpStartsWithThePluginName(t *testing.T) {
 	// D197: the usage line shows the namespace, and examples cover a service account, a user with
 	// groups, self mode and a pipeline, so --help alone is enough to start.
 	for _, want := range []string{
-		"  kubectl audit-tenant -n NAMESPACE [--as USER [--as-group GROUP ...]] [flags]\n",
+		"  kubectl audit-tenant [-n NAMESPACE] [--as USER [--as-group GROUP ...]] [flags]\n",
 		"Examples:\n",
 		"kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev\n",
 		"kubectl audit-tenant -n team-a --as alice --as-group team-a-devs\n",
 		"--fail-on-skip > audit.json\n",
-		"where every check was SKIP, or a run that could not start",
+		"0 no FAIL, no ERROR, and at least one result that is not SKIP",
+		"2 an ERROR, a run where every check was SKIP, or a run that could not",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("--help lacks %q; stdout:\n%s", want, stdout)

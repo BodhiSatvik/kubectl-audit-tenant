@@ -54,7 +54,7 @@ func Main(args []string, info BuildInfo, streams genericiooptions.IOStreams) int
 // user types it.
 func New(info BuildInfo, streams genericiooptions.IOStreams) *cobra.Command {
 	root := &cobra.Command{
-		Use:   "audit-tenant -n NAMESPACE [--as USER [--as-group GROUP ...]]",
+		Use:   "audit-tenant [-n NAMESPACE] [--as USER [--as-group GROUP ...]]",
 		Short: "Prove a namespace meets a tenant governance baseline",
 		Example: `  # As the tenant's service account (you need impersonate rights)
   kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
@@ -72,9 +72,10 @@ namespace and prints one verdict per check: PASS, FAIL, SKIP or ERROR, with the 
 hint. It never changes the cluster: it asks "may I?" (SelfSubjectAccessReview) and rehearses
 creates with server-side dry-run.
 
-Exit code: 0 no FAIL and no ERROR; 1 a FAIL (or a SKIP with --fail-on-skip); 2 an ERROR, a run
-where every check was SKIP, or a run that could not start. --timeout bounds the whole run;
-kubectl's --request-timeout bounds each single request, and the shorter one wins.`,
+Exit code: 0 no FAIL, no ERROR, and at least one result that is not SKIP; 1 a FAIL (or a SKIP
+with --fail-on-skip); 2 an ERROR, a run where every check was SKIP, or a run that could not
+start. --timeout bounds the whole run; kubectl's --request-timeout bounds each single request,
+and the shorter one wins.`,
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,

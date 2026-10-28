@@ -242,7 +242,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	}
 	var msgs []string
 	if rep.Summary.NothingProven() { // D197: on stderr, so a pipeline log shows it whatever stdout goes to
-		msgs = append(msgs, "nothing was proven: every check was SKIP; check -n, --as and --as-group (a misspelled namespace or identity skips every check)")
+		msgs = append(msgs, "nothing was proven: every check was SKIP; read the SKIP reasons (a misspelled -n, --as or --as-group skips every check)")
 	}
 	if o.output == "policyreport" && c.Unverified.Load() { // D182: stdout goes to kubectl apply, so stderr is what a person reads
 		msgs = append(msgs, checks.LeftoverHint(c.Namespace))

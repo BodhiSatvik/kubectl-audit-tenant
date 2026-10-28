@@ -73,7 +73,7 @@ FAIL  AT-04.1  Privileged container blocked        a privileged container was ac
       fix      set the namespace label pod-security.kubernetes.io/enforce=baseline (or restricted), or add a policy that blocks privileged containers
 ...
 FAIL  AT-09    Pod Security Admission enforced     namespace team-a has no pod-security.kubernetes.io/enforce label
-      fix      kubectl label --dry-run=server --overwrite namespace team-a pod-security.kubernetes.io/enforce=restricted lists the running pods that the level would refuse; fix them, then run it without --dry-run=server (baseline also passes, but does not block AT-04.5)
+      fix      kubectl label --dry-run=server --overwrite namespace team-a pod-security.kubernetes.io/enforce=restricted warns about running pods that the level would refuse; fix them, then run it without --dry-run=server (baseline also passes, but does not block AT-04.5)
 ...
 3 passed · 11 failed (AT-04.1, AT-04.2, AT-04.3 and 8 more) · 0 skipped · 0 errors · exit 1
 ```
@@ -87,7 +87,7 @@ kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
 
 AT-04.1 to AT-04.5 and AT-09 now pass. Each AT-04 reason quotes the Pod Security Admission message that refused the probe, and AT-09 names the label. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`.
 
-On a namespace that already runs pods, read each `fix` line before you apply it: a Pod Security level or a compute quota also applies to the next pods of your running workloads. The AT-09 fix starts with a `--dry-run=server` that lists the pods the level would refuse.
+On a namespace that already runs pods, read each `fix` line before you apply it: a Pod Security level or a compute quota also applies to the next pods of your running workloads. The AT-09 fix starts with a `--dry-run=server` that warns about the pods the level would refuse.
 
 ## Who runs it, and how
 
@@ -112,7 +112,7 @@ To find the username and groups that the cluster gives a tenant, run `kubectl au
 ## Usage
 
 ```text
-kubectl audit-tenant -n NAMESPACE [--as USER [--as-group GROUP ...]] [-o checklist|wide|json|policyreport] [flags]
+kubectl audit-tenant [-n NAMESPACE] [--as USER [--as-group GROUP ...]] [-o checklist|wide|json|policyreport] [flags]
 kubectl audit-tenant list-checks [-o table|json]
 kubectl audit-tenant version
 ```
@@ -180,7 +180,7 @@ A mutating webhook or policy that removes the dangerous field and then accepts t
 | 1 | Any FAIL, or, with `--fail-on-skip`, any SKIP. This wins over 2: a run with a FAIL and an ERROR exits 1. |
 | 2 | Any ERROR, or every result is SKIP, when nothing above gives 1. Also when the run could not start (bad flags, kubeconfig, credentials, impersonation, namespace not found) or could not write its report. |
 
-Every output format keeps the exit code. A run that cannot start prints the reason on stderr and no report. A run where every result is SKIP proved nothing, so it exits 2 and stderr says `nothing was proven`; this is what a misspelled `-n`, `--as` or `--as-group` usually gives.
+Every output format keeps the exit code. A run that cannot start prints the reason on stderr and no report. A run where every result is SKIP proved nothing, so it exits 2 and stderr says `nothing was proven`; this is what a misspelled `-n`, `--as` or `--as-group` usually gives. A `--checks` run whose results are all SKIP exits 2 too.
 
 ## Output formats
 
@@ -227,7 +227,7 @@ Any non-zero exit fails the step: 1 for a FAIL (or for a SKIP with `--fail-on-sk
 
 ## Run it in a pod
 
-A CronJob, or a Tekton or Argo Workflows step, runs the tool in a pod. Self mode works with the pod's own service account and no kubeconfig. With `--as`, v0.1.0 needs a kubeconfig file in the pod: without one, the tool calls `http://localhost:8080` and reports `API server unreachable`. This kubeconfig uses the pod's own service-account token:
+A CronJob, or a Tekton or Argo Workflows step, runs the tool in a pod. Self mode works with the pod's own service account and no kubeconfig. With `--as`, the tool needs a kubeconfig file in the pod: without one, the tool calls `http://localhost:8080` and reports `API server unreachable`. This kubeconfig uses the pod's own service-account token:
 
 ```yaml
 apiVersion: v1
@@ -252,12 +252,26 @@ data:
     current-context: in-cluster
 ```
 
+The pod's service account needs `impersonate` on the identities it audits, and only on those: give each rule `resourceNames`. Without `resourceNames`, `impersonate` on `groups` lets anyone who holds the pod's token act as `system:masters`, which is cluster-admin; AT-03 reports that grant as a FAIL. For a service-account tenant, one Role in the tenant's namespace is enough, because the API server adds a service account's own groups without a check:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: audit-tenant-impersonate, namespace: team-a}
+rules:
+- apiGroups: [""]
+  resources: [serviceaccounts]
+  verbs: [impersonate]
+  resourceNames: [dev]
+```
+
+- Bind the Role to the pod's service account with a RoleBinding in `team-a`. For a user tenant, use a ClusterRole with a `users` rule and a `groups` rule, each with `resourceNames`: the user, and the groups its identity provider gives it.
+- Run the Job in a namespace where only platform admins may create pods, exec into pods or change ConfigMaps: whoever can do that holds these impersonation rights.
 - Mount the ConfigMap, for example at `/kubeconfig`, and set the environment variable `KUBECONFIG=/kubeconfig/config` in the container.
-- The pod's service account needs `impersonate` on `users`, `groups` and `serviceaccounts` (one ClusterRole) and nothing else: every request runs as the tenant.
-- The release binary is static. An image `FROM scratch` with `COPY kubectl-audit_tenant /` and a non-root `USER` runs under Pod Security `restricted`. Its entrypoint is the binary itself, so the arguments start with `-n`.
+- The release binary is static, so an image `FROM scratch` with `COPY kubectl-audit_tenant /` and a numeric non-root `USER` (such as `65532`) works. Its entrypoint is the binary itself, so the arguments start with `-n`. Under Pod Security `restricted`, the pod spec must also set `runAsNonRoot: true` and `seccompProfile: {type: RuntimeDefault}`, and the container `allowPrivilegeEscalation: false` and `capabilities: {drop: [ALL]}`.
 - The report goes to the pod log, and the Job fails on exit 1 or 2.
 
-Checked on kind with Kubernetes 1.37: a Job with `--as` and this kubeconfig gave the same 14 results as a run from a laptop.
+Checked on kind with Kubernetes 1.37: a Job with `--as` and this kubeconfig gave the same 14 results as a run from a laptop. With only the Role above, the service account's run gave the same 14 results, and the API server refused `--as-group system:masters` and `--as` any other identity.
 
 ## Safety
 
