@@ -77,7 +77,7 @@ func at09(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		reason += "; AT-04 shows " + strings.Join(layers, ", ") + " blocking every probe anyway, so the gap is the label: the built-in gate as a second fence"
 	}
 	return []report.Result{spec.result(r, report.Fail, layerConfig, reason,
-		"kubectl label --overwrite namespace "+ns+" "+psaEnforce+"=restricted (baseline also passes, but does not block AT-04.5)")}
+		"kubectl label --dry-run=server --overwrite namespace "+ns+" "+psaEnforce+"=restricted warns about running pods that the level would refuse; fix them, then run it without --dry-run=server (baseline also passes, but does not block AT-04.5)")} // D197: a pasted fix changes nothing
 }
 
 // at04Admission returns the layers of AT-04's results when admission, or the API server's

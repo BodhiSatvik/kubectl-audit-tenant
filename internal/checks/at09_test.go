@@ -36,7 +36,7 @@ func at04Passed(layer string) []report.Result {
 
 func TestAT09(t *testing.T) {
 	const (
-		failHint      = "kubectl label --overwrite namespace tenant-a pod-security.kubernetes.io/enforce=restricted (baseline also passes, but does not block AT-04.5)"
+		failHint      = "kubectl label --dry-run=server --overwrite namespace tenant-a pod-security.kubernetes.io/enforce=restricted warns about running pods that the level would refuse; fix them, then run it without --dry-run=server (baseline also passes, but does not block AT-04.5)"
 		missing       = "namespace tenant-a has no pod-security.kubernetes.io/enforce label"
 		mayUpdateNote = "this identity may update namespace tenant-a, so it can change or remove this label"
 	)

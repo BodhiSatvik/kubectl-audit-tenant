@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	authzv1 "k8s.io/api/authorization/v1"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cli"
@@ -78,13 +79,13 @@ func TestErrorExitsTwoWithNoErrorLine(t *testing.T) {
 }
 
 // Added by the /ship test coverage audit, pass 1 (Phase 2).
-// Value: protects=a SKIP exits 0, and exits 1 with --fail-on-skip (pipelines must not accept an unproven namespace); fails_when=the flag stops reaching report.Summarize;
+// Value: protects=a run of only SKIPs exits 2 (nothing was proven, D197), and exits 1 with --fail-on-skip (pipelines must not accept an unproven namespace); fails_when=the flag stops reaching report.Summarize;
 // why_new=only report tests set FailOnSkip; Phase 1 had no check that could SKIP; seam=none; no_claim=the summary wording (checklist goldens own it)
 func TestFailOnSkipTurnsASkipIntoExitOne(t *testing.T) {
 	for _, tt := range []struct {
 		flags []string
 		want  int
-	}{{nil, 0}, {[]string{"--fail-on-skip"}, 1}} {
+	}{{nil, 2}, {[]string{"--fail-on-skip"}, 1}} {
 		// Startup's question and create services are denied, update services is allowed: AT-05 is SKIP.
 		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
 		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05"}, tt.flags...)...)
@@ -98,7 +99,7 @@ func TestJSONReportsTheExitCodeTheProcessReturns(t *testing.T) {
 	for _, tt := range []struct {
 		flags []string
 		want  int
-	}{{nil, 0}, {[]string{"--fail-on-skip"}, 1}} {
+	}{{nil, 2}, {[]string{"--fail-on-skip"}, 1}} {
 		// As above: AT-05 is SKIP.
 		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
 		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05", "-o", "json"}, tt.flags...)...)
@@ -111,6 +112,52 @@ func TestJSONReportsTheExitCodeTheProcessReturns(t *testing.T) {
 		}
 		if err := json.Unmarshal([]byte(stdout), &rep); err != nil || code != tt.want || rep.Summary.ExitCode != tt.want || rep.Summary.Skip != 1 || rep.APIVersion != "audit-tenant.dev/v1alpha1" {
 			t.Errorf("flags %v: exit %d, err %v, stderr %q; want exit %d and the same exitCode in the JSON summary:\n%s", tt.flags, code, err, stderr, tt.want, stdout)
+		}
+	}
+}
+
+// D197: a typo in -n, --as or --as-group skips every check; stderr says so in every format, so a
+// pipeline log shows it even when stdout goes to a file. D201: a --checks subset of only SKIPs
+// proved nothing too, so the line points at the SKIP reasons, not only at a typo.
+const nothingProven = "error: nothing was proven: every check was SKIP; read the SKIP reasons (a misspelled -n, --as or --as-group skips every check)\n"
+
+func TestARunOfOnlySkipsSaysNothingWasProven(t *testing.T) {
+	const want = nothingProven
+	for _, flags := range [][]string{nil, {"--fail-on-skip"}, {"-o", "json"}} {
+		// As above: AT-05 is SKIP.
+		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
+		_, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05"}, flags...)...)
+		if stderr != want || stdout == "" {
+			t.Errorf("flags %v: stderr %q, want %q, and the report on stdout:\n%s", flags, stderr, want, stdout)
+		}
+	}
+}
+
+// noRights answers every SelfSubjectAccessReview with a denial, the list-pods anchor too (a
+// misspelled --as has no rights at all), except AT-01's positive control. testutil.SSAR always
+// allows the anchor, so it cannot reach this state.
+func noRights(w http.ResponseWriter, r *http.Request) {
+	var review authzv1.SelfSubjectAccessReview
+	if err := json.NewDecoder(r.Body).Decode(&review); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	answer := `{"allowed":false}`
+	if a := review.Spec.ResourceAttributes; a != nil && a.Verb == "create" && a.Resource == "selfsubjectaccessreviews" {
+		answer = `{"allowed":true}`
+	}
+	spec, _ := json.Marshal(review.Spec)
+	testutil.JSON(http.StatusCreated, `{"spec":`+string(spec)+`,"status":`+answer+`}`)(w, r)
+}
+
+// D199: the case D197 exists for, as a full run: a misspelled --as gets 14 SKIPs, exit 2 and the
+// stderr line in every format. Fails if any check's no-rights path stops being a SKIP.
+func TestAFullRunWithNoRightsSaysNothingWasProven(t *testing.T) {
+	for _, flags := range [][]string{nil, {"-o", "json"}, {"-o", "policyreport"}} {
+		srv := clusterWithSSAR(t, noRights)
+		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--as", "alcie", "--kubeconfig", kubeconfig(t, srv.URL, "")}, flags...)...)
+		if code != 2 || stderr != nothingProven || stdout == "" {
+			t.Errorf("flags %v: exit %d, stderr %q; want exit 2 and %q, and the report on stdout:\n%s", flags, code, stderr, nothingProven, stdout)
 		}
 	}
 }

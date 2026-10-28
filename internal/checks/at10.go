@@ -61,7 +61,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		if len(scopedNames) > 0 {
 			reason += " (scoped: " + strings.Join(scopedNames, ", ") + ")"
 		}
-		return result(report.Fail, layerConfig, reason, "add a ResourceQuota with no scopes whose hard sets requests.cpu, requests.memory, limits.cpu, limits.memory and pods (see AT-06)")
+		return result(report.Fail, layerConfig, reason, addQuotaHint+" (see AT-06)")
 	}
 
 	// A list this identity may not read leaves the sum partial; any other error ends the check.

@@ -68,6 +68,9 @@ Wording, hints, edge cases and tests. None changes a public contract; do them be
 - [ ] P4 /ship pass 2: `TestPolicyReportNeedsAVerifiedIdentityInSelfMode` does not prove the refusal comes before any check; assert the server saw only the startup requests (testing).
 - [ ] P4 /ship pass 2: `TestAT04OneResultTakesTheWorstOfItsForms` keeps the row "rejected, then mutated", which the stronger test also covers (testing).
 
+- [ ] P2 customer test run S5-F4 (D197): in a pod with no kubeconfig, any `--as` run calls `http://localhost:8080`: client-go's `DeferredLoadingClientConfig.ClientConfig()` returns the merged config, not the in-cluster one, once the impersonation overrides make it differ from the default. Start from `rest.InClusterConfig()` when no kubeconfig loads and in-cluster config is possible, then apply the impersonation flags; add an e2e Job case; then drop the kubeconfig ConfigMap from the README "Run it in a pod" section.
+- [ ] P2 /review Claude adversarial (D201): an all-SKIP `-o policyreport` run prints its report and exits 2. The README's apply script applies any non-empty report, so an identity whose RoleBinding was removed replaces its FAIL rows with SKIP rows on the dashboard (true before D197 too, with exit 0). Decide whether to refuse such a report, as D147 and D175 refuse partial ones.
+
 #### 5. Question-set pass: what the checks ask (v0.2, D176)
 
 D176 (2026-10-23): all of group 5 waits for v0.2. The v0.2 pass starts with the first item, the request budget, before it adds any question.
