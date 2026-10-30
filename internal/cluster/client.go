@@ -37,6 +37,8 @@ type Options struct {
 	AsGroups       []string         // --as-group
 	Timeout        time.Duration    // the run deadline, for the timeout message
 	Recorder       *safety.Recorder // the caller's recorder, so --debug keeps the trace when startup fails; nil makes one
+
+	requestTimeout bool // kubectl's --request-timeout is set; connect fills it from the config
 }
 
 // Client is one run's connection. Every request goes through the safety transport.
@@ -127,6 +129,7 @@ func connect(ctx context.Context, cfg *rest.Config, opts Options) (*Client, erro
 		}
 		return l.Items, nil
 	})
+	opts.requestTimeout = cfg.Timeout > 0
 	if err := c.startup(ctx, opts); err != nil {
 		return nil, err
 	}

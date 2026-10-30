@@ -120,7 +120,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		return exit2(`--as-group needs a group name, and one was empty; in a script, pass it only when set: ${GROUP:+--as-group "$GROUP"}`)
 	}
 	cfg, err := o.restConfig()
-	if kc := raw.Clusters[clusterName]; err != nil && kc != nil && strings.Contains(kc.ProxyURL, "@") { // D181: clientcmd's parse error quotes the whole proxy URL
+	if kc := raw.Clusters[clusterName]; err != nil && kc != nil && strings.Contains(kc.ProxyURL, "@") && strings.Contains(err.Error(), "proxy-url") { // D181: clientcmd's parse error quotes the whole proxy URL
 		return exit2("cannot load the kubeconfig: the proxy-url of cluster %q holds user info (a name or password before the @) that does not parse; percent-encode it (a %% is %%25). audit-tenant does not print the URL", clusterName)
 	}
 	if err != nil {
@@ -324,6 +324,9 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if o.output == "json" || o.output == "policyreport" { // S5-F3: inside the document alone, a pipeline log never shows them
 		for _, w := range warnings {
 			cmd.PrintErrln("warning: " + report.Sanitize(w))
+		}
+		if rep.AdminHint {
+			cmd.PrintErrln("warning: this identity looks like a cluster admin; add --as to test a tenant")
 		}
 	}
 	var msgs []string

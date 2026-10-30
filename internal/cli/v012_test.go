@@ -124,6 +124,11 @@ func TestMachineFormatsPutWarningsOnStderr(t *testing.T) {
 			t.Errorf("-o %s: stderr %q; want the warning on stderr: %v", format, stderr, want)
 		}
 	}
+	// The cluster-admin line is a warning in -o json, so it goes to stderr too.
+	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":true}`))
+	if _, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "json"); !strings.Contains(stderr, "warning: this identity looks like a cluster admin; add --as to test a tenant\n") {
+		t.Errorf("stderr %q lacks the cluster-admin line", stderr)
+	}
 }
 
 // D181: clientcmd's error for a proxy-url it cannot parse quotes the whole URL, password included.
@@ -138,6 +143,14 @@ func TestAProxyURLThatDoesNotParseIsNotPrinted(t *testing.T) {
 	if code != 2 || strings.Contains(stderr, "pa%ss") || !strings.Contains(stderr, `the proxy-url of cluster "dev" holds user info`) {
 		t.Errorf("exit %d, stderr %q; want exit 2 naming the cluster, never the URL", code, stderr)
 	}
+	// A proxy-url that parses keeps the real error: here, a missing CA file.
+	cfg = strings.Replace(strings.Replace(cfg, "pa%ss", "pass", 1), `server: "https://127.0.0.1:6443",`, `server: "https://127.0.0.1:6443", certificate-authority: /no/such/ca.crt,`, 1)
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", path); code != 2 || strings.Contains(stderr, "does not parse") || !strings.Contains(stderr, "ca.crt") {
+		t.Errorf("exit %d, stderr %q; want the CA file error, not the proxy-url message", code, stderr)
+	}
 }
 
 func TestCompletionCommandIsGoneAndGoInstallVersionSaysSo(t *testing.T) {
@@ -149,6 +162,11 @@ func TestCompletionCommandIsGoneAndGoInstallVersionSaysSo(t *testing.T) {
 	var out strings.Builder
 	cli.Main([]string{"version"}, cli.BuildInfo{Version: "0.1.2", Commit: "none", Date: "unknown"}, genericiooptions.IOStreams{In: strings.NewReader(""), Out: &out, ErrOut: &out})
 	if out.String() != "audit-tenant 0.1.2 (go install build: no commit or date recorded)\n" {
+		t.Errorf("version printed %q", out.String())
+	}
+	out.Reset()
+	cli.Main([]string{"version"}, cli.BuildInfo{Version: "dev", Commit: "none", Date: "unknown"}, genericiooptions.IOStreams{In: strings.NewReader(""), Out: &out, ErrOut: &out})
+	if out.String() != "audit-tenant dev (commit none, built unknown)\n" { // go run: not a go install build
 		t.Errorf("version printed %q", out.String())
 	}
 }

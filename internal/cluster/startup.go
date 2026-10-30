@@ -40,7 +40,8 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 		if strings.Contains(err.Error(), "getting credentials") { // client-go's exec plugin error (S5-F5)
 			return fmt.Errorf("the kubeconfig's credential plugin failed: %w", err)
 		}
-		if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() { // the run's own --timeout ended ctx and returned above (S5-F7)
+		// The run's own --timeout ended ctx and returned above; a dial or TLS timeout without the flag stays unreachable (S5-F7).
+		if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() && opts.requestTimeout {
 			return fmt.Errorf("the API server did not answer within --request-timeout: %w", err)
 		}
 		return fmt.Errorf("API server unreachable: %w", err)
