@@ -33,7 +33,7 @@ func at03(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		return res
 	}
 	pass := spec.result(spec.Results[0], report.Pass, "RBAC", fmt.Sprintf("RBAC denied all %d actions", len(questions))+explicitDenies(explicit), "")
-	pass.Note = "not tested: rights that stay inside the namespace (a namespace-wide *, escalate and bind on its roles, impersonating its service accounts), grants from RoleBindings in other namespaces (such as impersonating kube-system service accounts), and grants limited to named roles or users (resourceNames)"
+	pass.Note = withExplicitNote("not tested: rights that stay inside the namespace (a namespace-wide *, escalate and bind on its roles, impersonating its service accounts), grants from RoleBindings in other namespaces (such as impersonating kube-system service accounts), and grants limited to named roles or users (resourceNames)", len(explicit) > 0)
 	return rbacPass(ctx, c, spec, []report.Result{pass})
 }
 

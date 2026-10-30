@@ -15,7 +15,8 @@ func TestAT02(t *testing.T) {
 	pass, fail, explicit := base, base, base
 	pass.Verdict, pass.Reason = report.Pass, "no general get, list or watch on secrets in kube-system"
 	pass.Note = "not tested: grants limited to named secrets (resourceNames)" // D92: in the note, which the checklist never cuts
-	explicit.Verdict, explicit.Reason, explicit.Note = report.Pass, pass.Reason+" (explicit deny: get secrets in kube-system)", pass.Note
+	explicit.Verdict, explicit.Reason = report.Pass, pass.Reason+" (explicit deny: get secrets in kube-system)"
+	explicit.Note = pass.Note + "; the explicit deny came from an authorizer other than RBAC, such as an authorization webhook or an access proxy" // D195
 	fail.Verdict, fail.Reason = report.Fail, "RBAC allows list secrets in kube-system"
 	fail.Hint = "remove the RoleBinding or ClusterRoleBinding that lets this identity read secrets in kube-system; a tenant reads secrets only in its own namespace"
 	watch := fail

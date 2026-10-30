@@ -66,7 +66,7 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		return spec.all(report.Error, "-", err.Error(), hintFor(err))
 	}
 	if !may.allowed {
-		return at04Controllers(ctx, c, spec)
+		return at04Controllers(ctx, c, spec, may.denied)
 	}
 	ranges, err := c.LimitRanges()
 	if err != nil && !apierrors.IsForbidden(err) { // only a 403 falls back to 1m/1Mi sizes; any other API error is ERROR
@@ -152,8 +152,9 @@ func unavailable(err error) bool {
 
 // at04Controllers decides AT-04 when RBAC denies create pods: a controller the tenant may create
 // or change still makes pods that only admission can stop, and so does an ephemeral container
-// added to a running pod; admission was not exercised.
-func at04Controllers(ctx context.Context, c *cluster.Client, spec Spec) []report.Result {
+// added to a running pod; admission was not exercised. explicit reports that create pods was an
+// explicit deny (D195).
+func at04Controllers(ctx context.Context, c *cluster.Client, spec Spec, explicit bool) []report.Result {
 	var questions []question
 	for _, k := range podControllers {
 		for _, verb := range []string{"create", "update", "patch"} {
@@ -176,6 +177,7 @@ func at04Controllers(ctx context.Context, c *cluster.Client, spec Spec) []report
 			}
 			return spec.all(report.Error, "-", err.Error(), hintFor(err))
 		}
+		explicit = explicit || may.denied
 		if may.allowed {
 			return spec.all(report.Skip, "-",
 				"RBAC denies create pods but allows "+q.action()+"; pods a controller creates (or scales up), and containers added to running pods, bypass the tenant's create-pods RBAC, so admission must be the fence and it was not exercised",
@@ -184,7 +186,7 @@ func at04Controllers(ctx context.Context, c *cluster.Client, spec Spec) []report
 	}
 	pass := spec.all(report.Pass, "RBAC", at04RBACReason, "")
 	for i := range pass {
-		pass[i].Note = at04RBACNote
+		pass[i].Note = withExplicitNote(at04RBACNote, explicit)
 	}
 	return rbacPass(ctx, c, spec, pass)
 }

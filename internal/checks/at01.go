@@ -41,5 +41,7 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 	if control.denied {
 		reason += "; the access path also denied create selfsubjectaccessreviews (an access proxy with its own roles?)"
 	}
-	return rbacPass(ctx, c, spec, []report.Result{spec.result(r, report.Pass, "RBAC", reason, "")})
+	pass := spec.result(r, report.Pass, "RBAC", reason, "")
+	pass.Note = withExplicitNote("", len(explicit) > 0)
+	return rbacPass(ctx, c, spec, []report.Result{pass})
 }

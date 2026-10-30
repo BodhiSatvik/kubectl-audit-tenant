@@ -164,3 +164,16 @@ func explicitDenies(explicit []string) string {
 	}
 	return " (explicit deny: " + strings.Join(explicit, ", ") + ")"
 }
+
+// withExplicitNote adds to note, when an answer was an explicit deny, that RBAC did not give it:
+// RBAC never denies explicitly. The layer stays RBAC, a public value (D195).
+func withExplicitNote(note string, explicit bool) string {
+	if !explicit {
+		return note
+	}
+	const other = "the explicit deny came from an authorizer other than RBAC, such as an authorization webhook or an access proxy"
+	if note == "" {
+		return other
+	}
+	return note + "; " + other
+}
