@@ -2,7 +2,7 @@
 
 Check, from the tenant's side, whether a Kubernetes namespace is fenced.
 
-> Status: v0.1.0, the first release (2026-10-26).
+> Status: v0.1.1 (2026-10-30). The first release, v0.1.0, was on 2026-10-26.
 
 [Why](#why) · [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start-kind-about-five-minutes) · [Usage](#usage) · [The checks](#the-checks) · [Verdicts and exit codes](#verdicts-and-exit-codes) · [Output formats](#output-formats) · [Run it in a pod](#run-it-in-a-pod) · [Safety](#safety) · [What a PASS does not prove](#what-a-pass-does-not-prove) · [Troubleshooting](#troubleshooting) · [How it differs](#how-it-differs) · [Contributing](#development-and-contributing)
 
@@ -29,13 +29,13 @@ kubectl krew install audit-tenant
 With krew, from the release (works from the first release on):
 
 ```bash
-kubectl krew install --manifest-url https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/download/v0.1.0/audit-tenant.yaml
+kubectl krew install --manifest-url https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/download/v0.1.1/audit-tenant.yaml
 ```
 
 With Go:
 
 ```bash
-go install github.com/BodhiSatvik/kubectl-audit-tenant/cmd/kubectl-audit_tenant@v0.1.0
+go install github.com/BodhiSatvik/kubectl-audit-tenant/cmd/kubectl-audit_tenant@v0.1.1
 ```
 
 `go install` puts `kubectl-audit_tenant` in `$(go env GOBIN)`, or in `$(go env GOPATH)/bin` when `GOBIN` is empty. That directory must be on your `PATH`, so that kubectl finds the plugin.
@@ -172,7 +172,7 @@ Each probe follows a compliant control probe. A probe stopped by a full quota or
 | SKIP | The tool could not test it, for example it may not read the object, or a webhook cannot take a dry run. The `fix` line says what to change. |
 | ERROR | A request failed, the run timed out, or the tool hit a bug. |
 
-A mutating webhook or policy that removes the dangerous field and then accepts the probe still gives FAIL in v0.1.0. `--debug` shows the security fields of the accepted object.
+A mutating webhook or policy that removes the dangerous field and then accepts the probe still gives FAIL in v0.1. `--debug` shows the security fields of the accepted object.
 
 | Exit code | When |
 |---|---|

@@ -42,15 +42,17 @@ krews:
       name: kubectl-audit-tenant
     skip_upload: true # the manifest is a release asset; the krew-index PR is manual (DESIGN.md section 9)
     homepage: https://github.com/BodhiSatvik/kubectl-audit-tenant
-    short_description: Prove a namespace meets a tenant governance baseline
+    short_description: Check as the tenant whether a namespace is fenced
     description: |
-      kubectl audit-tenant runs ten tenant-governance checks as the tenant identity against one
-      namespace and prints one verdict per check (PASS, FAIL, SKIP, ERROR) with the reason and a
-      hint. It never changes the cluster: it asks "may I?" (SelfSubjectAccessReview) and
-      rehearses creates with server-side dry-run.
+      audit-tenant runs ten tenant-governance checks as the tenant identity against one
+      namespace and prints a verdict for each of its fourteen results (PASS, FAIL, SKIP or
+      ERROR) with the reason and a hint. It never changes the cluster: it asks "may I?"
+      (SelfSubjectAccessReview) and rehearses creates with server-side dry runs, so Pod
+      Security Admission, admission webhooks and ValidatingAdmissionPolicy answer them.
     caveats: |
       Run it against your own namespace with your own kubeconfig, or as an admin with
-      --as <tenant identity>. Exit code 1 means a FAIL; 2 means an ERROR or the run could not start.
+      --as <tenant identity>. Exit code 1 means a FAIL; 2 means an ERROR, a run that could not
+      start, or a run where every check was SKIP (check -n and --as).
 release:
   draft: true # release.yml publishes it after the krew-install job passes
   replace_existing_draft: true # a re-run replaces its own draft, so publish finds one release per tag
