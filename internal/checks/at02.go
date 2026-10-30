@@ -18,7 +18,7 @@ func at02(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		{verb: "watch", resource: "secrets", namespace: other},
 	}
 	explicit, res, stop := denials(ctx, c, spec, prove, questions,
-		"remove the RoleBinding or ClusterRoleBinding that lets this identity read secrets in "+other+"; a tenant reads secrets only in its own namespace")
+		"remove the RoleBinding or ClusterRoleBinding that lets this identity read secrets in "+other, "a tenant reads secrets only in its own namespace")
 	if stop {
 		return res
 	}

@@ -28,7 +28,7 @@ func at03(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		{verb: "*", group: "*", resource: "*", label: wildcard},
 	}
 	explicit, res, stop := denials(ctx, c, spec, prove, questions,
-		"remove the escalate, bind, impersonate and wildcard grants from this identity's ClusterRoleBindings; a tenant admin needs only a Role inside its namespace")
+		"remove the escalate, bind, impersonate and wildcard grants from this identity's ClusterRoleBindings", "a tenant admin needs only a Role inside its namespace")
 	if stop {
 		return res
 	}

@@ -18,7 +18,7 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		{verb: "create", resource: "persistentvolumes"},
 	}
 	explicit, res, stop := denials(ctx, c, spec, prove, questions,
-		"remove the cluster-scoped grants from this identity's ClusterRoleBindings; tenant permissions belong in Roles bound inside the namespace")
+		"remove the cluster-scoped grants from this identity's ClusterRoleBindings", "tenant permissions belong in Roles bound inside the namespace")
 	if stop {
 		return res
 	}

@@ -48,3 +48,18 @@ func TestAT02(t *testing.T) {
 		})
 	}
 }
+
+func TestAT02FailNamesTheBindingTheServerNames(t *testing.T) {
+	// S3-F1: the API server names the binding that grants each action; the user needs it to fix the FAIL.
+	const binding = `RoleBinding "team-a-debug/kube-system" of Role "debug-secret-reader" to Group "team-a-devs"`
+	grant := byBinding(binding)
+	srv := &ssarServer{answers: map[string]string{"list nodes": denied, "get secrets": grant, "list secrets": grant, "watch secrets": grant}}
+	got := at02(t.Context(), connect(t, srv), at02Spec(), ignore)
+	want := report.Result{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, MTB: "MTB-PL1-CC-TI-2", Severity: report.High,
+		Verdict: report.Fail, Layer: "RBAC",
+		Reason: "RBAC allows get secrets in kube-system, list secrets in kube-system, watch secrets in kube-system; granted by " + binding,
+		Hint:   "remove or change " + binding + "; a tenant reads secrets only in its own namespace"}
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at02() = %+v,\nwant %+v", got, want)
+	}
+}

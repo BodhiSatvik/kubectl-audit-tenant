@@ -72,3 +72,41 @@ func TestLooksLikeAdminNeedsTheWildcard(t *testing.T) {
 		t.Error("LooksLikeAdmin() = true for a PASS")
 	}
 }
+
+func TestAT03FailNamesAtMostThreeBindingsAndAsksAnAdminInSelfMode(t *testing.T) {
+	// S3-F1: distinct bindings, three then "and N more" (D114); S4-F1: a tenant in self mode cannot change bindings.
+	answers := at03Denied()
+	answers["escalate clusterroles"] = byBinding(`ClusterRoleBinding "a" of ClusterRole "x" to User "alice"`)
+	answers["bind clusterroles"] = byBinding(`ClusterRoleBinding "a" of ClusterRole "x" to User "alice"`)
+	answers["impersonate users"] = byBinding(`ClusterRoleBinding "b" of ClusterRole "x" to Group "devs"`)
+	answers["impersonate groups"] = byBinding(`ClusterRoleBinding "c" of ClusterRole "y" to Group "devs"`)
+	answers["impersonate serviceaccounts"] = byBinding(`ClusterRoleBinding "d" of ClusterRole "z" to Group "devs"`)
+	c := connect(t, &ssarServer{answers: answers})
+	c.Identity.Mode = report.ModeSelf
+	got := at03(t.Context(), c, at03Spec(), ignore)
+	const named = `ClusterRoleBinding "a" of ClusterRole "x" to User "alice", ClusterRoleBinding "b" of ClusterRole "x" to Group "devs", ClusterRoleBinding "c" of ClusterRole "y" to Group "devs" and 1 more`
+	want := report.Result{ID: "AT-03", Name: "No privilege escalation", Kind: report.Behavioral, MTB: "MTB-PL2-CC-TI-1", Severity: report.High,
+		Verdict: report.Fail, Layer: "RBAC",
+		Reason: "RBAC allows escalate clusterroles, bind clusterroles, impersonate users, impersonate groups, impersonate serviceaccounts; granted by " + named,
+		Hint:   "ask a cluster admin to remove or change " + named + "; a tenant admin needs only a Role inside its namespace"}
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at03() = %+v,\nwant %+v", got, want)
+	}
+}
+
+func TestAT03KeepsTheGeneralFixWhenAGrantNamesNoBinding(t *testing.T) {
+	// S3-F1: a grant whose answer names no binding (a webhook, or system:masters) leaves the bindings unknown.
+	answers := at03Denied()
+	answers["impersonate users"] = byBinding(`ClusterRoleBinding "b" of ClusterRole "x" to Group "devs"`)
+	answers["* *"] = allowed
+	c := connect(t, &ssarServer{answers: answers})
+	c.Identity.Mode = report.ModeSelf
+	got := at03(t.Context(), c, at03Spec(), ignore)
+	want := report.Result{ID: "AT-03", Name: "No privilege escalation", Kind: report.Behavioral, MTB: "MTB-PL2-CC-TI-1", Severity: report.High,
+		Verdict: report.Fail, Layer: "RBAC",
+		Reason: "RBAC allows impersonate users, every verb on every resource cluster-wide (*)",
+		Hint:   "ask a cluster admin to remove the escalate, bind, impersonate and wildcard grants from this identity's ClusterRoleBindings; a tenant admin needs only a Role inside its namespace"}
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at03() = %+v,\nwant %+v", got, want)
+	}
+}
