@@ -2,6 +2,32 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- In a pod with no kubeconfig, `--as` uses the pod's service account. Before, every `--as` run there called `http://localhost:8080` and failed with `API server unreachable`. The README's kubeconfig ConfigMap is needed only for v0.1.1 and earlier.
+- With no kubeconfig outside a pod, the error says `no kubeconfig`.
+- A failed credential plugin (such as a missing `aws` or `kubelogin`) and a request that `--request-timeout` ended now say so, not `API server unreachable`.
+- A kubeconfig `proxy-url` whose user info does not parse gives a message that names the cluster only. Before, the error printed the whole URL, password included.
+- A service-account name that the API server cannot split (another `:`, or an invalid namespace) is treated as a plain user, as the API server treats it. `--as-group system:authenticated` alone gets the no-groups warning.
+
+### Changed
+
+- `-o policyreport` accepts `--skip` and writes a `skip` row for each skipped result, so a shop that enforces pod security with a policy engine can skip AT-09 and keep a clean dashboard. `--checks` is still refused. Skip rows do not change the exit code.
+- `-o policyreport` refuses a run where every result is SKIP, and a run whose identity the cluster changed (added or dropped groups, or another user), with exit 2. Such a report would replace the identity's report with results that do not describe it.
+- The checklist warns when the cluster drops a group that the run asked for or names another user, and when an `--as` identity is unverified.
+- `-o json` and `-o policyreport` also print their warnings on stderr.
+- An empty `--as-group` exits 2. The README pipeline example passes `--as-group` only when its variable is set.
+- `--plain` output is ASCII only: other characters in server text print as `?`.
+- Text output ends with a line that names the tool version, the run time, the server and the Kubernetes version. The header names the server when no kubeconfig context exists.
+- The `--other-namespace` warning says that the namespace is unconfirmed.
+- `version` says when a `go install` build recorded no commit or date.
+
+### Removed
+
+- The `completion` command. It made a script for a command named `audit-tenant`, which kubectl never runs.
+
 ## [0.1.1] - 2026-10-30
 
 ### Changed
