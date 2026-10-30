@@ -302,6 +302,23 @@ func TestClassifyAllowPrivilegedTextOutsideA422DecidesNothing(t *testing.T) {
 	}
 }
 
+func TestClassifyAPolicyThatQuotesPodSecurityIsThePolicy(t *testing.T) {
+	// D133: a ValidatingAdmissionPolicy whose message quotes PSA decided; PSA did not. AT-09 would
+	// otherwise name a cluster default level that does not exist (D102 class).
+	const msg = `pods "audit-tenant-probe-x" is forbidden: ValidatingAdmissionPolicy 'psa-mirror' with binding 'b' denied request: violates PodSecurity "restricted:latest": privileged`
+	for _, code := range []int32{http.StatusForbidden, http.StatusUnprocessableEntity} {
+		if got := Classify(statusError(code, "", msg)); got.Verdict != report.Pass || got.Layer != "admission (policy: psa-mirror)" {
+			t.Errorf("HTTP %d: Classify() = %+v, want PASS on layer admission (policy: psa-mirror)", code, got)
+		}
+	}
+	// PSA's own answer, with or without the generated name, is still PSA.
+	for _, msg := range []string{`pods "audit-tenant-probe-x" is forbidden: violates PodSecurity "baseline:latest": hostPID`, `pods is forbidden: violates PodSecurity "baseline:latest": hostPID`} {
+		if got := Classify(statusError(http.StatusForbidden, "Forbidden", msg)); got.Verdict != report.Pass || got.Layer != LayerPSA {
+			t.Errorf("Classify(%q) = %+v, want PASS on layer %s", msg, got, LayerPSA)
+		}
+	}
+}
+
 func TestClassifyRules4bAnd4cGiveTheSameReasonEveryRun(t *testing.T) {
 	// P4 /ship pass 3: the reason drops the generated probe name and 4c's securityContext dump, so a
 	// PolicyReport message does not change from run to run.

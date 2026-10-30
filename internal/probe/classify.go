@@ -89,7 +89,9 @@ func Classify(err error) Outcome {
 	case decided && strings.Contains(msg, "admission webhook") && strings.Contains(msg, "denied the request"): // the API server's phrase; "denied" alone can be part of a webhook name
 		// Before PSA: a webhook such as Kyverno's podSecurity rule quotes the PSA text, but it decided.
 		return Outcome{report.Pass, "admission (webhook: " + between(msg, `admission webhook "`, `"`) + ")", from(msg, "admission webhook"), ""}
-	case decided && strings.Contains(msg, "violates PodSecurity"):
+	case decided && strings.HasPrefix(from(msg, "forbidden: "), "forbidden: violates PodSecurity"):
+		// Only PSA's own answer: the API server's first "forbidden: " is followed by PSA's text. A ValidatingAdmissionPolicy
+		// that quotes PSA puts its own name there, so the policy rule below decides it (D133).
 		return Outcome{report.Pass, LayerPSA, from(msg, "violates PodSecurity"), ""}
 	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && strings.Contains(msg, "denied request"):
 		return Outcome{report.Pass, "admission (policy: " + between(msg, "ValidatingAdmissionPolicy '", "'") + ")", from(msg, "ValidatingAdmissionPolicy"), ""}
