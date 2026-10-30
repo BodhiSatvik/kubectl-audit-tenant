@@ -1,6 +1,7 @@
 package report
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -82,9 +83,10 @@ func PolicyReport(w io.Writer, r Report) error {
 			Annotations: annotations,
 		},
 		Scope:   map[string]string{"apiVersion": "v1", "kind": "Namespace", "name": r.Namespace},
-		Summary: map[string]int{"pass": r.Summary.Pass, "fail": r.Summary.Fail, "warn": 0, "error": r.Summary.Error, "skip": r.Summary.Skip},
+		Summary: map[string]int{"pass": r.Summary.Pass, "fail": r.Summary.Fail, "warn": 0, "error": r.Summary.Error, "skip": r.Summary.Skip + len(r.SkippedByFlag)},
 	}
-	for _, res := range r.Results {
+	rows := slices.SortedStableFunc(slices.Values(append(slices.Clone(r.Results), r.SkippedByFlag...)), func(a, b Result) int { return cmp.Compare(a.ID, b.ID) }) // run order
+	for _, res := range rows {
 		props := map[string]string{"layer": res.Layer, "name": res.Name, "identity": id.Username, "mode": id.Mode}
 		if res.Hint != "" {
 			props["hint"] = res.Hint

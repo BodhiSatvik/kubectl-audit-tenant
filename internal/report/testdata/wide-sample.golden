@@ -14,4 +14,5 @@ FAIL  AT-10    -                 config                                         
       fix      raise the quota, or lower replicas or maxSurge
 
 7 passed · 1 failed (AT-10) · 1 skipped (AT-09) · 0 errors · exit 1
+audit-tenant 0.1.0 · 2026-10-20T15:04:05Z · server https://127.0.0.1:6443 · Kubernetes v1.37.0
 machine output: -o json, -o policyreport

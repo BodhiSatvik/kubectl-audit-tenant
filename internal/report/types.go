@@ -93,6 +93,9 @@ type Report struct {
 	// Request is the impersonation the run asked for; with the mode, the other namespace and the
 	// server it names the PolicyReport (D154).
 	Request Request `json:"-"`
+	// SkippedByFlag holds a skip row for each result --skip left out; only -o policyreport writes
+	// them, so the dashboard keeps one row per result (D202). Summary does not count them.
+	SkippedByFlag []Result `json:"-"`
 }
 
 // Request is the impersonation as given: --as, --as-group, --as-uid and --as-user-extra, or the
