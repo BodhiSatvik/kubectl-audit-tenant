@@ -54,11 +54,12 @@ type Shortfall struct {
 	Need, Hard resource.Quantity
 }
 
-// String reads "requests.cpu: peak needs 6, hard is 4, short by 2".
+// String reads "requests.cpu short by 2: peak needs 6, hard is 4": the number to act on first,
+// where the checklist's cut cannot hide it (S2-F3).
 func (s Shortfall) String() string {
 	short := s.Need.DeepCopy()
 	short.Sub(s.Hard)
-	return fmt.Sprintf("%s: peak needs %s, hard is %s, short by %s", s.Key, s.Need.String(), s.Hard.String(), short.String())
+	return fmt.Sprintf("%s short by %s: peak needs %s, hard is %s", s.Key, short.String(), s.Need.String(), s.Hard.String())
 }
 
 // QuotaKeys returns the keys of q's hard that count as one of the Keys, as q spells them, in

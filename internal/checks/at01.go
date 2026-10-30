@@ -18,7 +18,7 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 		{verb: "create", resource: "persistentvolumes"},
 	}
 	explicit, res, stop := denials(ctx, c, spec, prove, questions,
-		"remove the cluster-scoped grants from this identity's ClusterRoleBindings; tenant permissions belong in Roles bound inside the namespace")
+		"remove the cluster-scoped grants from this identity's ClusterRoleBindings", "tenant permissions belong in Roles bound inside the namespace")
 	if stop {
 		return res
 	}
@@ -41,5 +41,7 @@ func at01(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 	if control.denied {
 		reason += "; the access path also denied create selfsubjectaccessreviews (an access proxy with its own roles?)"
 	}
-	return rbacPass(ctx, c, spec, []report.Result{spec.result(r, report.Pass, "RBAC", reason, "")})
+	pass := spec.result(r, report.Pass, "RBAC", reason, "")
+	pass.Note = withExplicitNote("", len(explicit) > 0)
+	return rbacPass(ctx, c, spec, []report.Result{pass})
 }

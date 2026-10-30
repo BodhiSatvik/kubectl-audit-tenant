@@ -67,7 +67,7 @@ func TestDeploymentPeak(t *testing.T) {
 		{"an HPA for another kind, group or name does not match", deployment("api", replicas(3), rolling(intstr.FromString("25%"))),
 			[]autoscalingv2.HorizontalPodAutoscaler{
 				hpa("sts", "apps/v1", "StatefulSet", "api", 9), hpa("rollout", "argoproj.io/v1alpha1", "Deployment", "api", 9), hpa("web", "apps/v1", "Deployment", "web", 9)}, 3, 4, ""},
-		{"several HPAs: the controller scales none, so spec.replicas stays (AmbiguousSelector, D126)", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
+		{"several HPAs: no metric scaling, so spec.replicas stays (AmbiguousSelector, D126)", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
 			[]autoscalingv2.HorizontalPodAutoscaler{hpa("a", "apps/v1", "Deployment", "api", 6), hpa("b", "apps/v1", "Deployment", "api", 8)}, 3, 4, ""},
 		{"several HPAs still hold replicas at the largest minReplicas", deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
 			[]autoscalingv2.HorizontalPodAutoscaler{withMin(hpa("a", "apps/v1", "Deployment", "api", 6), 5), withMin(hpa("b", "apps/v1", "Deployment", "api", 8), 2)}, 5, 6, ""},
@@ -121,6 +121,18 @@ func TestDeploymentPeakDoesNotWrapOnAHugeSurgePercent(t *testing.T) {
 	w = Deployment(deployment("api", replicas(2000), rolling(intstr.FromString("461168601842738739%"))), nil, Defaults{})
 	if w.Peak < w.Replicas {
 		t.Errorf("peak %d is below replicas %d: a surge inside int64 still wrapped the sum", w.Peak, w.Replicas)
+	}
+}
+
+func TestDeploymentPeakMarksAMaxSurgePast64Bits(t *testing.T) {
+	// D135: API validation stores a percent of 2^63 or more; it does not parse, here or in the Deployment
+	// controller, which then fails every sync. No surge is counted, and the workload says why.
+	w := Deployment(deployment("api", replicas(3), rolling(intstr.FromString("9223372036854775808%"))), nil, Defaults{})
+	if !w.BadSurge || w.Peak != 3 {
+		t.Errorf("Deployment() = BadSurge %v peak %d; want BadSurge and peak 3 (no surge)", w.BadSurge, w.Peak)
+	}
+	if w := Deployment(deployment("api", replicas(3), rolling(intstr.FromString("25%"))), nil, Defaults{}); w.BadSurge {
+		t.Error("Deployment() marks a 25% maxSurge as bad")
 	}
 }
 

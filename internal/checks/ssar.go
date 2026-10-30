@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
@@ -16,7 +17,11 @@ import (
 type answer struct {
 	allowed bool
 	denied  bool
+	reason  string // status.reason, server text; on an RBAC allow it names the binding (S3-F1)
 }
+
+// rbacAllowedBy starts the RBAC authorizer's status.reason for an allow; the binding follows.
+const rbacAllowedBy = "RBAC: allowed by "
 
 // Hints shared by every check that asks the cluster "may I?".
 const (
@@ -58,7 +63,7 @@ func can(ctx context.Context, c *cluster.Client, q question) (answer, error) {
 	if ssar.Status.EvaluationError != "" && !ssar.Status.Allowed {
 		return answer{}, &evaluationError{fmt.Sprintf("the authorizer could not evaluate \"may I %s?\": %s", q.action(), ssar.Status.EvaluationError)}
 	}
-	return answer{allowed: ssar.Status.Allowed, denied: ssar.Status.Denied}, nil
+	return answer{allowed: ssar.Status.Allowed, denied: ssar.Status.Denied, reason: ssar.Status.Reason}, nil
 }
 
 // hintFor picks the hint for an error can returned.
@@ -96,10 +101,12 @@ func (q question) action() string {
 // question never returns (D61). stop reports that the check is decided: res is then the FAIL
 // (a proven grant beats a later failed question or the deadline), an ERROR for an answer it
 // could not read, or nil when ctx ended first (the runner says so). Otherwise every answer was
-// a denial and explicit lists the explicit ones.
-func denials(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result), questions []question, failHint string) (explicit []string, res []report.Result, stop bool) {
+// a denial and explicit lists the explicit ones. The FAIL's fix is remove, then why; when every
+// grant names its binding, the reason and the fix name those instead (S3-F1).
+func denials(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.Result), questions []question, remove, why string) (explicit []string, res []report.Result, stop bool) {
 	r := spec.Results[0]
-	var allowed []string
+	var allowed, bindings []string
+	named := true // every allowed answer named its binding; a webhook or system:masters may name none
 	var fail report.Result
 	var failed error // the first question whose answer could not be read; an allowed answer still wins (D52)
 	ended := false
@@ -120,7 +127,20 @@ func denials(ctx context.Context, c *cluster.Client, spec Spec, prove func(repor
 		}
 		if ans.allowed {
 			allowed = append(allowed, q.action())
-			fail = spec.result(r, report.Fail, "RBAC", "RBAC allows "+strings.Join(allowed, ", "), failHint)
+			binding, ok := strings.CutPrefix(ans.reason, rbacAllowedBy)
+			named = named && ok && binding != ""
+			if named && !slices.Contains(bindings, binding) {
+				bindings = append(bindings, binding)
+			}
+			reason, fix := "RBAC allows "+strings.Join(allowed, ", "), remove
+			if named {
+				reason += "; granted by " + firstThree(bindings)
+				fix = "remove or change " + firstThree(bindings)
+			}
+			if c.Identity.Mode == report.ModeSelf {
+				fix = "ask a cluster admin to " + fix // S4-F1: the reader is often the tenant, who cannot change bindings
+			}
+			fail = spec.result(r, report.Fail, "RBAC", reason, fix+"; "+why)
 			prove(fail)
 		} else if ans.denied {
 			explicit = append(explicit, q.action())
@@ -143,4 +163,17 @@ func explicitDenies(explicit []string) string {
 		return ""
 	}
 	return " (explicit deny: " + strings.Join(explicit, ", ") + ")"
+}
+
+// withExplicitNote adds to note, when an answer was an explicit deny, that RBAC did not give it:
+// RBAC never denies explicitly. The layer stays RBAC, a public value (D195).
+func withExplicitNote(note string, explicit bool) string {
+	if !explicit {
+		return note
+	}
+	const other = "the explicit deny came from an authorizer other than RBAC, such as an authorization webhook or an access proxy"
+	if note == "" {
+		return other
+	}
+	return note + "; " + other
 }
