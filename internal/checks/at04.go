@@ -31,7 +31,7 @@ var at04Probes = map[string]struct {
 	"AT-04.3": {[]func(*corev1.Pod){probe.HostPID}, "a pod with hostPID", hintPSA + "hostPID", ""},
 	"AT-04.4": {[]func(*corev1.Pod){probe.HostNetwork}, "a pod with hostNetwork", hintPSA + "hostNetwork", "hostPort was not tested"},
 	"AT-04.5": {[]func(*corev1.Pod){probe.Escalation}, "a pod with allowPrivilegeEscalation: true",
-		"set the namespace label pod-security.kubernetes.io/enforce=restricted (baseline does not block this), or add a policy that forbids allowPrivilegeEscalation (Kyverno disallow-privilege-escalation, or a ValidatingAdmissionPolicy)",
+		"set the namespace label pod-security.kubernetes.io/enforce=restricted (baseline does not block this), or add a policy that forbids allowPrivilegeEscalation: Kyverno disallow-privilege-escalation, or a ValidatingAdmissionPolicy (Kubernetes 1.30 or newer)", // S7-F1
 		"tested in a regular container only (not initContainers or ephemeral containers)"},
 }
 
