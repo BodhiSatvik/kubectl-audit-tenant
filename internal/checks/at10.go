@@ -49,7 +49,13 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	var unscoped []corev1.ResourceQuota
 	var scopedNames []string
-	for _, q := range byName(quotas) {
+	for _, q := range byName(quotas) { // copies: the cache keeps spec.hard
+		// Quota admission compares usage with status.hard, which the quota controller copies from
+		// spec.hard on its next sync, so AT-10 reads it once set. AT-06 keeps spec.hard: it judges the
+		// configured fence (D133).
+		if len(q.Status.Hard) > 0 {
+			q.Spec.Hard = q.Status.Hard
+		}
 		if scoped(q) {
 			scopedNames = append(scopedNames, q.Name)
 		} else if len(headroom.QuotaKeys(q)) > 0 { // a quota on none of the five keys bounds nothing AT-10 counts

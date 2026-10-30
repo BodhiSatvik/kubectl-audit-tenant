@@ -282,6 +282,25 @@ func TestAT10NamesAMaxSurgeTheControllerCannotRead(t *testing.T) {
 	}
 }
 
+func TestAT10ComparesWithStatusHardOnceTheQuotaControllerSetsIt(t *testing.T) {
+	// D133: quota admission compares usage with status.hard, which lags spec.hard until the quota controller syncs.
+	synced := quota("cpu-cap")
+	synced.Spec.Hard, synced.Status.Hard = rl("requests.cpu", "8"), rl("requests.cpu", "300m")
+	routes := at10Routes()
+	routes[quotasPath] = listOf(synced)
+	c := configClient(t, routes)
+	got := at10(t.Context(), c, at10Spec(), ignore)
+	want := configResult(at10Spec(), report.Fail, "config", estimate+"cpu-cap requests.cpu short by 200m: peak needs 500m, hard is 300m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", at10FailHint)
+	want.Note = notCounted
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at10() = %+v,\nwant %+v", got, want)
+	}
+	quotas, _ := c.Quotas() // AT-06 reads the same cache
+	if hard := quotas[0].Spec.Hard[corev1.ResourceRequestsCPU]; hard.Cmp(resource.MustParse("8")) != 0 {
+		t.Errorf("the run's quota cache now has spec.hard %v; AT-10 must not change it", quotas[0].Spec.Hard)
+	}
+}
+
 func TestAT10AWorkloadScaledToZeroIsNotRefused(t *testing.T) {
 	// D133: replicas 0 makes no pods, so a quota that tracks an unset value refuses nothing yet.
 	d := api()
