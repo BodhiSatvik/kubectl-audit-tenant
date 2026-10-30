@@ -44,32 +44,24 @@ All fourteen items are decided (D169 to D186) and built; they are in `_archive/T
 #### 4. Small fixes, no decision needed
 
 Wording, hints, edge cases and tests. None changes a public contract; do them before v0.1.0 if time allows, else in v0.1.1.
-- [ ] B31 /review Red Team: a cluster `proxy-url` with user info that does not parse (a password with a literal `%`) fails in `ToRESTConfig`, and clientcmd's error quotes the whole proxy URL on stderr (reproduced). D169 and D179 cover only the server URL. Return a fixed message when the selected cluster's proxy URL holds an `@`, or narrow the README and CHANGELOG claims to the server URL. **D181: v0.1.1; kubectl prints the same error, and the docs promise only the server URL.**
-- [ ] D195 live test: behind a Teleport role that denies by itself, AT-01 to AT-03 and AT-05 PASS with the layer `RBAC`, though Teleport's authorizer, not Kubernetes RBAC, gave the explicit deny. Name the deciding layer `authorizer` for an explicit deny, or add a note that an access proxy can answer SelfSubjectAccessReviews.
-- [ ] D196 /review (Claude adversarial, 2026-10-26): the added-groups warning looks only for added groups. Warn too when a group asked for with `--as-group` is missing from the SelfSubjectReview, or when its username differs from `--as` (a proxy that dropped or ignored the impersonation); the API server never does either, so neither can fire falsely on a direct cluster. A run whose `--as` identity is unverified cannot see proxy-added groups at all; say so.
-- [ ] D196 /review (Claude adversarial): `-o policyreport` prints a report whose identity carries groups a proxy added (such as `system:masters`); its FAILs do not describe the tenant, and the warning travels only as an annotation. Decide whether it refuses such a run, as D147, D151 and D175 do.
 - [ ] D196 /review: tested only behind Teleport. Rancher, Pinniped, the Tailscale API server proxy and OpenShift (which adds no groups to an impersonated user) are not checked, and whether Teleport forwards only the `--as-group` groups is not verified.
 - [ ] Docs review (Codex, 2026-10-22): `test/e2e/bench.sh` writes "kind v1.37.0" in BENCHMARK.md's Setup column, but v1.37.0 is the Kubernetes node image, not the kind version (CI uses kind v0.33.0). Write "Kubernetes v1.37.0 on kind <version>" in new rows.
-- [ ] Docs review (2026-10-22): cobra adds a default `completion` command, but its script completes `audit-tenant`, not `kubectl audit-tenant`. Hide it (`CompletionOptions.DisableDefaultCmd`), or ship a `kubectl_complete-audit_tenant` script as krew plugins do.
-- [ ] P4 /ship pass 2: The D151 refusal text says "use --as, or -o json"; on a transient SelfSubjectReview 5xx or 429 the fix is a re-run, a tenant can rarely impersonate, an in-cluster run prints `user entry ""`, and the `--debug` identity line still mentions a header that never prints (Red Team).
-- [ ] P4 /ship pass 3: A control pod refused by `--allow-privileged=false` (a webhook added a privileged container to every pod) gets the hint "the namespace rejects even a compliant pod", not the added-privileged hint (Claude adversarial).
-- [ ] P4 /ship pass 3: Service accounts are found by the `system:serviceaccount:` prefix only; a name the API server does not split (`system:serviceaccount:ns:name:x`, an upper-case namespace) is impersonated as a plain user but warned and keyed as a service account (Claude adversarial).
-- [ ] P4 /ship pass 3: `--as bob --as-group system:authenticated` has the same groups as `--as bob` but gets no no-groups warning (Claude adversarial).
+- [ ] P4 /ship pass 2: The `--debug` identity line still says "the header shows" in formats that print no header (Red Team). The rest of this item (re-run hint, in-cluster wording of the D151 refusal) is done in v0.1.2.
 - [ ] P4 /ship pass 3: `--debug` shows a non-JSON 2xx create answer only as "not a JSON object", which hides what a user needs for the D79 ERROR (a proxy's HTML page); show its content type and length (Claude adversarial).
-- [ ] P4 /ship pass 3: Rules 4b and 4c keep the whole server text, so their reasons carry the random probe name (and 4c a security context dump); the PolicyReport `message` changes on every run. Use `from()` as the other PASS rules do (Claude adversarial).
-- [ ] P4 /ship pass 3: `--plain` drops color and the separators but not other non-ASCII server text, which `-o wide` now prints whole; `TestWideSanitizesLayerAndReasonAndStaysASCIIWhenPlain` does not prove ASCII (Claude adversarial rerun).
-- [ ] P3 /ship: D133: AT-10's reason names every refused workload and quota with no cap; use `firstThree` with "and N more", as the HPA and RuntimeClass clauses do (D114 rule; Claude adversarial).
-- [ ] P3 /ship: D133: the D126 note says the HPA controller "scales none" of the HPAs that target one workload, but kind showed it still clamps the replicas to `maxReplicas`; reword the note (Claude adversarial, cycle 3 kind check).
-- [ ] P3 /ship: D135: a maxSurge percent of 2^63 or more passes API validation but does not fit in 64 bits; `intstr.GetScaledValueFromIntOrPercent` returns an error, AT-10 counts surge 0, and the comment in `headroom/peak.go` says the error is never set. The Deployment controller fails every sync for such a value, so the quota does not block it; report the bad maxSurge instead (Codex adversarial re-run).
-- [ ] P3 /ship: D133: a ValidatingAdmissionPolicy whose message quotes "violates PodSecurity" is classified as PSA, because that rule comes before the policy rule in `probe/classify.go`; AT-09's FAIL then names a PSA cluster default that does not exist (Claude adversarial; D102 class).
-- [ ] P3 /ship: D133: a Deployment scaled to 0 whose containers leave a tracked value unset gets the AT-10 refusal FAIL, though its peak is 0 and the quota refuses nothing until it scales up (Claude adversarial).
-- [ ] P3 /ship: D133: quota admission compares usage with `status.hard`, but AT-06 and AT-10 read `spec.hard`; the two differ until the quota controller syncs a new `spec.hard` (Claude adversarial).
 - [x] P4 /ship pass 3: `TestServerLeavesOutUserinfo` reads `c.Server` when `Connect` failed, so a failing change panics instead of failing the test; split the check (testing). Done on `b31-pre-release`: `TestServerLeavesOutQueryAndFragment` stops on the error first (D169 replaced the userinfo case).
-- [ ] P4 /ship pass 2: `TestPolicyReportNeedsAVerifiedIdentityInSelfMode` does not prove the refusal comes before any check; assert the server saw only the startup requests (testing).
 - [ ] P4 /ship pass 2: `TestAT04OneResultTakesTheWorstOfItsForms` keeps the row "rejected, then mutated", which the stronger test also covers (testing).
 
-- [ ] P2 customer test run S5-F4 (D197): in a pod with no kubeconfig, any `--as` run calls `http://localhost:8080`: client-go's `DeferredLoadingClientConfig.ClientConfig()` returns the merged config, not the in-cluster one, once the impersonation overrides make it differ from the default. Start from `rest.InClusterConfig()` when no kubeconfig loads and in-cluster config is possible, then apply the impersonation flags; add an e2e Job case; then drop the kubeconfig ConfigMap from the README "Run it in a pod" section.
-- [ ] P2 /review Claude adversarial (D201): an all-SKIP `-o policyreport` run prints its report and exits 2. The README's apply script applies any non-empty report, so an identity whose RoleBinding was removed replaces its FAIL rows with SKIP rows on the dashboard (true before D197 too, with exit 0). Decide whether to refuse such a report, as D147 and D175 refuse partial ones.
+- [ ] P2 customer test run S5-F4: the code fix is in v0.1.2 (the in-cluster config when no kubeconfig loads; checked live as a kind Job). Still open: an e2e Job case in `test/e2e/` (protected, so Satvik merges it).
+
+- [ ] Customer test run 2026-10-28, open text items: S6-F3 (PolicyReport `policy` as `AT-09 pod-security-admission`; decide before users depend on the IDs), S5-F7 part (the report schema's descriptions cite decision IDs; the schema is protected), S5-F8 (a container image and a sample CronJob from goreleaser), and the README PolicyReport section moved to `docs/policyreport.md` with a short summary left behind.
+
+#### 4b. v0.2 by D205 (2026-10-30)
+
+- [ ] S2-F4: probe pod controllers with a Deployment dry run, so a GitOps tenant that may create Deployments but not pods can reach AT-04 PASS.
+- [ ] S6-F2: decide and build the verdict when a mutation removed the danger (see also group 7).
+- [ ] S3-F3: several `--other-namespace` values in one run (one AT-02 result each).
+- [ ] S2-F2: a fix-recipes page with one minimal manifest per check, linked from the footer.
+- [ ] S1-F2: `list-checks` with a header, one row per result, method text only in `-o wide` and JSON.
 
 #### 5. Question-set pass: what the checks ask (v0.2, D176)
 

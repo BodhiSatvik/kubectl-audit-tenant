@@ -23,6 +23,16 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Text output ends with a line that names the tool version, the run time, the server and the Kubernetes version. The header names the server when no kubeconfig context exists.
 - The `--other-namespace` warning says that the namespace is unconfirmed.
 - `version` says when a `go install` build recorded no commit or date.
+- RBAC FAILs (AT-01 to AT-03) name the binding that grants the access, from the API server's answer, in the reason and the fix line. In self mode, the fix line starts with `ask a cluster admin to`.
+- The AT-05 fix line names the built-in fix first: a ResourceQuota with `services.nodeports: "0"`. The AT-04.5 fix line says that a ValidatingAdmissionPolicy needs Kubernetes 1.30 or newer.
+- AT-10's FAIL reason puts the shortfall first (`requests.cpu short by 2: peak needs 6, hard is 4`), names at most three refused workloads, then "and N more", and compares with the quota's `status.hard` once the quota controller sets it.
+- A PASS from an explicit deny notes that an authorizer other than RBAC gave it, such as an authorization webhook or an access proxy.
+
+- AT-10 no longer fails a workload scaled to 0 for a container value it leaves unset, and names a `maxSurge` that the Deployment controller cannot read instead of counting it as 0.
+- A ValidatingAdmissionPolicy whose message quotes the Pod Security text is reported as the policy, not as Pod Security Admission.
+- A control pod that `--allow-privileged=false` refused (a mutation added a privileged container) gets the hint for that case.
+- The reasons for an `--allow-privileged=false` refusal and for a mutated privileged probe no longer carry the random probe name, so a PolicyReport message stays the same between runs.
+- The AT-10 note on several HPAs that target one workload says what the HPA controller still does.
 
 ### Removed
 

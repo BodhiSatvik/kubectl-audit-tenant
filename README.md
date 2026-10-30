@@ -14,7 +14,7 @@ The results cover the ten checks below (fourteen results). They do not prove com
 
 ## Requirements
 
-- kubectl, and a cluster that runs Kubernetes 1.28 or newer. 1.28 is the intended minimum: from 1.28 on, the tool can confirm the identity with a SelfSubjectReview. The automated tests run on Kubernetes 1.37.0 only.
+- kubectl, and a cluster that runs Kubernetes 1.28 or newer. 1.28 is the intended minimum: from 1.28 on, the tool can confirm the identity with a SelfSubjectReview. The automated tests run on Kubernetes 1.37.0 only; v0.1.0 was also checked by hand on 1.28.3, with the same verdicts.
 - For the install: [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/), or Go 1.26 or newer.
 - Release binaries: Linux and macOS (amd64 and arm64) and Windows (amd64).
 
@@ -93,9 +93,9 @@ On a namespace that already runs pods, read each `fix` line before you apply it:
 
 | Who | Command | Gets |
 |---|---|---|
-| Platform engineer, when a namespace is created | `kubectl audit-tenant -n team-a --as team-a-admin -o json --fail-on-skip` in the provisioning pipeline | A failed step when the new namespace is not fenced |
-| Security or an auditor | `kubectl audit-tenant -n team-a --as team-a-admin -o wide` | One page of verdicts with benchmark IDs, repeatable next quarter |
-| A tenant team with kubectl | `kubectl audit-tenant -n team-a` with its own kubeconfig | "Is my namespace governed?" and "why was my pod rejected?" |
+| Platform engineer, when a namespace is created | `kubectl audit-tenant -n team-a --as team-a-admin --as-group team-a-admins -o json --fail-on-skip` in the provisioning pipeline | A failed step when the new namespace is not fenced |
+| Security or an auditor | `kubectl audit-tenant -n team-a --as team-a-admin --as-group team-a-admins -o wide` | One page of verdicts with benchmark IDs, repeatable next quarter |
+| A tenant team with kubectl | `kubectl audit-tenant -n team-a` with its own kubeconfig | "Is my namespace governed?" and "will my rollout fit the quota?" |
 | A policy dashboard owner | `-o policyreport`, applied with kubectl | The verdicts next to Kyverno's results in Policy Reporter |
 
 The tool runs as the identity that your kubeconfig and flags give it:
@@ -226,6 +226,8 @@ kubectl audit-tenant -n "$NAMESPACE" --as "$TENANT_USER" ${TENANT_GROUP:+--as-gr
 ```
 
 The `${TENANT_GROUP:+...}` form passes `--as-group` only when the variable is set: an empty group exits 2, and for a service account it would remove the groups the API server adds.
+
+Give the step its own time limit as well: a credential helper that hangs can keep the step's output open after `--timeout` ends the tool.
 
 Any non-zero exit fails the step: 1 for a FAIL (or for a SKIP with `--fail-on-skip`), and 2 for an ERROR, a run where every result is SKIP, or a run that could not start. With `--fail-on-skip`, a namespace that the tool could not prove does not pass. `audit.json` keeps every reason and hint for the record. It is empty when the run could not start.
 
