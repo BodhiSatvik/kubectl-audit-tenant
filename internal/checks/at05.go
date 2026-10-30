@@ -54,7 +54,9 @@ func at05Probe(ctx context.Context, c *cluster.Client, spec Spec, prove func(rep
 			return stored // D84
 		}
 	}
-	res := probed(spec, spec.Results[0], err, "a NodePort Service", "add a policy that rejects type: NodePort on create and update, or remove `create`, `update` and `patch` on services from the tenant role", prove)
+	// The quota comes first: it is built in, and quota admission also checks a change to type NodePort (S1-F3).
+	res := probed(spec, spec.Results[0], err, "a NodePort Service", `set services.nodeports: "0" in a ResourceQuota of `+c.Namespace+
+		" (built in: no policy engine needed), or add a policy that rejects type: NodePort on create and update, or remove `create`, `update` and `patch` on services from the tenant role", prove)
 	if res.Verdict == report.Pass {
 		res.Note = "tested on create only: changing an existing Service to NodePort, and type LoadBalancer (which also opens node ports), were not tested" // D67, D74, D86
 	}

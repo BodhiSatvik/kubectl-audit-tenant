@@ -51,7 +51,7 @@ func TestAT05(t *testing.T) {
 			result(report.Skip, "-", "the compliant control Service was rejected, so the probes prove nothing: "+rejectAll, "the namespace rejects even a plain ClusterIP Service; fix that first"),
 			[]string{"control-service"}},
 		{"the NodePort Service is accepted", mayCreate, nil,
-			result(report.Fail, "-", "a NodePort Service was accepted in a dry run", "add a policy that rejects type: NodePort on create and update, or remove `create`, `update` and `patch` on services from the tenant role"),
+			result(report.Fail, "-", "a NodePort Service was accepted in a dry run", `set services.nodeports: "0" in a ResourceQuota of tenant-a (built in: no policy engine needed), or add a policy that rejects type: NodePort on create and update, or remove `+"`create`, `update` and `patch` on services from the tenant role"),
 			[]string{"control-service", "AT-05"}},
 		{"RBAC denies create and update but allows patch", map[string]string{"list nodes": denied, "create services": denied, "update services": denied, "patch services": allowed}, nil,
 			result(report.Skip, "-", "RBAC denies create services but allows patch services; an existing Service can be changed to type NodePort, so admission must be the fence and it was not exercised",
