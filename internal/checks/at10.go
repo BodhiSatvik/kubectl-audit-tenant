@@ -159,6 +159,9 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		forbidden = append(forbidden, "limitranges")
 		refused = nil
 	}
+	if more := len(refused) - 3; more > 0 { // three, then "and N more", as firstThree does; "; " here, since a refusal holds commas (D133)
+		refused = append(refused[:3], fmt.Sprintf("and %d more", more))
+	}
 	if len(conflicts) > 0 {
 		note += "; several HPAs target " + firstThree(conflicts) + "; the HPA controller scales none of them (AmbiguousSelector)"
 	}

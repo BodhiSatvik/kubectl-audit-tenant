@@ -267,6 +267,28 @@ func TestAT10LeavesARunEndedDuringTheWorkloadListsToTheRunner(t *testing.T) {
 	}
 }
 
+func TestAT10NamesAtMostThreeRefusals(t *testing.T) {
+	// D133: the reason names three refusals, then "and N more", as the note's clauses do (D114).
+	var ds []appsv1.Deployment
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		d := api()
+		d.Name = name
+		d.Spec.Template.Spec.Containers[0].Resources = corev1.ResourceRequirements{}
+		ds = append(ds, d)
+	}
+	cpuCap := quota("cpu-cap")
+	cpuCap.Spec.Hard = rl("requests.cpu", "100")
+	routes := at10Routes()
+	routes[deploymentsPath], routes[hpasPath], routes[limitRangesPath], routes[quotasPath] =
+		listOf(ds...), listOf[autoscalingv2.HorizontalPodAutoscaler](), listOf[corev1.LimitRange](), listOf(cpuCap)
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	want := estimate + "cpu-cap refuses the pods of deployment a: a container sets no requests.cpu; cpu-cap refuses the pods of deployment b: a container sets no requests.cpu; " +
+		"cpu-cap refuses the pods of deployment c: a container sets no requests.cpu; and 2 more (deployments: a 3->4, b 3->4, c 3->4, d 3->4, e 3->4); used in cpu-cap: none reported"
+	if len(got) != 1 || got[0].Verdict != report.Fail || got[0].Reason != want {
+		t.Errorf("at10() = %+v;\nwant FAIL with reason %q", got, want)
+	}
+}
+
 func TestAT10NamesAtMostThreeRuntimeClassWorkloads(t *testing.T) {
 	// Notes are never cut, so a namespace where every pod uses gVisor must not print every name (D114).
 	runtimeClass := "gvisor"
