@@ -1,9 +1,12 @@
 package report
 
 import (
+	"cmp"
 	"fmt"
 	"io"
 	"strings"
+	"time"
+	"unicode"
 )
 
 // Checklist is the default printer: a header, one line per result, a fix line under every
@@ -25,7 +28,7 @@ func (p Checklist) Print(r Report) error {
 		dot, ellipsis = " | ", "..."
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "namespace %s%s%s%scluster %s\n", Sanitize(r.Namespace), dot, identity(r.Identity), dot, Sanitize(r.Cluster.Context))
+	fmt.Fprintf(&b, "namespace %s%s%s%scluster %s\n", Sanitize(r.Namespace), dot, identity(r.Identity), dot, Sanitize(cmp.Or(r.Cluster.Context, r.Cluster.Server))) // in a pod, no context names the cluster (S5-F7)
 	if r.AdminHint {
 		b.WriteString(adminHint + "\n")
 	}
@@ -58,6 +61,9 @@ func (p Checklist) Print(r Report) error {
 		}
 	}
 	b.WriteString("\n" + summaryLine(r, dot) + "\n")
+	// S3-F2: a saved page is audit evidence only with its date, tool and cluster, as -o json has them.
+	fmt.Fprintf(&b, "audit-tenant %s%s%s%sserver %s%sKubernetes %s\n", Sanitize(r.Tool.Version), dot, r.Timestamp.UTC().Format(time.RFC3339), dot,
+		Sanitize(r.Cluster.Server), dot, Sanitize(cmp.Or(r.Cluster.Version, "unknown")))
 	if !p.Wide {
 		b.WriteString("MTB IDs and layers: -o wide" + dot)
 	}
@@ -65,7 +71,16 @@ func (p Checklist) Print(r Report) error {
 	if cut {
 		b.WriteString("full reasons: -o wide or -o json\n")
 	}
-	_, err := io.WriteString(p.Out, b.String())
+	out := b.String()
+	if p.Plain { // server text may hold any character; ASCII only means all of it
+		out = strings.Map(func(r rune) rune {
+			if r > unicode.MaxASCII {
+				return '?'
+			}
+			return r
+		}, out)
+	}
+	_, err := io.WriteString(p.Out, out)
 	return err
 }
 

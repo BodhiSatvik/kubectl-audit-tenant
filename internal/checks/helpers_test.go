@@ -26,6 +26,12 @@ const (
 	allowed = `{"allowed":true}`
 )
 
+// byBinding is an allowed answer whose status.reason names the grant, as the RBAC authorizer writes it.
+func byBinding(binding string) string {
+	reason, _ := json.Marshal("RBAC: allowed by " + binding)
+	return `{"allowed":true,"reason":` + string(reason) + `}`
+}
+
 // ssarServer answers SelfSubjectAccessReviews from canned status bodies keyed by "verb resource",
 // echoing the question as the API server does, and remembers every question. A question gets its
 // answers entry; failing that, AT-01's positive control and the "list pods" anchor are allowed;

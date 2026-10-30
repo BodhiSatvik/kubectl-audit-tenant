@@ -141,22 +141,22 @@ func TestAT10(t *testing.T) {
 		{"no workloads", map[string]http.HandlerFunc{quotasPath: listOf(fixtureQuota()), deploymentsPath: listOf[appsv1.Deployment](), statefulSetsPath: listOf[appsv1.StatefulSet]()},
 			configResult(spec, report.Pass, "config", estimate+"no Deployments or StatefulSets; nothing to compare", ""), notCounted},
 		{"two workloads over the quota", map[string]http.HandlerFunc{deploymentsPath: listOf(api(), worker), hpasPath: listOf[autoscalingv2.HorizontalPodAutoscaler](), quotasPath: listOf(tight)},
-			configResult(spec, report.Fail, "config", estimate+"tenant-a-quota cpu: peak needs 4400m, hard is 4, short by 400m (deployments: api 3->4, worker 3->4); used in tenant-a-quota: cpu 300m", at10FailHint), notCounted},
+			configResult(spec, report.Fail, "config", estimate+"tenant-a-quota cpu short by 400m: peak needs 4400m, hard is 4 (deployments: api 3->4, worker 3->4); used in tenant-a-quota: cpu 300m", at10FailHint), notCounted},
 		{"a quota with only some keys compares only those", map[string]http.HandlerFunc{quotasPath: listOf(cpuCap("1"))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 500m of 1 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", ""), notCounted},
 		{"every unscoped quota is compared", map[string]http.HandlerFunc{quotasPath: listOf(fixtureQuota(), cpuCap("400m"), notTerminating(quota("long-running", "pods")))},
-			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu: peak needs 500m, hard is 400m, short by 100m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3", at10FailHint), notCounted},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu short by 100m: peak needs 500m, hard is 400m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3", at10FailHint), notCounted},
 		{"HPAs unreadable: SKIP", map[string]http.HandlerFunc{hpasPath: forbidden("horizontalpodautoscalers")},
 			configResult(spec, report.Skip, "-", estimate+"cannot list horizontalpodautoscalers (forbidden), so the peak is incomplete; the partial peak fits tenant-a-quota: requests.cpu 400m of 4, requests.memory 512Mi of 8Gi, limits.cpu 2 of 8, limits.memory 2Gi of 16Gi, pods 4 of 20 (deployments: api 3->4); used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3",
 				"grant `list` on horizontalpodautoscalers in tenant-a to this identity, or run with --as <admin>"), notCounted},
 		{"HPAs unreadable and the partial peak is over: SKIP, since an HPA can lower replicas (D110)", map[string]http.HandlerFunc{hpasPath: forbidden("horizontalpodautoscalers"), quotasPath: listOf(cpuCap("300m"))},
-			configResult(spec, report.Skip, "-", estimate+"cannot list horizontalpodautoscalers (forbidden), so the peak is incomplete; an HPA can lower replicas, so the partial shortfall is not proven: cpu-cap requests.cpu: peak needs 400m, hard is 300m, short by 100m (deployments: api 3->4); used in cpu-cap: none reported",
+			configResult(spec, report.Skip, "-", estimate+"cannot list horizontalpodautoscalers (forbidden), so the peak is incomplete; an HPA can lower replicas, so the partial shortfall is not proven: cpu-cap requests.cpu short by 100m: peak needs 400m, hard is 300m (deployments: api 3->4); used in cpu-cap: none reported",
 				"grant `list` on horizontalpodautoscalers in tenant-a to this identity, or run with --as <admin>"), notCounted},
 		// Value: protects=a partial peak over hard is FAIL while LimitRanges are unreadable (DESIGN.md s5); fails_when=an unset tracked value with unread LimitRanges SKIPs before the shortfall; why_new=every forbidden-LimitRange row fits; seam=none; no_claim=none beyond protects
 		{"LimitRanges unreadable but the partial peak is already over: FAIL", map[string]http.HandlerFunc{limitRangesPath: forbidden("limitranges"), deploymentsPath: listOf(unsized), quotasPath: listOf(cpuCap("300m"))},
-			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu: peak needs 500m, hard is 300m, short by 200m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; partial: cannot list limitranges (forbidden)", at10FailHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu short by 200m: peak needs 500m, hard is 300m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; partial: cannot list limitranges (forbidden)", at10FailHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"StatefulSets unreadable but the partial peak is already over: FAIL", map[string]http.HandlerFunc{statefulSetsPath: forbidden("statefulsets"), quotasPath: listOf(cpuCap("300m"))},
-			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu: peak needs 500m, hard is 300m, short by 200m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; partial: cannot list statefulsets (forbidden)", at10FailHint), notCounted},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu short by 200m: peak needs 500m, hard is 300m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; partial: cannot list statefulsets (forbidden)", at10FailHint), notCounted},
 		{"deployments unreadable and no StatefulSets is not 'no workloads'", map[string]http.HandlerFunc{deploymentsPath: forbidden("deployments")},
 			configResult(spec, report.Skip, "-", estimate+"cannot list deployments (forbidden), so the peak is incomplete; the partial peak fits tenant-a-quota: requests.cpu 0 of 4, requests.memory 0 of 8Gi, limits.cpu 0 of 8, limits.memory 0 of 16Gi, pods 0 of 20 (no workloads counted); used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3",
 				"grant `list` on deployments in tenant-a to this identity, or run with --as <admin>"), notCounted},
@@ -180,9 +180,9 @@ func TestAT10(t *testing.T) {
 			limitRangesPath: listOf(limitRange("a-req", limitItem(corev1.LimitTypeContainer, "defaultRequest.cpu", "defaultRequest.memory")), limitRange("b-lim", limitItem(corev1.LimitTypeContainer, "default.cpu", "default.memory")))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 1 of 8 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported; defaults from LimitRange b-lim for 1 container", ""), notCounted},
 		// Value: protects=a workload with several HPAs counts spec.replicas and the note names those HPAs (D126); fails_when=workload() goes back to the largest maxReplicas, or at10 drops the note clause; why_new=headroom tests do not reach the AT-10 note; seam=none; no_claim=none beyond protects
-		{"two HPAs on one workload: the controller scales none, and the note says so (D126)", map[string]http.HandlerFunc{hpasPath: listOf(apiHPA(), func() autoscalingv2.HorizontalPodAutoscaler { h := apiHPA(); h.Name = "api-mem"; return h }())},
+		{"two HPAs on one workload: the controller does not scale on metrics, and the note says so (D126)", map[string]http.HandlerFunc{hpasPath: listOf(apiHPA(), func() autoscalingv2.HorizontalPodAutoscaler { h := apiHPA(); h.Name = "api-mem"; return h }())},
 			configResult(spec, report.Pass, "config", estimate+"peak fits tenant-a-quota: requests.cpu 400m of 4, requests.memory 512Mi of 8Gi, limits.cpu 2 of 8, limits.memory 2Gi of 16Gi, pods 4 of 20 (deployments: api 3->4); used in tenant-a-quota: requests.cpu 300m, requests.memory 384Mi, limits.cpu 1500m, limits.memory 1536Mi, pods 3", ""),
-			notCounted + "; several HPAs target deployment api (api, api-mem); the HPA controller scales none of them (AmbiguousSelector)"},
+			notCounted + "; several HPAs target deployment api (api, api-mem); the HPA controller does not scale them on metrics (AmbiguousSelector), only up to a minReplicas or down to a maxReplicas"},
 		// Value: protects=a PASS reason shows the peak for a quota spelled with the cpu alias; fails_when=the fits loop reads total[key] and prints "cpu 0 of 4"; why_new=every PASS and SKIP row uses canonical keys; seam=none; no_claim=none beyond protects
 		{"a quota that spells cpu shows the peak in a PASS", map[string]http.HandlerFunc{quotasPath: listOf(tight)},
 			configResult(spec, report.Pass, "config", estimate+"peak fits tenant-a-quota: cpu 500m of 4, pods 5 of 20 (deployments: api 4->5 (HPA max)); used in tenant-a-quota: cpu 300m", ""), notCounted},
@@ -203,8 +203,9 @@ func TestAT10(t *testing.T) {
 		{"LimitRanges unreadable while a pod-level pod leaves a tracked value unset: SKIP (D132)", map[string]http.HandlerFunc{deploymentsPath: listOf(podLevelCPU), limitRangesPath: forbidden("limitranges"), quotasPath: listOf(memCap)},
 			configResult(spec, report.Skip, "-", estimate+"cannot list limitranges (forbidden), so the peak is incomplete; the partial peak fits mem-cap: requests.memory 0 of 1Gi (deployments: api 4->5 (HPA max)); used in mem-cap: none reported",
 				"grant `list` on limitranges in tenant-a to this identity, or run with --as <admin>"), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+		// S2-F3: the shortfall comes first, so the checklist's cut keeps the numbers the user acts on.
 		{"a refused workload and a shortfall are both named", map[string]http.HandlerFunc{deploymentsPath: listOf(unsized), limitRangesPath: listOf[corev1.LimitRange](), quotasPath: listOf(cpuCap("100m"))},
-			configResult(spec, report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api: a container sets no requests.cpu; cpu-cap requests.cpu: peak needs 500m, hard is 100m, short by 400m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", refusedHint+"; "+at10FailHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
+			configResult(spec, report.Fail, "config", estimate+"cpu-cap requests.cpu short by 400m: peak needs 500m, hard is 100m; cpu-cap refuses the pods of deployment api: a container sets no requests.cpu (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", refusedHint+"; "+at10FailHint), notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"},
 		{"a RuntimeClass's overhead is not counted", map[string]http.HandlerFunc{deploymentsPath: listOf(gvisor), quotasPath: listOf(cpuCap("4"))},
 			configResult(spec, report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 500m of 4 (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", ""), notCounted + "; pod overhead of a RuntimeClass (api)"},
 		{"StatefulSets count", map[string]http.HandlerFunc{statefulSetsPath: listOf(db), quotasPath: listOf(cpuCap("4"))},
@@ -266,6 +267,81 @@ func TestAT10LeavesARunEndedDuringTheWorkloadListsToTheRunner(t *testing.T) {
 	}
 }
 
+func TestAT10NamesAMaxSurgeTheControllerCannotRead(t *testing.T) {
+	// D135: a maxSurge percent of 2^63 or more passes API validation, but the Deployment controller
+	// fails every sync of it; the note says so instead of counting no surge in silence.
+	d := api()
+	huge := intstr.FromString("9223372036854775808%")
+	d.Spec.Strategy.RollingUpdate.MaxSurge = &huge
+	routes := at10Routes()
+	routes[deploymentsPath], routes[hpasPath] = listOf(d), listOf[autoscalingv2.HorizontalPodAutoscaler]()
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	want := notCounted + "; maxSurge too large for the Deployment controller (api): it fails every sync of such a Deployment, which never rolls out; no surge counted"
+	if len(got) != 1 || got[0].Verdict != report.Pass || !strings.Contains(got[0].Reason, "api 3->3") || got[0].Note != want {
+		t.Errorf("at10() = %+v;\nwant PASS counting api 3->3 with note %q", got, want)
+	}
+}
+
+func TestAT10ComparesWithStatusHardOnceTheQuotaControllerSetsIt(t *testing.T) {
+	// D133: quota admission compares usage with status.hard, which lags spec.hard until the quota controller syncs.
+	synced := quota("cpu-cap")
+	synced.Spec.Hard, synced.Status.Hard = rl("requests.cpu", "8"), rl("requests.cpu", "300m")
+	routes := at10Routes()
+	routes[quotasPath] = listOf(synced)
+	c := configClient(t, routes)
+	got := at10(t.Context(), c, at10Spec(), ignore)
+	want := configResult(at10Spec(), report.Fail, "config", estimate+"cpu-cap requests.cpu short by 200m: peak needs 500m, hard is 300m (deployments: api 4->5 (HPA max)); used in cpu-cap: none reported", at10FailHint)
+	want.Note = notCounted
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at10() = %+v,\nwant %+v", got, want)
+	}
+	quotas, _ := c.Quotas() // AT-06 reads the same cache
+	if hard := quotas[0].Spec.Hard[corev1.ResourceRequestsCPU]; hard.Cmp(resource.MustParse("8")) != 0 {
+		t.Errorf("the run's quota cache now has spec.hard %v; AT-10 must not change it", quotas[0].Spec.Hard)
+	}
+}
+
+func TestAT10AWorkloadScaledToZeroIsNotRefused(t *testing.T) {
+	// D133: replicas 0 makes no pods, so a quota that tracks an unset value refuses nothing yet.
+	d := api()
+	zero := int32(0)
+	d.Spec.Replicas = &zero
+	d.Spec.Template.Spec.Containers[0].Resources = corev1.ResourceRequirements{}
+	cpuCap := quota("cpu-cap")
+	cpuCap.Spec.Hard = rl("requests.cpu", "4")
+	routes := at10Routes()
+	routes[deploymentsPath], routes[hpasPath], routes[limitRangesPath], routes[quotasPath] =
+		listOf(d), listOf[autoscalingv2.HorizontalPodAutoscaler](), listOf[corev1.LimitRange](), listOf(cpuCap)
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	want := configResult(at10Spec(), report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 0 of 4 (deployments: api 0->0); used in cpu-cap: none reported", "")
+	want.Note = notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at10() = %+v,\nwant %+v", got, want)
+	}
+}
+
+func TestAT10NamesAtMostThreeRefusals(t *testing.T) {
+	// D133: the reason names three refusals, then "and N more", as the note's clauses do (D114).
+	var ds []appsv1.Deployment
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		d := api()
+		d.Name = name
+		d.Spec.Template.Spec.Containers[0].Resources = corev1.ResourceRequirements{}
+		ds = append(ds, d)
+	}
+	cpuCap := quota("cpu-cap")
+	cpuCap.Spec.Hard = rl("requests.cpu", "100")
+	routes := at10Routes()
+	routes[deploymentsPath], routes[hpasPath], routes[limitRangesPath], routes[quotasPath] =
+		listOf(ds...), listOf[autoscalingv2.HorizontalPodAutoscaler](), listOf[corev1.LimitRange](), listOf(cpuCap)
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	want := estimate + "cpu-cap refuses the pods of deployment a: a container sets no requests.cpu; cpu-cap refuses the pods of deployment b: a container sets no requests.cpu; " +
+		"cpu-cap refuses the pods of deployment c: a container sets no requests.cpu; and 2 more (deployments: a 3->4, b 3->4, c 3->4, d 3->4, e 3->4); used in cpu-cap: none reported"
+	if len(got) != 1 || got[0].Verdict != report.Fail || got[0].Reason != want {
+		t.Errorf("at10() = %+v;\nwant FAIL with reason %q", got, want)
+	}
+}
+
 func TestAT10NamesAtMostThreeRuntimeClassWorkloads(t *testing.T) {
 	// Notes are never cut, so a namespace where every pod uses gVisor must not print every name (D114).
 	runtimeClass := "gvisor"
@@ -302,7 +378,7 @@ func TestAT10NamesAtMostThreeWorkloadsWithSeveralHPAs(t *testing.T) {
 	routes := at10Routes()
 	routes[deploymentsPath], routes[hpasPath] = listOf(ds...), listOf(hs...)
 	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
-	want := notCounted + "; several HPAs target deployment a (a-cpu, a-mem), deployment b (b-cpu, b-mem), deployment c (c-cpu, c-mem) and 1 more; the HPA controller scales none of them (AmbiguousSelector)"
+	want := notCounted + "; several HPAs target deployment a (a-cpu, a-mem), deployment b (b-cpu, b-mem), deployment c (c-cpu, c-mem) and 1 more; the HPA controller does not scale them on metrics (AmbiguousSelector), only up to a minReplicas or down to a maxReplicas"
 	if len(got) != 1 || got[0].Note != want {
 		t.Errorf("at10() = %+v;\nwant note %q", got, want)
 	}

@@ -7,4 +7,5 @@ namespace team-a · as team-a-dev (groups: team-a, system:authenticated) · clus
       fix    grant `get` on namespace team-a to this identity, or run with --as <admin>
 
 1 passed · 1 failed (AT-05) · 1 skipped (AT-09) · 0 errors · exit 1
+audit-tenant 0.1.0 · 2026-10-20T15:04:05Z · server https://127.0.0.1:6443 · Kubernetes v1.37.0
 MTB IDs and layers: -o wide · machine output: -o json, -o policyreport

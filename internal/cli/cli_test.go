@@ -71,7 +71,7 @@ func selfSubjectReview(w http.ResponseWriter, r *http.Request) {
 	user, groups := "team-a-dev", []string{"team-a"}
 	if as := r.Header.Get("Impersonate-User"); as != "" {
 		user, groups = as, r.Header.Values("Impersonate-Group")
-		if ns, ok := strings.CutPrefix(as, "system:serviceaccount:"); ok && len(groups) == 0 {
+		if ns, ok := strings.CutPrefix(as, "system:serviceaccount:"); ok && len(groups) == 0 && strings.Count(ns, ":") == 1 { // the API server's split
 			ns, _, _ = strings.Cut(ns, ":")
 			groups = []string{"system:serviceaccounts", "system:serviceaccounts:" + ns}
 		}
@@ -138,7 +138,9 @@ func TestFlagValidationExitsTwo(t *testing.T) {
 		{"unknown output", []string{"-n", "tenant-a", "--kubeconfig", withNS, "-o", "yaml"}, `unknown output format "yaml"`},
 		// D147: a partial report would replace the identity's full report.
 		{"policyreport with --checks", []string{"-n", "tenant-a", "--kubeconfig", withNS, "-o", "policyreport", "--checks", "AT-01"}, "-o policyreport needs every check"},
-		{"policyreport with --skip", []string{"-n", "tenant-a", "--kubeconfig", withNS, "-o", "policyreport", "--skip", "AT-04.2"}, "-o policyreport needs every check"},
+		// D202: --skip alone now writes skip rows; --checks still refuses, with or without --skip.
+		{"policyreport with --checks and --skip", []string{"-n", "tenant-a", "--kubeconfig", withNS, "-o", "policyreport", "--checks", "AT-01,AT-04", "--skip", "AT-04.2"}, "-o policyreport needs every check"},
+		{"empty --as-group", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--as", "system:serviceaccount:tenant-a:dev", "--as-group", ""}, "--as-group needs a group name"}, // S5-F2
 		{"other namespace equals target", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--other-namespace", "tenant-a"}, "--other-namespace must differ from -n"},
 		{"timeout zero", []string{"-n", "tenant-a", "--kubeconfig", withNS, "--timeout", "0"}, "--timeout must be longer than 0"},
 		{"namespace required", []string{"--kubeconfig", noNS}, "namespace required"},
@@ -426,6 +428,9 @@ func TestPolicyReportNeedsAVerifiedIdentityInSelfMode(t *testing.T) {
 	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs to know who runs the tool") {
 		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2 and no report", code, stdout, stderr)
 	}
+	if hits := srv.Hits(); len(hits) != 4 { // the startup requests only: the refusal comes before any check
+		t.Errorf("the refusal must come before any check; saw %v", hits)
+	}
 	code, stdout, stderr = run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport", "--as", "team-a-dev", "--as-group", "devs")
 	if code == 2 || !strings.Contains(stdout, "kind: PolicyReport") {
 		t.Errorf("exit %d, stderr %q; --as names the report even when unverified:\n%s", code, stderr, stdout)
@@ -433,9 +438,9 @@ func TestPolicyReportNeedsAVerifiedIdentityInSelfMode(t *testing.T) {
 }
 
 func TestPolicyReportNameFollowsTheImpersonationFlags(t *testing.T) {
-	// D154: the name hashes the flags as given. The fake SelfSubjectReview names kind-dev for every
-	// run, so only the request can tell these runs apart.
-	srv := clusterWithSSAR(t, testutil.SSAR(`{"allowed":false}`))
+	// D154: the name hashes the flags as given. D203 refuses a report whose identity the cluster
+	// changed, so the fake SelfSubjectReview answers as the API server does.
+	srv := impersonatingCluster(t)
 	name := func(args ...string) string {
 		t.Helper()
 		_, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport"}, args...)...)

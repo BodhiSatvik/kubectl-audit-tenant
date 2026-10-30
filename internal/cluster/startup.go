@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 
 	authnv1 "k8s.io/api/authentication/v1"
@@ -35,6 +36,13 @@ func (c *Client) startup(ctx context.Context, opts Options) error {
 		// An HTTP answer is not a network failure: Teleport answers 500 when it refuses an impersonation (D196).
 		if code != 0 {
 			return fmt.Errorf("the API server, or a proxy in front of it, answered /version with HTTP %d: %w", code, err)
+		}
+		if strings.Contains(err.Error(), "getting credentials") { // client-go's exec plugin error (S5-F5)
+			return fmt.Errorf("the kubeconfig's credential plugin failed: %w", err)
+		}
+		// The run's own --timeout ended ctx and returned above; a dial or TLS timeout without the flag stays unreachable (S5-F7).
+		if ne, ok := errors.AsType[net.Error](err); ok && ne.Timeout() && opts.requestTimeout {
+			return fmt.Errorf("the API server did not answer within --request-timeout: %w", err)
 		}
 		return fmt.Errorf("API server unreachable: %w", err)
 	}

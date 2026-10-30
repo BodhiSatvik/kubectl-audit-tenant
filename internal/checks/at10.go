@@ -49,7 +49,13 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	var unscoped []corev1.ResourceQuota
 	var scopedNames []string
-	for _, q := range byName(quotas) {
+	for _, q := range byName(quotas) { // copies: the cache keeps spec.hard
+		// Quota admission compares usage with status.hard, which the quota controller copies from
+		// spec.hard on its next sync, so AT-10 reads it once set. AT-06 keeps spec.hard: it judges the
+		// configured fence (D133).
+		if len(q.Status.Hard) > 0 {
+			q.Spec.Hard = q.Status.Hard
+		}
 		if scoped(q) {
 			scopedNames = append(scopedNames, q.Name)
 		} else if len(headroom.QuotaKeys(q)) > 0 { // a quota on none of the five keys bounds nothing AT-10 counts
@@ -114,10 +120,13 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		ws = append(ws, headroom.StatefulSet(s, hpas, defaults))
 	}
 	unsized, defaulted := 0, 0
-	var runtimeClass []string
+	var runtimeClass, badSurge []string
 	defaultedFrom := map[string]bool{}
 	var conflicts []string // workloads that several HPAs target
 	for _, w := range ws {
+		if w.BadSurge {
+			badSurge = append(badSurge, w.Name)
+		}
 		unsized += w.Pod.Unsized
 		defaulted += w.Pod.Defaulted
 		for _, name := range w.Pod.DefaultedFrom {
@@ -141,6 +150,11 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 			tracked[headroom.Canonical(key)] = true
 		}
 		for _, w := range ws {
+			if w.Peak == 0 {
+				// shortcut: a workload at 0 replicas makes no pod, so it is not refused (D133), though KEDA (an HPA
+				// does not scale a target at 0) can scale it up and the quota then refuses its pods, upgrade if users run scale-from-zero workloads.
+				continue
+			}
 			var keys []string
 			for _, k := range w.Pod.Unset {
 				if tracked[k] {
@@ -159,11 +173,18 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		forbidden = append(forbidden, "limitranges")
 		refused = nil
 	}
+	if more := len(refused) - 3; more > 0 { // three, then "and N more", as firstThree does; "; " here, since a refusal holds commas (D133)
+		refused = append(refused[:3], fmt.Sprintf("and %d more", more))
+	}
 	if len(conflicts) > 0 {
-		note += "; several HPAs target " + firstThree(conflicts) + "; the HPA controller scales none of them (AmbiguousSelector)"
+		// D126; kind showed the controller still clamps replicas into each HPA's range (D133).
+		note += "; several HPAs target " + firstThree(conflicts) + "; the HPA controller does not scale them on metrics (AmbiguousSelector), only up to a minReplicas or down to a maxReplicas"
 	}
 	if len(runtimeClass) > 0 {
 		note += "; pod overhead of a RuntimeClass (" + firstThree(runtimeClass) + ")"
+	}
+	if len(badSurge) > 0 { // D135
+		note += "; maxSurge too large for the Deployment controller (" + firstThree(badSurge) + "): it fails every sync of such a Deployment, which never rolls out; no surge counted"
 	}
 	if unsized > 0 {
 		note += "; " + containers(unsized) + " left a cpu or memory request or limit unset; counted as 0"
@@ -212,7 +233,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	switch {
 	case len(refused) > 0 || len(proven) > 0:
-		reason := strings.Join(slices.Concat(refused, proven), "; ") + tail
+		reason := strings.Join(slices.Concat(proven, refused), "; ") + tail // the shortfall numbers first: the checklist cuts the end (S2-F3)
 		if len(forbidden) > 0 {
 			reason += "; partial: cannot list " + strings.Join(forbidden, ", ") + " (forbidden)"
 		}

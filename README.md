@@ -2,7 +2,7 @@
 
 Check, from the tenant's side, whether a Kubernetes namespace is fenced.
 
-> Status: v0.1.0, the first release (2026-10-26).
+> Status: v0.1.1 (2026-10-30). The first release, v0.1.0, was on 2026-10-26.
 
 [Why](#why) · [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start-kind-about-five-minutes) · [Usage](#usage) · [The checks](#the-checks) · [Verdicts and exit codes](#verdicts-and-exit-codes) · [Output formats](#output-formats) · [Run it in a pod](#run-it-in-a-pod) · [Safety](#safety) · [What a PASS does not prove](#what-a-pass-does-not-prove) · [Troubleshooting](#troubleshooting) · [How it differs](#how-it-differs) · [Contributing](#development-and-contributing)
 
@@ -14,7 +14,7 @@ The results cover the ten checks below (fourteen results). They do not prove com
 
 ## Requirements
 
-- kubectl, and a cluster that runs Kubernetes 1.28 or newer. 1.28 is the intended minimum: from 1.28 on, the tool can confirm the identity with a SelfSubjectReview. The automated tests run on Kubernetes 1.37.0 only.
+- kubectl, and a cluster that runs Kubernetes 1.28 or newer. 1.28 is the intended minimum: from 1.28 on, the tool can confirm the identity with a SelfSubjectReview. The automated tests run on Kubernetes 1.37.0 only; v0.1.0 was also checked by hand on 1.28.3, with the same verdicts.
 - For the install: [krew](https://krew.sigs.k8s.io/docs/user-guide/setup/install/), or Go 1.26 or newer.
 - Release binaries: Linux and macOS (amd64 and arm64) and Windows (amd64).
 
@@ -29,13 +29,13 @@ kubectl krew install audit-tenant
 With krew, from the release (works from the first release on):
 
 ```bash
-kubectl krew install --manifest-url https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/download/v0.1.0/audit-tenant.yaml
+kubectl krew install --manifest-url https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/download/v0.1.1/audit-tenant.yaml
 ```
 
 With Go:
 
 ```bash
-go install github.com/BodhiSatvik/kubectl-audit-tenant/cmd/kubectl-audit_tenant@v0.1.0
+go install github.com/BodhiSatvik/kubectl-audit-tenant/cmd/kubectl-audit_tenant@v0.1.1
 ```
 
 `go install` puts `kubectl-audit_tenant` in `$(go env GOBIN)`, or in `$(go env GOPATH)/bin` when `GOBIN` is empty. That directory must be on your `PATH`, so that kubectl finds the plugin.
@@ -93,9 +93,9 @@ On a namespace that already runs pods, read each `fix` line before you apply it:
 
 | Who | Command | Gets |
 |---|---|---|
-| Platform engineer, when a namespace is created | `kubectl audit-tenant -n team-a --as team-a-admin -o json --fail-on-skip` in the provisioning pipeline | A failed step when the new namespace is not fenced |
-| Security or an auditor | `kubectl audit-tenant -n team-a --as team-a-admin -o wide` | One page of verdicts with benchmark IDs, repeatable next quarter |
-| A tenant team with kubectl | `kubectl audit-tenant -n team-a` with its own kubeconfig | "Is my namespace governed?" and "why was my pod rejected?" |
+| Platform engineer, when a namespace is created | `kubectl audit-tenant -n team-a --as team-a-admin --as-group team-a-admins -o json --fail-on-skip` in the provisioning pipeline | A failed step when the new namespace is not fenced |
+| Security or an auditor | `kubectl audit-tenant -n team-a --as team-a-admin --as-group team-a-admins -o wide` | One page of verdicts with benchmark IDs, repeatable next quarter |
+| A tenant team with kubectl | `kubectl audit-tenant -n team-a` with its own kubeconfig | "Is my namespace governed?" and "will my rollout fit the quota?" |
 | A policy dashboard owner | `-o policyreport`, applied with kubectl | The verdicts next to Kyverno's results in Policy Reporter |
 
 The tool runs as the identity that your kubeconfig and flags give it:
@@ -122,7 +122,7 @@ kubectl audit-tenant version
 | `-n`, `--namespace` | the context's namespace | The namespace to audit. One is required. |
 | `--as`, `--as-group`, `--as-uid`, `--as-user-extra` | none | Impersonate the tenant (kubectl's own flags). |
 | `-o`, `--output` | `checklist` | `checklist`, `wide`, `json` or `policyreport`. |
-| `--plain` | off | ASCII separators and no color. Server text keeps its own characters. |
+| `--plain` | off | ASCII only: ASCII separators, no color, and `?` for any other character in server text. |
 | `--no-color` | off | No color. `NO_COLOR` in the environment does the same. Color shows only on a terminal. |
 | `--checks`, `--skip` | all checks | Comma-separated IDs, for example `--checks AT-01,AT-04 --skip AT-04.2`. A family such as `AT-04` selects its sub-checks. `--skip` removes IDs from the set that `--checks` kept. An unknown ID exits 2. |
 | `--other-namespace` | `kube-system` | The namespace where AT-02 checks that the tenant cannot read Secrets. |
@@ -172,7 +172,7 @@ Each probe follows a compliant control probe. A probe stopped by a full quota or
 | SKIP | The tool could not test it, for example it may not read the object, or a webhook cannot take a dry run. The `fix` line says what to change. |
 | ERROR | A request failed, the run timed out, or the tool hit a bug. |
 
-A mutating webhook or policy that removes the dangerous field and then accepts the probe still gives FAIL in v0.1.0. `--debug` shows the security fields of the accepted object.
+A mutating webhook or policy that removes the dangerous field and then accepts the probe still gives FAIL in v0.1. `--debug` shows the security fields of the accepted object.
 
 | Exit code | When |
 |---|---|
@@ -184,12 +184,12 @@ Every output format keeps the exit code. A run that cannot start prints the reas
 
 ## Output formats
 
-- Checklist (default): one line per result, with a `fix` line under each FAIL, SKIP and ERROR and, for many results, a `note` line that names what the check did not test.
-- `-o wide`: adds the MTB ID and the deciding layer, and never cuts a reason. `--plain` uses ASCII separators and no color; server text keeps its own characters. Color shows only on a terminal; `--no-color` or `NO_COLOR` turns it off.
+- Checklist (default): one line per result, with a `fix` line under each FAIL, SKIP and ERROR and, for many results, a `note` line that names what the check did not test. A line under the summary names the tool version, the run time (UTC), the server and the Kubernetes version, so a saved page is evidence on its own.
+- `-o wide`: adds the MTB ID and the deciding layer, and never cuts a reason. `--plain` prints ASCII only: ASCII separators, no color, and `?` for any other character in server text. Color shows only on a terminal; `--no-color` or `NO_COLOR` turns it off.
 - `-o json`: one object per run. The schema is [`docs/report.schema.json`](docs/report.schema.json). A minor release may add fields, so ignore fields you do not know; a removed or renamed field gets a new `apiVersion`.
 - `-o policyreport`: a `wgpolicyk8s.io/v1alpha2` PolicyReport for dashboards such as Policy Reporter. The tool only prints it; you apply it.
 
-In `-o json` and `-o policyreport`, a control or format character in server text (for example the right-to-left override U+202E) shows as `<U+202E>`. Such a character cannot hide or reorder text in a terminal or dashboard. Newline and tab stay as they are, so server text can still start a new line.
+`-o json` and `-o policyreport` also print each warning on stderr, so a pipeline log shows it. In both formats, a control or format character in server text (for example the right-to-left override U+202E) shows as `<U+202E>`. Such a character cannot hide or reorder text in a terminal or dashboard. Newline and tab stay as they are, so server text can still start a new line.
 
 ### Applying a PolicyReport
 
@@ -212,22 +212,33 @@ exit $code
 - A report names the identity and its groups, the kubeconfig context and the server URL. Every subject that may read PolicyReports in that namespace sees them: a self-mode report from an admin shows the admin's username and groups, and a context name can hold a cloud account ID. Use `--as` for reports you apply.
 - Each set of run inputs has its own report, and a re-run with the same inputs replaces it. The inputs are the mode, the server URL and `--other-namespace`, plus the requested user, groups, UID and extras when impersonating, or the verified username and groups in self mode. The `audit-tenant.dev/mode` annotation says which mode made the report.
 - Some identities get a new username for each session, such as an EKS access entry for an IAM role (`assumed-role/<role>/<session>`). In self mode, each session then makes a new report, and the old ones stay with their old verdicts. To clear them, audit every identity to its own file first. Only when every file is non-empty, delete the namespace's audit-tenant reports (`kubectl delete policyreports -n team-a -l app.kubernetes.io/managed-by=audit-tenant`) and apply all the files. If you delete first and a re-run is then refused, that identity has no report, and a dashboard shows no rows instead of its FAIL. Or use `--as` with a stable name.
-- `-o policyreport` needs all fourteen results, so it refuses a `--checks` or `--skip` that leaves any out.
+- `-o policyreport` writes all fourteen results. It refuses `--checks`. With `--skip`, each skipped result is a `skip` row with the reason `skipped with --skip`. A shop that enforces pod security with a policy engine and not with Pod Security Admission labels can pass `--skip AT-09`, so its dashboard does not show AT-09 as a FAIL every day. Skip rows do not change the exit code, and `--fail-on-skip` does not count them.
+- `-o policyreport` refuses a run where every result is SKIP (exit 2): its report would replace the identity's report, FAIL rows included. A removed RoleBinding or a misspelled `--as` gives such a run.
+- `-o policyreport` refuses a run whose identity the cluster changed (exit 2): the SelfSubjectReview names groups that the run did not ask for (an access proxy such as Teleport adds its role's groups), leaves out a group it asked for, or names another user. The results would describe another identity. The refusal comes before any check.
 - `-o policyreport` also refuses a run that `--timeout` or Ctrl-C stopped before every check finished, unless the run proved a FAIL: that partial report prints (exit 1), because its FAIL rows keep the dashboard from showing a clean namespace. Earlier FAILs that this run did not reach show as ERROR until the next complete run. A refused run, like a run that fails during startup, prints no report, so the previous report stays. The refusal names the SKIPs that `--fail-on-skip` counts. After a create that was not verified as a dry run, stderr names the command that lists leftover probe objects.
 - An ERROR row from any other cause (kubectl's `--request-timeout`, a server error that outlasts client-go's retries) stays in the printed report. Once applied, it replaces the identity's earlier row for that check, so a FAIL can show as ERROR until the next complete run.
 
 ## In a pipeline
 
 ```bash
-kubectl audit-tenant -n "$NAMESPACE" --as "$TENANT_USER" --as-group "$TENANT_GROUP" \
+kubectl audit-tenant -n "$NAMESPACE" --as "$TENANT_USER" ${TENANT_GROUP:+--as-group "$TENANT_GROUP"} \
   -o json --fail-on-skip > audit.json
 ```
+
+The `${TENANT_GROUP:+...}` form passes `--as-group` only when the variable is set: an empty group exits 2, and for a service account it would remove the groups the API server adds.
+
+Give the step its own time limit as well: a credential helper that hangs can keep the step's output open after `--timeout` ends the tool.
 
 Any non-zero exit fails the step: 1 for a FAIL (or for a SKIP with `--fail-on-skip`), and 2 for an ERROR, a run where every result is SKIP, or a run that could not start. With `--fail-on-skip`, a namespace that the tool could not prove does not pass. `audit.json` keeps every reason and hint for the record. It is empty when the run could not start.
 
 ## Run it in a pod
 
-A CronJob, or a Tekton or Argo Workflows step, runs the tool in a pod. Self mode works with the pod's own service account and no kubeconfig. With `--as`, the tool needs a kubeconfig file in the pod: without one, the tool calls `http://localhost:8080` and reports `API server unreachable`. This kubeconfig uses the pod's own service-account token:
+A CronJob, or a Tekton or Argo Workflows step, runs the tool in a pod. From v0.1.2, self mode and `--as` both work with the pod's own service account and no kubeconfig.
+
+<details>
+<summary>v0.1.1 and earlier: <code>--as</code> in a pod needs a kubeconfig</summary>
+
+Without a kubeconfig, v0.1.1 and earlier call `http://localhost:8080` for an `--as` run and report `API server unreachable`. This kubeconfig uses the pod's own service-account token. Mount it, for example at `/kubeconfig`, and set `KUBECONFIG=/kubeconfig/config` in the container:
 
 ```yaml
 apiVersion: v1
@@ -252,6 +263,9 @@ data:
     current-context: in-cluster
 ```
 
+</details>
+
+
 The pod's service account needs `impersonate` on the identities it audits, and only on those: give each rule `resourceNames`. Without `resourceNames`, `impersonate` on `groups` lets anyone who holds the pod's token act as `system:masters`, which is cluster-admin; AT-03 reports that grant as a FAIL. For a service-account tenant, one Role in the tenant's namespace is enough, because the API server adds a service account's own groups without a check:
 
 ```yaml
@@ -266,12 +280,11 @@ rules:
 ```
 
 - Bind the Role to the pod's service account with a RoleBinding in `team-a`. For a user tenant, use a ClusterRole with a `users` rule and a `groups` rule, each with `resourceNames`: the user, and the groups its identity provider gives it.
-- Run the Job in a namespace where only platform admins may create pods, exec into pods or change ConfigMaps: whoever can do that holds these impersonation rights.
-- Mount the ConfigMap, for example at `/kubeconfig`, and set the environment variable `KUBECONFIG=/kubeconfig/config` in the container.
+- Run the Job in a namespace where only platform admins may create pods or exec into pods: whoever can do that holds these impersonation rights.
 - The release binary is static, so an image `FROM scratch` with `COPY kubectl-audit_tenant /` and a numeric non-root `USER` (such as `65532`) works. Its entrypoint is the binary itself, so the arguments start with `-n`. Under Pod Security `restricted`, the pod spec must also set `runAsNonRoot: true` and `seccompProfile: {type: RuntimeDefault}`, and the container `allowPrivilegeEscalation: false` and `capabilities: {drop: [ALL]}`.
 - The report goes to the pod log, and the Job fails on exit 1 or 2.
 
-Checked on kind with Kubernetes 1.37: a Job with `--as` and this kubeconfig gave the same 14 results as a run from a laptop. With only the Role above, the service account's run gave the same 14 results, and the API server refused `--as-group system:masters` and `--as` any other identity.
+Checked on kind with Kubernetes 1.37: a v0.1.1 Job with `--as` and this kubeconfig, and a v0.1.2 build with `--as` and no kubeconfig, gave the same 14 results as a run from a laptop. With only the Role above, the service account's run gave the same 14 results, and the API server refused `--as-group system:masters` and `--as` any other identity.
 
 ## Safety
 
@@ -307,15 +320,22 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 - `the API server, or a proxy in front of it, answered /version with HTTP <code>`: something answered, but not with a version. A 404 means that the server URL path is wrong. A 502, 503 or 504 means that a proxy or load balancer could not reach the API server. A 200 with no version is often the login page of an authenticating proxy. Teleport answers 500 when its role does not allow the `--as` user or group. The rest of the line quotes the answer when client-go keeps it.
 - `the API server refused /version for this identity`: the identity may not read `/version`; check its RBAC or the proxy role.
 - `unauthorized: the cluster rejected your credentials`: your token expired; log in again.
+- `no kubeconfig`: the tool found no kubeconfig (`KUBECONFIG`, `--kubeconfig` or `~/.kube/config`) and does not run in a pod.
+- `the kubeconfig's credential plugin failed`: the kubeconfig runs a login program (such as `aws` or `kubelogin`) that is missing or failed. Install it, or log in, and run again.
+- `the API server did not answer within --request-timeout`: raise kubectl's `--request-timeout`, or check the server.
+- `the proxy-url of cluster <name> holds user info that does not parse`: percent-encode the name and password in the proxy URL (a `%` is `%25`). The tool does not print the URL.
+- `--as-group needs a group name`: a script passed an empty `--as-group`. Use `${GROUP:+--as-group "$GROUP"}`.
 - `timed out during startup`: the credential plugin of your kubeconfig (a cloud login) or the API server did not answer within `--timeout`. A hung credential helper can keep running after the tool exits; stop it yourself.
 - `<user> may not impersonate <name>`: ask a cluster admin for `impersonate` on users, groups and service accounts, or run without `--as`.
 - `namespace <name> not found in context <context>`: check `-n` and `--context`.
 - `namespace required`: pass `-n`, or set a namespace in the kubeconfig context.
 - `cannot ask the cluster "may I?"`: the identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has.
 - `--as-group and --as-uid need a user to impersonate`: the API needs a user with the groups. To test a group alone, use `--as audit-probe --as-group <group>`.
-- `-o policyreport needs every check`: drop `--checks` and `--skip`.
+- `-o policyreport needs every check`: drop `--checks`. `--skip` is allowed and writes skip rows.
+- `-o policyreport needs a run that proved something`: every result was SKIP. Read the SKIP reasons with `-o wide`; a misspelled `-n`, `--as` or `--as-group` gives this.
+- `-o policyreport needs results that describe the identity the flags name`: the cluster added or dropped groups, or named another user. Fix the access proxy's role or its impersonation settings, or use `-o json`.
 - `the kubeconfig server URL holds user info`: the server URL has a name or token before the `@`. Remove it from the URL. Put a token in the kubeconfig user entry's `token` field, or a basic-auth user and password in its `username` and `password` fields. The tool refuses such a URL because a failed request would print it in the report.
-- `-o policyreport needs to know who runs the tool`: no SelfSubjectReview named the identity. Use `--as`, or `-o json`.
+- `-o policyreport needs to know who runs the tool`: no SelfSubjectReview named the identity. Re-run if the cluster was busy, or use `--as` or `-o json`.
 
 **SKIP**
 

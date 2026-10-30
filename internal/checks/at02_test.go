@@ -15,7 +15,8 @@ func TestAT02(t *testing.T) {
 	pass, fail, explicit := base, base, base
 	pass.Verdict, pass.Reason = report.Pass, "no general get, list or watch on secrets in kube-system"
 	pass.Note = "not tested: grants limited to named secrets (resourceNames)" // D92: in the note, which the checklist never cuts
-	explicit.Verdict, explicit.Reason, explicit.Note = report.Pass, pass.Reason+" (explicit deny: get secrets in kube-system)", pass.Note
+	explicit.Verdict, explicit.Reason = report.Pass, pass.Reason+" (explicit deny: get secrets in kube-system)"
+	explicit.Note = pass.Note + "; the explicit deny came from an authorizer other than RBAC, such as an authorization webhook or an access proxy" // D195
 	fail.Verdict, fail.Reason = report.Fail, "RBAC allows list secrets in kube-system"
 	fail.Hint = "remove the RoleBinding or ClusterRoleBinding that lets this identity read secrets in kube-system; a tenant reads secrets only in its own namespace"
 	watch := fail
@@ -46,5 +47,20 @@ func TestAT02(t *testing.T) {
 				t.Errorf("asked %+v, want get, list and watch secrets in --other-namespace", srv.asked[1:])
 			}
 		})
+	}
+}
+
+func TestAT02FailNamesTheBindingTheServerNames(t *testing.T) {
+	// S3-F1: the API server names the binding that grants each action; the user needs it to fix the FAIL.
+	const binding = `RoleBinding "team-a-debug/kube-system" of Role "debug-secret-reader" to Group "team-a-devs"`
+	grant := byBinding(binding)
+	srv := &ssarServer{answers: map[string]string{"list nodes": denied, "get secrets": grant, "list secrets": grant, "watch secrets": grant}}
+	got := at02(t.Context(), connect(t, srv), at02Spec(), ignore)
+	want := report.Result{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, MTB: "MTB-PL1-CC-TI-2", Severity: report.High,
+		Verdict: report.Fail, Layer: "RBAC",
+		Reason: "RBAC allows get secrets in kube-system, list secrets in kube-system, watch secrets in kube-system; granted by " + binding,
+		Hint:   "remove or change " + binding + "; a tenant reads secrets only in its own namespace"}
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at02() = %+v,\nwant %+v", got, want)
 	}
 }
