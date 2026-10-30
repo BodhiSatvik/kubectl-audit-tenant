@@ -20,6 +20,8 @@ type Workload struct {
 	ConflictingHPAs []string
 	Peak            int // pods while it rolls out
 	Pod             Pod
+	// BadSurge is a Deployment maxSurge the Deployment controller cannot read; it never rolls out (D135).
+	BadSurge bool
 }
 
 // defaultSurge is the maxSurge the API server sets on a Deployment that names none.
@@ -38,10 +40,16 @@ func Deployment(d appsv1.Deployment, hpas []autoscalingv2.HorizontalPodAutoscale
 	if ru := d.Spec.Strategy.RollingUpdate; ru != nil && ru.MaxSurge != nil {
 		surge = *ru.MaxSurge
 	}
-	// An invalid value cannot be stored (API validation), so the error is never set. The API
-	// bounds no maxSurge percent, and a huge one scales out of int range; any surge past
-	// MaxInt32 is far over every quota, so it is clamped there and the peak cannot wrap.
-	extra, _ := intstr.GetScaledValueFromIntOrPercent(&surge, w.Replicas, true)
+	// The API bounds no maxSurge percent. One of 2^63 or more passes validation but does not parse,
+	// here or in the Deployment controller, which then fails every sync: no surge pod is ever
+	// made, so none is counted, and BadSurge says why (D135). A huge percent that parses scales
+	// out of int range; any surge past MaxInt32 is far over every quota, so it is clamped there
+	// and the peak cannot wrap.
+	extra, err := intstr.GetScaledValueFromIntOrPercent(&surge, w.Replicas, true)
+	if err != nil {
+		w.BadSurge = true
+		return w
+	}
 	if extra < 0 || extra > math.MaxInt32 {
 		extra = math.MaxInt32
 	}

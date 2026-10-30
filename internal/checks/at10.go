@@ -114,10 +114,13 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		ws = append(ws, headroom.StatefulSet(s, hpas, defaults))
 	}
 	unsized, defaulted := 0, 0
-	var runtimeClass []string
+	var runtimeClass, badSurge []string
 	defaultedFrom := map[string]bool{}
 	var conflicts []string // workloads that several HPAs target
 	for _, w := range ws {
+		if w.BadSurge {
+			badSurge = append(badSurge, w.Name)
+		}
 		unsized += w.Pod.Unsized
 		defaulted += w.Pod.Defaulted
 		for _, name := range w.Pod.DefaultedFrom {
@@ -168,6 +171,9 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	if len(runtimeClass) > 0 {
 		note += "; pod overhead of a RuntimeClass (" + firstThree(runtimeClass) + ")"
+	}
+	if len(badSurge) > 0 { // D135
+		note += "; maxSurge too large for the Deployment controller (" + firstThree(badSurge) + "): it fails every sync of such a Deployment, which never rolls out; no surge counted"
 	}
 	if unsized > 0 {
 		note += "; " + containers(unsized) + " left a cpu or memory request or limit unset; counted as 0"

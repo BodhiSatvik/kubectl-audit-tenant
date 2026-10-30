@@ -124,6 +124,18 @@ func TestDeploymentPeakDoesNotWrapOnAHugeSurgePercent(t *testing.T) {
 	}
 }
 
+func TestDeploymentPeakMarksAMaxSurgePast64Bits(t *testing.T) {
+	// D135: API validation stores a percent of 2^63 or more; it does not parse, here or in the Deployment
+	// controller, which then fails every sync. No surge is counted, and the workload says why.
+	w := Deployment(deployment("api", replicas(3), rolling(intstr.FromString("9223372036854775808%"))), nil, Defaults{})
+	if !w.BadSurge || w.Peak != 3 {
+		t.Errorf("Deployment() = BadSurge %v peak %d; want BadSurge and peak 3 (no surge)", w.BadSurge, w.Peak)
+	}
+	if w := Deployment(deployment("api", replicas(3), rolling(intstr.FromString("25%"))), nil, Defaults{}); w.BadSurge {
+		t.Error("Deployment() marks a 25% maxSurge as bad")
+	}
+}
+
 func TestSeveralHPAsAreNamedForTheNote(t *testing.T) {
 	w := Deployment(deployment("api", replicas(3), rolling(intstr.FromInt32(1))),
 		[]autoscalingv2.HorizontalPodAutoscaler{hpa("b", "apps/v1", "Deployment", "api", 8), hpa("a", "apps/v1", "Deployment", "api", 6), hpa("other", "apps/v1", "Deployment", "web", 9)}, Defaults{})

@@ -267,6 +267,21 @@ func TestAT10LeavesARunEndedDuringTheWorkloadListsToTheRunner(t *testing.T) {
 	}
 }
 
+func TestAT10NamesAMaxSurgeTheControllerCannotRead(t *testing.T) {
+	// D135: a maxSurge percent of 2^63 or more passes API validation, but the Deployment controller
+	// fails every sync of it; the note says so instead of counting no surge in silence.
+	d := api()
+	huge := intstr.FromString("9223372036854775808%")
+	d.Spec.Strategy.RollingUpdate.MaxSurge = &huge
+	routes := at10Routes()
+	routes[deploymentsPath], routes[hpasPath] = listOf(d), listOf[autoscalingv2.HorizontalPodAutoscaler]()
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	want := notCounted + "; maxSurge too large for the Deployment controller (api): it fails every sync of such a Deployment, which never rolls out; no surge counted"
+	if len(got) != 1 || got[0].Verdict != report.Pass || !strings.Contains(got[0].Reason, "api 3->3") || got[0].Note != want {
+		t.Errorf("at10() = %+v;\nwant PASS counting api 3->3 with note %q", got, want)
+	}
+}
+
 func TestAT10NamesAtMostThreeRefusals(t *testing.T) {
 	// D133: the reason names three refusals, then "and N more", as the note's clauses do (D114).
 	var ds []appsv1.Deployment
