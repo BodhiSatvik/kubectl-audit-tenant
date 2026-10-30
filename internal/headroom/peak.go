@@ -16,7 +16,7 @@ type Workload struct {
 	Name     string
 	Replicas int    // spec.replicas (default 1); the maxReplicas of the one HPA that targets it; with several, spec.replicas raised to their largest minReplicas (D126)
 	HPA      string // that HPA, or empty
-	// ConflictingHPAs are the HPAs, by name, when several target this workload; none scales it.
+	// ConflictingHPAs are the HPAs, by name, when several target this workload; none scales it on metrics.
 	ConflictingHPAs []string
 	Peak            int // pods while it rolls out
 	Pod             Pod
@@ -59,8 +59,9 @@ func StatefulSet(s appsv1.StatefulSet, hpas []autoscalingv2.HorizontalPodAutosca
 
 // workload sets the replica count: spec.replicas (default 1), or the maxReplicas of the one HPA
 // whose scaleTargetRef names this workload by API group (apps), kind and name. When several HPAs
-// target it, the HPA controller scales none of them (AmbiguousSelector, proven on kind, D126): the
-// count is spec.replicas raised to their largest minReplicas, and ConflictingHPAs names them.
+// target it, the HPA controller does not scale on metrics (AmbiguousSelector, proven on kind, D126)
+// but still moves replicas up to a minReplicas or down to a maxReplicas, so replicas never pass
+// spec.replicas raised to their largest minReplicas: that is the count, and ConflictingHPAs names them.
 func workload(kind, name string, replicas *int32, hpas []autoscalingv2.HorizontalPodAutoscaler) Workload {
 	w := Workload{Kind: kind, Name: name, Replicas: 1}
 	if replicas != nil {

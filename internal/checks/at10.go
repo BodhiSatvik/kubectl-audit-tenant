@@ -163,7 +163,8 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 		refused = append(refused[:3], fmt.Sprintf("and %d more", more))
 	}
 	if len(conflicts) > 0 {
-		note += "; several HPAs target " + firstThree(conflicts) + "; the HPA controller scales none of them (AmbiguousSelector)"
+		// D126; kind showed the controller still clamps replicas into each HPA's range (D133).
+		note += "; several HPAs target " + firstThree(conflicts) + "; the HPA controller does not scale them on metrics (AmbiguousSelector), only up to a minReplicas or down to a maxReplicas"
 	}
 	if len(runtimeClass) > 0 {
 		note += "; pod overhead of a RuntimeClass (" + firstThree(runtimeClass) + ")"
