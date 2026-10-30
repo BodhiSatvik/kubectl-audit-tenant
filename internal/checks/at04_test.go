@@ -481,6 +481,23 @@ func TestAT04AnAddedPrivilegedContainerProvesNothingForTheOtherProbes(t *testing
 	}
 }
 
+func TestAT04AControlRefusedForAnAddedPrivilegedContainerSaysSo(t *testing.T) {
+	// P4 /ship pass 3: the control pod is not privileged, so --allow-privileged=false refused a container a webhook added;
+	// "the namespace rejects even a compliant pod" would send the user to the wrong fix.
+	added := testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-x7k2p" is invalid: spec.containers[1].securityContext.privileged: Forbidden: disallowed by cluster policy`)
+	ps := &probeServer{answers: map[string]http.HandlerFunc{"control": added}}
+	got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), at04Spec(), ignore)
+	for _, r := range got {
+		if r.Verdict != report.Skip || r.Hint != hintAddedPrivileged {
+			t.Errorf("%s = %+v, want SKIP with the added-privileged hint", r.ID, r)
+		}
+	}
+	if len(got) != len(at04Results) {
+		t.Errorf("%d results, want %d", len(got), len(at04Results))
+	}
+}
+
 func TestAT04InterruptAfterTheFirstPrivilegedFormKeepsTheFail(t *testing.T) {
 	// D84(1), D61, D63: the first form was accepted; Ctrl-C arrives while the second is in flight.
 	// The FAIL is shown again only if AT-04.1 keeps sending its second form; with D84(2) it stops,

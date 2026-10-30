@@ -82,7 +82,11 @@ func at04(ctx context.Context, c *cluster.Client, spec Spec, prove func(report.R
 	pods := c.Clientset.CoreV1().Pods(ns)
 	control, err := pods.Create(ctx, probe.ControlPod(size), dryRun)
 	if err != nil {
-		return controlFailed(ctx, spec, err, "pod", "the namespace rejects even a compliant pod; fix that first")
+		hint := "the namespace rejects even a compliant pod; fix that first"
+		if probe.Classify(err).Layer == probe.LayerAPIServer { // the control is not privileged: a mutation added a privileged container (P4 /ship pass 3)
+			hint = hintAddedPrivileged
+		}
+		return controlFailed(ctx, spec, err, "pod", hint)
 	}
 	if res := notDryRun(c, spec, control, "control pod"); res != nil {
 		return res
