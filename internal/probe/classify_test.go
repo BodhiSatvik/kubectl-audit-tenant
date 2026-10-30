@@ -67,8 +67,8 @@ func TestClassifyEveryRuleOnARealServerString(t *testing.T) {
 		{"quota-must-specify", report.Skip, "-", `pods "audit-tenant-probe-b6zp4" is forbidden: failed quota`, "ResourceQuota"},
 		{"limitrange-min", report.Skip, "-", `pods "audit-tenant-probe-vxbn5" is forbidden: minimum cpu`, "LimitRange"},
 		{"limitrange-max", report.Skip, "-", `pods "audit-tenant-probe-688lv" is forbidden: maximum memory`, "LimitRange"},
-		{"allow-privileged", report.Pass, "API server (allow-privileged=false)", `Pod "audit-tenant-probe-xtfqk" is invalid: spec.containers[0].securityContext.privileged: Forbidden`, ""},
-		{"privileged-escalation-false", report.Skip, "-", `Pod "audit-tenant-probe-8f4bk" is invalid`, "together with allowPrivilegeEscalation: false"},
+		{"allow-privileged", report.Pass, "API server (allow-privileged=false)", "privileged: Forbidden: disallowed by cluster policy", ""},
+		{"privileged-escalation-false", report.Skip, "-", "cannot set `allowPrivilegeEscalation` to false and `privileged` to true", "together with allowPrivilegeEscalation: false"},
 		{"bad-request", report.Error, "-", `Pod in version "v1" cannot be handled as a Pod`, "a bug in audit-tenant"},
 		{"other", report.Error, "-", `pods is forbidden: User "system:serviceaccount:tenant-a:default" cannot create resource "pods"`, "does not recognize"},
 	}
@@ -298,6 +298,18 @@ func TestClassifyAllowPrivilegedTextOutsideA422DecidesNothing(t *testing.T) {
 	for _, code := range []int32{http.StatusBadRequest, http.StatusForbidden} {
 		if got := Classify(statusError(code, "", msg)); got.Verdict != report.Error {
 			t.Errorf("HTTP %d %q = %+v, want ERROR: only the API server's 422 proves --allow-privileged=false", code, msg, got)
+		}
+	}
+}
+
+func TestClassifyRules4bAnd4cGiveTheSameReasonEveryRun(t *testing.T) {
+	// P4 /ship pass 3: the reason drops the generated probe name and 4c's securityContext dump, so a
+	// PolicyReport message does not change from run to run.
+	msgs := messages(t)
+	for _, id := range []string{"allow-privileged", "privileged-escalation-false"} {
+		got := Classify(msgs[id]).Reason
+		if strings.Contains(got, "audit-tenant-probe") || strings.Contains(got, "Capabilities") {
+			t.Errorf("%s: reason %q names the probe or dumps its securityContext", id, got)
 		}
 	}
 }
