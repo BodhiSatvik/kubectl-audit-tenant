@@ -387,3 +387,26 @@ func TestSSARTheNoRightsAnchorIsSentOncePerRun(t *testing.T) {
 		t.Errorf("sent %d SSARs for one question, want 1", sent)
 	}
 }
+
+// S5-F5: a credential plugin that is missing (aws, kubelogin) is not an unreachable server.
+func TestConnectNamesAFailedCredentialPlugin(t *testing.T) {
+	srv := testutil.NewServer(t, happy())
+	cfg := &rest.Config{Host: srv.URL, ExecProvider: &clientcmdapi.ExecConfig{
+		Command: "audit-tenant-no-such-plugin", APIVersion: "client.authentication.k8s.io/v1", InteractiveMode: clientcmdapi.NeverExecInteractiveMode}}
+	_, err := cluster.Connect(t.Context(), cfg, opts)
+	if err == nil || !strings.HasPrefix(err.Error(), "the kubeconfig's credential plugin failed: ") {
+		t.Errorf("Connect() error = %v, want the credential plugin named", err)
+	}
+	if len(srv.Hits()) != 0 {
+		t.Errorf("no request leaves without credentials; saw %v", srv.Hits())
+	}
+}
+
+// S5-F7: --request-timeout ending one request is not an unreachable server.
+func TestConnectNamesTheRequestTimeout(t *testing.T) {
+	srv := testutil.NewServer(t, map[string]http.HandlerFunc{"GET /version": func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }})
+	_, err := cluster.Connect(t.Context(), &rest.Config{Host: srv.URL, Timeout: 50 * time.Millisecond}, opts)
+	if err == nil || !strings.HasPrefix(err.Error(), "the API server did not answer within --request-timeout: ") {
+		t.Errorf("Connect() error = %v, want the request timeout named", err)
+	}
+}
