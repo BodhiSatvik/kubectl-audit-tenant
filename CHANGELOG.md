@@ -2,13 +2,14 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.1] - 2026-10-30
 
 ### Changed
 
 - A run where every result is SKIP now exits 2, not 0, and says `nothing was proven` on stderr in every output format. A misspelled `-n`, `--as` or `--as-group` gives such a run, and exit 0 let it pass a pipeline. With `--fail-on-skip` it still exits 1 (ADR 0004, amended). A `--checks` subset whose results are all SKIP exits 2 too.
 - The AT-09 fix line starts with `kubectl label --dry-run=server ...`, which warns about running pods that the level would refuse, so a pasted fix changes nothing. The AT-06 fix line, and AT-10's when no quota exists, say to make sure a LimitRange gives defaults first.
 - `--help` shows the namespace and `--as` in the usage line, four examples, and the new exit-0 rule.
+- The krew manifest's caveat says that exit 2 also means every check was SKIP. Its short description and description match the krew index entry.
 
 ### Added
 
@@ -39,4 +40,5 @@ The first release.
 - A read-only HTTP transport with an exact allowlist: the tool never writes to the cluster and never reads a Secret.
 - Binaries for Linux and macOS (amd64 and arm64) and Windows (amd64), with checksums and a krew manifest.
 
+[0.1.1]: https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/tag/v0.1.1
 [0.1.0]: https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/tag/v0.1.0
