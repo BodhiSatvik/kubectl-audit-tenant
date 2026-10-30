@@ -212,7 +212,7 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 	}
 	switch {
 	case len(refused) > 0 || len(proven) > 0:
-		reason := strings.Join(slices.Concat(refused, proven), "; ") + tail
+		reason := strings.Join(slices.Concat(proven, refused), "; ") + tail // the shortfall numbers first: the checklist cuts the end (S2-F3)
 		if len(forbidden) > 0 {
 			reason += "; partial: cannot list " + strings.Join(forbidden, ", ") + " (forbidden)"
 		}
