@@ -144,6 +144,11 @@ func at10(ctx context.Context, c *cluster.Client, spec Spec, _ func(report.Resul
 			tracked[headroom.Canonical(key)] = true
 		}
 		for _, w := range ws {
+			if w.Peak == 0 {
+				// shortcut: a workload at 0 replicas makes no pod, so it is not refused (D133), though KEDA (an HPA
+				// does not scale a target at 0) can scale it up and the quota then refuses its pods, upgrade if users run scale-from-zero workloads.
+				continue
+			}
 			var keys []string
 			for _, k := range w.Pod.Unset {
 				if tracked[k] {

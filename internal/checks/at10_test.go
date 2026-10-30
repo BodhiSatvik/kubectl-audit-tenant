@@ -282,6 +282,25 @@ func TestAT10NamesAMaxSurgeTheControllerCannotRead(t *testing.T) {
 	}
 }
 
+func TestAT10AWorkloadScaledToZeroIsNotRefused(t *testing.T) {
+	// D133: replicas 0 makes no pods, so a quota that tracks an unset value refuses nothing yet.
+	d := api()
+	zero := int32(0)
+	d.Spec.Replicas = &zero
+	d.Spec.Template.Spec.Containers[0].Resources = corev1.ResourceRequirements{}
+	cpuCap := quota("cpu-cap")
+	cpuCap.Spec.Hard = rl("requests.cpu", "4")
+	routes := at10Routes()
+	routes[deploymentsPath], routes[hpasPath], routes[limitRangesPath], routes[quotasPath] =
+		listOf(d), listOf[autoscalingv2.HorizontalPodAutoscaler](), listOf[corev1.LimitRange](), listOf(cpuCap)
+	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
+	want := configResult(at10Spec(), report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 0 of 4 (deployments: api 0->0); used in cpu-cap: none reported", "")
+	want.Note = notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("at10() = %+v,\nwant %+v", got, want)
+	}
+}
+
 func TestAT10NamesAtMostThreeRefusals(t *testing.T) {
 	// D133: the reason names three refusals, then "and N more", as the note's clauses do (D114).
 	var ds []appsv1.Deployment
