@@ -78,6 +78,9 @@ func TestAnIdentityTheClusterChangedIsWarnedAndRefusedAsAReport(t *testing.T) {
 		{sa, `["system:masters","system:authenticated"]`, []string{"--as", sa}, "the cluster gives " + sa + " groups that the run did not ask for: system:masters"},
 		{"kind-dev", `["system:masters","system:authenticated"]`, []string{"--as", sa, "--as-group", "system:masters"}, "the cluster names the identity kind-dev, not the --as user " + sa},
 		{"alice", `["system:authenticated"]`, []string{"--as", "alice", "--as-group", "devs"}, "the cluster does not give alice these groups the run asked for: devs"},
+		// D210: the groups the API server adds to a service account count as asked for.
+		{sa, `["system:authenticated"]`, []string{"--as", sa}, "the cluster does not give " + sa + " these groups the run asked for: system:serviceaccounts, system:serviceaccounts:tenant-a"},
+		{"alice", `[]`, []string{"--as", "alice", "--as-group", "system:authenticated"}, "the cluster does not give alice these groups the run asked for: system:authenticated;"},
 	} {
 		srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
 			"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),

@@ -248,7 +248,9 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 			proxied = append(proxied, "the cluster names the identity "+c.Identity.Username+", not the --as user "+as)
 			warnings = append(warnings, proxied[len(proxied)-1]+": an access proxy may have replaced or ignored the impersonation, so the results describe "+c.Identity.Username)
 		}
-		if dropped := slices.DeleteFunc(slices.Clone(asGroups), func(g string) bool { return slices.Contains(c.Identity.Groups, g) }); len(dropped) > 0 {
+		dropped := slices.DeleteFunc(asked, func(g string) bool { return slices.Contains(c.Identity.Groups, g) }) // D210: asked holds the groups the API server adds
+		slices.Sort(dropped)
+		if dropped = slices.Compact(dropped); len(dropped) > 0 { // --as-group system:authenticated is in asked twice
 			proxied = append(proxied, "the cluster does not give "+c.Identity.Username+" these groups the run asked for: "+strings.Join(dropped, ", "))
 			warnings = append(warnings, proxied[len(proxied)-1]+"; an access proxy may have dropped them, so the results describe the identity without them")
 		}

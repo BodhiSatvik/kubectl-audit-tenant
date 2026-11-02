@@ -58,7 +58,6 @@ Wording, hints, edge cases and tests. None changes a public contract; do them be
 - [ ] /review 2026-10-30 (adversarial): the D203 identity check compares the username and groups only; a proxy that strips or adds `Impersonate-Extra-*` headers, or the UID, is not detected. Compare the SelfSubjectReview's uid and extra with `--as-uid` and `--as-user-extra`.
 - [ ] /review 2026-10-30 (adversarial): AT-10 compares with `status.hard` and AT-06 judges `spec.hard`; add a note when the two differ (the quota controller lags), so a reader sees why the numbers differ.
 - [ ] /review 2026-10-30 (testing): `wideSample`'s AT-10 reason in `internal/report/checklist_test.go` and its golden files still use the old shortfall order; render a real AT-10 FAIL reason and assert that the checklist cut keeps `short by`.
-- [ ] Codex review 2026-11-02 (P2, gate PASS): the D203 dropped-group check compares the SelfSubjectReview's groups with the `--as-group` values only. For `--as system:serviceaccount:<ns>:<name>` with no `--as-group`, a proxy that drops the service account's own groups (`system:serviceaccounts`, `system:serviceaccounts:<ns>`) is not detected. Compare with the full expected set (`asked` in `internal/cli/run.go`) and add that service-account test. Left open by the review stop rule (one fix cycle).
 
 #### 4b. v0.2 by D205 (2026-10-30)
 
