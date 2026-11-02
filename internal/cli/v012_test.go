@@ -1,6 +1,7 @@
 package cli_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -8,9 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	authzv1 "k8s.io/api/authorization/v1"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 	"sigs.k8s.io/yaml"
 
+	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/checks"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cli"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/testutil"
 )
@@ -41,11 +44,12 @@ func TestPolicyReportWritesASkipRowForEachSkippedResult(t *testing.T) {
 		if r.Result == "skip" {
 			skips++
 		}
-		if (r.Policy == "AT-09" || r.Policy == "AT-04.2") && (r.Result != "skip" || r.Message != "skipped with --skip: this run did not test it" || r.Properties["hint"] != "drop --skip "+r.Policy+" to test it") {
+		if (r.Policy == "AT-09" || r.Policy == "AT-04.2") && (r.Result != "skip" || r.Message != "skipped with --skip: this run did not test it" || r.Properties["hint"] != "remove it from --skip to test it") {
 			t.Errorf("%s: want a skip row naming --skip, got %+v", r.Policy, r)
 		}
 	}
-	if !slices.IsSorted(ids) || pr.Summary["skip"] != skips {
+	every, _ := checks.Select(nil, nil)
+	if !slices.Equal(ids, checks.ResultIDs(every)) || pr.Summary["skip"] != skips {
 		t.Errorf("rows %v must be in run order and summary.skip %d must count every skip row (%d)", ids, pr.Summary["skip"], skips)
 	}
 	if !strings.Contains(stderr, "warning: --skip ran 12 of 14 results; the others are skip rows in this report") {
@@ -57,7 +61,7 @@ func TestPolicyReportWritesASkipRowForEachSkippedResult(t *testing.T) {
 func TestPolicyReportRefusesARunThatProvedNothing(t *testing.T) {
 	srv := impersonatingClusterWithSSAR(t, noRights)
 	code, stdout, stderr := run(t, "-n", "tenant-a", "--as", "alcie", "--as-group", "devs", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport")
-	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs a run that proved something: every check was SKIP") {
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs a run that proved something: no check passed or failed") {
 		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2, no report and the refusal", code, stdout, stderr)
 	}
 }
@@ -168,5 +172,104 @@ func TestCompletionCommandIsGoneAndGoInstallVersionSaysSo(t *testing.T) {
 	cli.Main([]string{"version"}, cli.BuildInfo{Version: "dev", Commit: "none", Date: "unknown"}, genericiooptions.IOStreams{In: strings.NewReader(""), Out: &out, ErrOut: &out})
 	if out.String() != "audit-tenant dev (commit none, built unknown)\n" { // go run: not a go install build
 		t.Errorf("version printed %q", out.String())
+	}
+}
+
+// ADR 0004 and D185: a -o policyreport refusal after the run exits with the run's own code, so
+// --fail-on-skip keeps its exit 1; skip rows from --skip never count for it (D202).
+func TestPolicyReportKeepsFailOnSkip(t *testing.T) {
+	srv := impersonatingClusterWithSSAR(t, noRights)
+	code, stdout, stderr := run(t, "-n", "tenant-a", "--as", "alcie", "--as-group", "devs", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport", "--fail-on-skip")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "-o policyreport needs a run that proved something") {
+		t.Errorf("all SKIP: exit %d, stdout %q, stderr %q; want exit 1, no report and the refusal", code, stdout, stderr)
+	}
+	if code, stdout, stderr, err := interruptedRun(t, `{"allowed":true}`, "-o", "policyreport", "--fail-on-skip"); code != 1 || !strings.Contains(stdout.String(), "result: fail") {
+		t.Errorf("stopped FAIL: exit %d (%v), stderr %q; want exit 1 and the partial report:\n%s", code, err, stderr, stdout)
+	}
+	imp := impersonatingCluster(t)
+	args := []string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, imp.URL, ""), "--as", "system:serviceaccount:tenant-a:dev", "--skip", "AT-09,AT-04", "--fail-on-skip"}
+	want, _, _ := run(t, args...)
+	code, stdout, stderr = run(t, append(args, "-o", "policyreport")...)
+	if code != want || strings.Count(stdout, "message: 'skipped with --skip: this run did not test it'") != 6 {
+		t.Errorf("skip rows: exit %d (checklist %d), stderr %q; want the checklist's exit code and 6 skip rows:\n%s", code, want, stderr, stdout)
+	}
+	self := clusterWithSSAR(t, testutil.SSAR(`{"allowed":false}`)) // AT-01 to AT-03 PASS, the reads SKIP
+	selfArgs := []string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, self.URL, ""), "--fail-on-skip"}
+	want, _, _ = run(t, selfArgs...)
+	if code, stdout, stderr := run(t, append(selfArgs, "-o", "policyreport")...); want != 1 || code != 1 || !strings.Contains(stdout, "result: skip") {
+		t.Errorf("finished run: exit %d (checklist %d), stderr %q; want exit 1 and a printed report with a skip row:\n%s", code, want, stderr, stdout)
+	}
+}
+
+// D208: SKIPs with an ERROR also proved nothing; an all-ERROR run still prints (D183).
+func TestPolicyReportRefusesSkipsWithAnError(t *testing.T) {
+	srv := impersonatingClusterWithSSAR(t, func(w http.ResponseWriter, r *http.Request) {
+		var review authzv1.SelfSubjectAccessReview
+		if err := json.NewDecoder(r.Body).Decode(&review); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		answer := `{"allowed":false}`
+		switch a := review.Spec.ResourceAttributes; {
+		case a != nil && a.Verb == "create" && a.Resource == "selfsubjectaccessreviews":
+			answer = `{"allowed":true}`
+		case a != nil && a.Verb == "escalate": // AT-03: an authorization webhook that cannot evaluate an unknown user
+			answer = `{"allowed":false,"evaluationError":"webhook: unknown user"}`
+		}
+		spec, _ := json.Marshal(review.Spec)
+		testutil.JSON(http.StatusCreated, `{"spec":`+string(spec)+`,"status":`+answer+`}`)(w, r)
+	})
+	args := []string{"-n", "tenant-a", "--as", "alcie", "--as-group", "devs", "--kubeconfig", kubeconfig(t, srv.URL, "")}
+	_, stdout, _ := run(t, append(args, "-o", "json")...)
+	if !strings.Contains(stdout, `"verdict": "ERROR"`) || strings.Contains(stdout, `"verdict": "PASS"`) || strings.Contains(stdout, `"verdict": "FAIL"`) {
+		t.Fatalf("setup: want only SKIP and ERROR results:\n%s", stdout)
+	}
+	if code, stdout, stderr := run(t, append(args, "-o", "policyreport")...); code != 2 || stdout != "" || !strings.Contains(stderr, "no check passed or failed") {
+		t.Errorf("exit %d, stdout %q, stderr %q; want exit 2, no report and the refusal", code, stdout, stderr)
+	}
+}
+
+// D199's case without a group: -o json puts the no-groups warning on stderr before the D197 line.
+func TestAMisspelledUserWithNoGroupsWarnsOnStderr(t *testing.T) {
+	srv := impersonatingClusterWithSSAR(t, noRights)
+	const warn = "warning: impersonating alcie with no groups (--as-group, or as-groups in the kubeconfig): the run lacks the groups an identity provider adds, and the API server does not check that the user exists\n"
+	if code, stdout, stderr := run(t, "-n", "tenant-a", "--as", "alcie", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "json"); code != 2 || stderr != warn+nothingProven || stdout == "" {
+		t.Errorf("exit %d, stderr %q; want exit 2 and %q, and the report on stdout", code, stderr, warn+nothingProven)
+	}
+}
+
+// Server text in the stderr warnings (S5-F3) is sanitized like the rest.
+func TestStderrWarningsAreSanitized(t *testing.T) {
+	srv := testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      testutil.JSON(http.StatusCreated, `{"status":{"userInfo":{"username":"alice","groups":["devs","evil\u001b[2Kgrp","system:authenticated"]}}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": testutil.SSAR(`{"allowed":false}`),
+	}))
+	_, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--as", "alice", "--as-group", "devs", "-o", "json")
+	if !strings.Contains(stderr, "groups that the run did not ask for: evilgrp") || strings.Contains(stderr, "\x1b") {
+		t.Errorf("stderr %q: want the warning without the escape sequence", stderr)
+	}
+}
+
+// Kubeconfig problems that clientcmd turns into http://localhost:8080 get their own message, and a real
+// kubeconfig whose server is that address is still used.
+func TestKubeconfigEdgeCases(t *testing.T) {
+	write := func(cfg string) string {
+		path := filepath.Join(t.TempDir(), "kubeconfig")
+		if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	if code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, "http://localhost:8080", "")); code != 2 || strings.Contains(stderr, "no kubeconfig") {
+		t.Errorf("a kubeconfig naming localhost:8080: exit %d, stderr %q; want the server tried, not \"no kubeconfig\"", code, stderr)
+	}
+	noCurrent := write("apiVersion: v1\nkind: Config\nclusters: [{name: dev, cluster: {server: \"https://127.0.0.1:6443\"}}]\ncontexts: [{name: kind-dev, context: {cluster: dev, user: kind-dev}}]\nusers: [{name: kind-dev, user: {token: t}}]\n")
+	if code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", noCurrent); code != 2 || !strings.Contains(stderr, "the kubeconfig sets no current context") {
+		t.Errorf("no current-context: exit %d, stderr %q", code, stderr)
+	}
+	emptyGroup := write("apiVersion: v1\nkind: Config\nclusters: [{name: dev, cluster: {server: \"https://127.0.0.1:6443\"}}]\ncontexts: [{name: kind-dev, context: {cluster: dev, user: kind-dev}}]\ncurrent-context: kind-dev\nusers: [{name: kind-dev, user: {token: t, as: alice, as-groups: [\"\"]}}]\n")
+	if code, _, stderr := run(t, "-n", "tenant-a", "--kubeconfig", emptyGroup); code != 2 || !strings.Contains(stderr, "--as-group needs a group name") {
+		t.Errorf("as-groups with an empty group: exit %d, stderr %q", code, stderr)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/genericiooptions"
 	"k8s.io/client-go/rest"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/checks"
 	"github.com/BodhiSatvik/kubectl-audit-tenant/internal/cluster"
@@ -41,27 +42,32 @@ type runOptions struct {
 // inClusterConfig is the pod's own config; a test replaces it.
 var inClusterConfig = rest.InClusterConfig
 
-// restConfig is the flags' config. clientcmd falls back to the pod's config only when no flag changes
-// its default, so in a pod with no kubeconfig --as or --request-timeout called http://localhost:8080
-// (S5-F4). This makes the same fallback with those flags set aside, then puts them back.
-func (o *runOptions) restConfig() (*rest.Config, error) {
-	loader := o.flags.ToRawKubeConfigLoader()
-	cfg, err := loader.ClientConfig()
+// restConfig is the flags' config. With no kubeconfig loaded, clientcmd uses the pod's config only
+// when no flag changes its default, so in a pod --as or --request-timeout called http://localhost:8080
+// (S5-F4). With no kubeconfig cluster and no --server, this starts from the pod's config, applies the
+// flags kubectl applies there (--token, --certificate-authority), then the impersonation and timeout.
+func (o *runOptions) restConfig(raw clientcmdapi.Config) (*rest.Config, error) {
+	cfg, err := o.flags.ToRESTConfig()
 	if err != nil {
 		return nil, exit2("cannot load the kubeconfig: %v", err)
 	}
-	rules, ok := loader.ConfigAccess().(interface{ IsDefaultConfig(*rest.Config) bool })
-	bare := rest.CopyConfig(cfg)
-	bare.Impersonate, bare.Timeout = rest.ImpersonationConfig{}, 0
-	if !ok || !rules.IsDefaultConfig(bare) {
+	if len(raw.Clusters) > 0 || *o.flags.APIServer != "" { // a kubeconfig or --server names the cluster
 		return cfg, nil
 	}
 	pod, err := inClusterConfig()
-	if errors.Is(err, rest.ErrNotInCluster) { // S1-F6: else the run would call localhost:8080
+	switch {
+	case errors.Is(err, rest.ErrNotInCluster) && os.Getenv("KUBERNETES_MASTER") != "": // clientcmd's legacy default server
+		return cfg, nil
+	case errors.Is(err, rest.ErrNotInCluster): // S1-F6: else the run would call localhost:8080
 		return nil, exit2("no kubeconfig: set KUBECONFIG or pass --kubeconfig (the tool reads it as kubectl does); in a pod, it uses the pod's service account")
-	}
-	if err != nil {
+	case err != nil:
 		return nil, exit2("cannot load the pod's in-cluster config: %v", err)
+	}
+	if token := *o.flags.BearerToken; token != "" {
+		pod.BearerToken, pod.BearerTokenFile = token, ""
+	}
+	if ca := *o.flags.CAFile; ca != "" {
+		pod.CAFile, pod.CAData = ca, nil
 	}
 	pod.Impersonate, pod.Timeout = cfg.Impersonate, cfg.Timeout
 	return pod, nil
@@ -116,15 +122,18 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	if asUser == "" && (len(*o.flags.ImpersonateGroup) > 0 || *o.flags.ImpersonateUID != "") {
 		return exit2("--as-group and --as-uid need a user to impersonate (--as, or as: in the kubeconfig user): the API requires a user with the groups; use `--as audit-probe --as-group <group>` to test a group alone")
 	}
-	if slices.Contains(*o.flags.ImpersonateGroup, "") { // S5-F2: an empty group also drops a service account's own groups
-		return exit2(`--as-group needs a group name, and one was empty; in a script, pass it only when set: ${GROUP:+--as-group "$GROUP"}`)
-	}
-	cfg, err := o.restConfig()
+	cfg, err := o.restConfig(raw)
 	if kc := raw.Clusters[clusterName]; err != nil && kc != nil && strings.Contains(kc.ProxyURL, "@") && strings.Contains(err.Error(), "proxy-url") { // D181: clientcmd's parse error quotes the whole proxy URL
 		return exit2("cannot load the kubeconfig: the proxy-url of cluster %q holds user info (a name or password before the @) that does not parse; percent-encode it (a %% is %%25). audit-tenant does not print the URL", clusterName)
 	}
 	if err != nil {
 		return err
+	}
+	if contextName == "" && clusterName == "" && *o.flags.APIServer == "" && len(raw.Clusters) > 0 { // clientcmd would use http://localhost:8080
+		return exit2("the kubeconfig sets no current context: pass --context, or run kubectl config use-context")
+	}
+	if slices.Contains(cfg.Impersonate.Groups, "") { // S5-F2: an empty group also drops a service account's own groups
+		return exit2(`--as-group needs a group name, and one was empty (in the flags or the kubeconfig's as-groups); in a script, pass it only when set: ${GROUP:+--as-group "$GROUP"}`)
 	}
 	if namespace == "" && contextName == "" {
 		return exit2("namespace required: pass -n (no kubeconfig context is set, so none gives a namespace)")
@@ -244,14 +253,24 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 			warnings = append(warnings, proxied[len(proxied)-1]+"; an access proxy may have dropped them, so the results describe the identity without them")
 		}
 	case c.Identity.Mode == report.ModeImpersonation:
+		proxied = append(proxied, "no SelfSubjectReview answer confirmed the impersonated identity (re-run if the cluster was busy; an access proxy may block it)") // D206
 		warnings = append(warnings, "the cluster did not confirm the impersonated identity (no SelfSubjectReview answer), so the run cannot see whether an access proxy changed its user or groups")
 	}
-	if o.output == "policyreport" && len(proxied) > 0 { // D203: the results describe another identity, and the report would replace this one's
+	if o.output == "policyreport" && len(proxied) > 0 { // D203, D206: the results may describe another identity, and the report would replace this one's
 		return exit2("-o policyreport needs results that describe the identity the flags name, and %s; fix the access proxy's role or impersonation, or use -o json", strings.Join(proxied, "; "))
 	}
 	results := checks.Run(ctx, c, specs, o.timeout)
 	if len(results) == 0 {
 		return exit2("no check produced a result; this is a bug in audit-tenant")
+	}
+	adminHint := c.Identity.Mode == report.ModeSelf && checks.LooksLikeAdmin(results)
+	if o.output == "json" || o.output == "policyreport" { // S5-F3: inside the document alone, a pipeline log never shows them; before any refusal
+		for _, w := range warnings {
+			cmd.PrintErrln("warning: " + report.Sanitize(w))
+		}
+		if adminHint {
+			cmd.PrintErrln("warning: " + report.AdminHint)
+		}
 	}
 	verdict := func(v report.Verdict) func(report.Result) bool {
 		return func(r report.Result) bool { return r.Verdict == v }
@@ -281,8 +300,10 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		}
 		return &exitError{code: report.Summarize(results, o.failOnSkip).ExitCode, msg: msg}
 	}
-	if o.output == "policyreport" && report.Summarize(results, false).NothingProven() { // D203: SKIP rows would replace the identity's FAIL rows
-		return exit2("-o policyreport needs a run that proved something: every check was SKIP, and the report would replace the identity's report, FAIL rows included; read the SKIP reasons with -o wide (a misspelled -n, --as or --as-group skips every check)")
+	// D203, D208: SKIP rows (with ERRORs or not) would replace the identity's FAIL rows; an all-ERROR run prints (D183).
+	// The exit code is the run's, as for D175, so --fail-on-skip still gives 1 (ADR 0004).
+	if sum := report.Summarize(results, o.failOnSkip); o.output == "policyreport" && sum.Pass+sum.Fail == 0 && sum.Skip > 0 {
+		return &exitError{code: sum.ExitCode, msg: "-o policyreport needs a run that proved something: no check passed or failed, and the report would replace the identity's report, FAIL rows included; read the SKIP reasons with -o wide (a misspelled -n, --as or --as-group skips every check)"}
 	}
 	rep := report.Report{
 		Tool:      report.Tool{Name: "audit-tenant", Version: info.Version},
@@ -293,7 +314,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		Timestamp:  time.Now().UTC(),
 		Results:    results,
 		FailOnSkip: o.failOnSkip,
-		AdminHint:  c.Identity.Mode == report.ModeSelf && checks.LooksLikeAdmin(results),
+		AdminHint:  adminHint,
 	}
 	if as != "" {
 		rep.Request = report.Request{User: as, Groups: asGroups, UID: cfg.Impersonate.UID, Extra: cfg.Impersonate.Extra}
@@ -304,7 +325,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 			for _, r := range s.Results {
 				if !slices.Contains(ranIDs, r.ID) {
 					rep.SkippedByFlag = append(rep.SkippedByFlag, report.Result{ID: r.ID, Name: r.Name, Kind: s.Kind, MTB: r.MTB, Severity: s.Severity,
-						Verdict: report.Skip, Layer: "-", Reason: "skipped with --skip: this run did not test it", Hint: "drop --skip " + r.ID + " to test it"})
+						Verdict: report.Skip, Layer: "-", Reason: "skipped with --skip: this run did not test it", Hint: "remove it from --skip to test it"})
 				}
 			}
 		}
@@ -320,14 +341,6 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 	}
 	if err != nil {
 		return exit2("cannot write the report: %v", err)
-	}
-	if o.output == "json" || o.output == "policyreport" { // S5-F3: inside the document alone, a pipeline log never shows them
-		for _, w := range warnings {
-			cmd.PrintErrln("warning: " + report.Sanitize(w))
-		}
-		if rep.AdminHint {
-			cmd.PrintErrln("warning: this identity looks like a cluster admin; add --as to test a tenant")
-		}
 	}
 	var msgs []string
 	if rep.Summary.NothingProven() { // D197: on stderr, so a pipeline log shows it whatever stdout goes to

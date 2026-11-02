@@ -25,14 +25,14 @@ func JSON(w io.Writer, r Report) error {
 	}{"audit-tenant.dev/v1alpha1", r})
 }
 
-// adminHint is the caveat of a self run whose identity looks like a cluster admin.
-const adminHint = "this identity looks like a cluster admin; add --as to test a tenant"
+// AdminHint is the caveat of a self run whose identity looks like a cluster admin; the CLI also prints it on stderr.
+const AdminHint = "this identity looks like a cluster admin; add --as to test a tenant"
 
 // forMachines is r as -o json and -o policyreport print it: the admin hint joins the warnings
 // (D173), and every string a consumer may display has its control characters marked (D170).
 func forMachines(r Report) Report {
 	if r.AdminHint {
-		r.Warnings = append(slices.Clip(r.Warnings), adminHint)
+		r.Warnings = append(slices.Clip(r.Warnings), AdminHint)
 	}
 	r.Tool.Version = mark(r.Tool.Version)
 	r.Cluster.Context, r.Cluster.Server, r.Cluster.Version = mark(r.Cluster.Context), mark(r.Cluster.Server), mark(r.Cluster.Version)

@@ -135,7 +135,7 @@ func denials(ctx context.Context, c *cluster.Client, spec Spec, prove func(repor
 			reason, fix := "RBAC allows "+strings.Join(allowed, ", "), remove
 			if named {
 				reason += "; granted by " + firstThree(bindings)
-				fix = "remove or change " + firstThree(bindings)
+				fix = "remove or change " + firstThree(bindings) + " and any other binding that grants the same (the API server names only the first it matched)"
 			}
 			if c.Identity.Mode == report.ModeSelf {
 				fix = "ask a cluster admin to " + fix // S4-F1: the reader is often the tenant, who cannot change bindings

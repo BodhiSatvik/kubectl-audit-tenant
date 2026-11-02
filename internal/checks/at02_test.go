@@ -59,7 +59,7 @@ func TestAT02FailNamesTheBindingTheServerNames(t *testing.T) {
 	want := report.Result{ID: "AT-02", Name: "No cross-namespace secret access", Kind: report.Behavioral, MTB: "MTB-PL1-CC-TI-2", Severity: report.High,
 		Verdict: report.Fail, Layer: "RBAC",
 		Reason: "RBAC allows get secrets in kube-system, list secrets in kube-system, watch secrets in kube-system; granted by " + binding,
-		Hint:   "remove or change " + binding + "; a tenant reads secrets only in its own namespace"}
+		Hint:   "remove or change " + binding + " and any other binding that grants the same (the API server names only the first it matched); a tenant reads secrets only in its own namespace"}
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("at02() = %+v,\nwant %+v", got, want)
 	}

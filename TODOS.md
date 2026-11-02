@@ -55,6 +55,11 @@ Wording, hints, edge cases and tests. None changes a public contract; do them be
 
 - [ ] Customer test run 2026-10-28, open text items: S6-F3 (PolicyReport `policy` as `AT-09 pod-security-admission`; decide before users depend on the IDs), S5-F7 part (the report schema's descriptions cite decision IDs; the schema is protected), S5-F8 (a container image and a sample CronJob from goreleaser), and the README PolicyReport section moved to `docs/policyreport.md` with a short summary left behind.
 
+- [ ] /review 2026-10-30 (adversarial): the D203 identity check compares the username and groups only; a proxy that strips or adds `Impersonate-Extra-*` headers, or the UID, is not detected. Compare the SelfSubjectReview's uid and extra with `--as-uid` and `--as-user-extra`.
+- [ ] /review 2026-10-30 (adversarial): AT-10 compares with `status.hard` and AT-06 judges `spec.hard`; add a note when the two differ (the quota controller lags), so a reader sees why the numbers differ.
+- [ ] /review 2026-10-30 (testing): `wideSample`'s AT-10 reason in `internal/report/checklist_test.go` and its golden files still use the old shortfall order; render a real AT-10 FAIL reason and assert that the checklist cut keeps `short by`.
+- [ ] /review 2026-10-30: Codex could not run (account usage limit); run `/codex` on PR #4 before the v0.1.2 tag.
+
 #### 4b. v0.2 by D205 (2026-10-30)
 
 - [ ] S2-F4: probe pod controllers with a Deployment dry run, so a GitOps tenant that may create Deployments but not pods can reach AT-04 PASS.

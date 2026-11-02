@@ -88,7 +88,7 @@ func TestAT03FailNamesAtMostThreeBindingsAndAsksAnAdminInSelfMode(t *testing.T) 
 	want := report.Result{ID: "AT-03", Name: "No privilege escalation", Kind: report.Behavioral, MTB: "MTB-PL2-CC-TI-1", Severity: report.High,
 		Verdict: report.Fail, Layer: "RBAC",
 		Reason: "RBAC allows escalate clusterroles, bind clusterroles, impersonate users, impersonate groups, impersonate serviceaccounts; granted by " + named,
-		Hint:   "ask a cluster admin to remove or change " + named + "; a tenant admin needs only a Role inside its namespace"}
+		Hint:   "ask a cluster admin to remove or change " + named + " and any other binding that grants the same (the API server names only the first it matched); a tenant admin needs only a Role inside its namespace"}
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("at03() = %+v,\nwant %+v", got, want)
 	}

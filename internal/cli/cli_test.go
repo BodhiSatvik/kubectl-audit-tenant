@@ -431,8 +431,10 @@ func TestPolicyReportNeedsAVerifiedIdentityInSelfMode(t *testing.T) {
 	if hits := srv.Hits(); len(hits) != 4 { // the startup requests only: the refusal comes before any check
 		t.Errorf("the refusal must come before any check; saw %v", hits)
 	}
+	// D206 (2026-10-30) reverses D151's exception for --as: an impersonation that no SelfSubjectReview
+	// confirmed is refused too, since a proxy could have changed it unseen; -o json still prints.
 	code, stdout, stderr = run(t, "-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "-o", "policyreport", "--as", "team-a-dev", "--as-group", "devs")
-	if code == 2 || !strings.Contains(stdout, "kind: PolicyReport") {
+	if code != 2 || stdout != "" || !strings.Contains(stderr, "no SelfSubjectReview answer confirmed the impersonated identity") {
 		t.Errorf("exit %d, stderr %q; --as names the report even when unverified:\n%s", code, stderr, stdout)
 	}
 }

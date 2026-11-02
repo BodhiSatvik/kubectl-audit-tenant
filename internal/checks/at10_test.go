@@ -301,8 +301,9 @@ func TestAT10ComparesWithStatusHardOnceTheQuotaControllerSetsIt(t *testing.T) {
 	}
 }
 
-func TestAT10AWorkloadScaledToZeroIsNotRefused(t *testing.T) {
-	// D133: replicas 0 makes no pods, so a quota that tracks an unset value refuses nothing yet.
+func TestAT10AWorkloadScaledToZeroIsRefusedWhenItScalesUp(t *testing.T) {
+	// D207: replicas 0 makes no pods now, but scale-to-zero tools (Knative, kube-downscaler) scale it
+	// back up, and then the quota refuses its pods; skipping it would be a false PASS.
 	d := api()
 	zero := int32(0)
 	d.Spec.Replicas = &zero
@@ -313,7 +314,7 @@ func TestAT10AWorkloadScaledToZeroIsNotRefused(t *testing.T) {
 	routes[deploymentsPath], routes[hpasPath], routes[limitRangesPath], routes[quotasPath] =
 		listOf(d), listOf[autoscalingv2.HorizontalPodAutoscaler](), listOf[corev1.LimitRange](), listOf(cpuCap)
 	got := at10(t.Context(), configClient(t, routes), at10Spec(), ignore)
-	want := configResult(at10Spec(), report.Pass, "config", estimate+"peak fits cpu-cap: requests.cpu 0 of 4 (deployments: api 0->0); used in cpu-cap: none reported", "")
+	want := configResult(at10Spec(), report.Fail, "config", estimate+"cpu-cap refuses the pods of deployment api when it scales up (now at 0 replicas): a container sets no requests.cpu (deployments: api 0->0); used in cpu-cap: none reported", refusedHint)
 	want.Note = notCounted + "; 1 container left a cpu or memory request or limit unset; counted as 0"
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("at10() = %+v,\nwant %+v", got, want)

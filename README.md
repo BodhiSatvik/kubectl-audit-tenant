@@ -213,8 +213,8 @@ exit $code
 - Each set of run inputs has its own report, and a re-run with the same inputs replaces it. The inputs are the mode, the server URL and `--other-namespace`, plus the requested user, groups, UID and extras when impersonating, or the verified username and groups in self mode. The `audit-tenant.dev/mode` annotation says which mode made the report.
 - Some identities get a new username for each session, such as an EKS access entry for an IAM role (`assumed-role/<role>/<session>`). In self mode, each session then makes a new report, and the old ones stay with their old verdicts. To clear them, audit every identity to its own file first. Only when every file is non-empty, delete the namespace's audit-tenant reports (`kubectl delete policyreports -n team-a -l app.kubernetes.io/managed-by=audit-tenant`) and apply all the files. If you delete first and a re-run is then refused, that identity has no report, and a dashboard shows no rows instead of its FAIL. Or use `--as` with a stable name.
 - `-o policyreport` writes all fourteen results. It refuses `--checks`. With `--skip`, each skipped result is a `skip` row with the reason `skipped with --skip`. A shop that enforces pod security with a policy engine and not with Pod Security Admission labels can pass `--skip AT-09`, so its dashboard does not show AT-09 as a FAIL every day. Skip rows do not change the exit code, and `--fail-on-skip` does not count them.
-- `-o policyreport` refuses a run where every result is SKIP (exit 2): its report would replace the identity's report, FAIL rows included. A removed RoleBinding or a misspelled `--as` gives such a run.
-- `-o policyreport` refuses a run whose identity the cluster changed (exit 2): the SelfSubjectReview names groups that the run did not ask for (an access proxy such as Teleport adds its role's groups), leaves out a group it asked for, or names another user. The results would describe another identity. The refusal comes before any check.
+- `-o policyreport` refuses a run that proved nothing (exit 2; exit 1 with `--fail-on-skip`): no PASS, no FAIL and at least one SKIP. Its report would replace the identity's report, FAIL rows included. A removed RoleBinding or a misspelled `--as` gives such a run. A run of only ERRORs still prints.
+- `-o policyreport` refuses a run whose identity the cluster changed (exit 2): the SelfSubjectReview names groups that the run did not ask for (an access proxy such as Teleport adds its role's groups), leaves out a group it asked for, or names another user. The results would describe another identity. It also refuses an `--as` run that no SelfSubjectReview confirmed, since a proxy could have changed the identity unseen; re-run if the cluster was busy, or use `-o json`. These refusals come before any check.
 - `-o policyreport` also refuses a run that `--timeout` or Ctrl-C stopped before every check finished, unless the run proved a FAIL: that partial report prints (exit 1), because its FAIL rows keep the dashboard from showing a clean namespace. Earlier FAILs that this run did not reach show as ERROR until the next complete run. A refused run, like a run that fails during startup, prints no report, so the previous report stays. The refusal names the SKIPs that `--fail-on-skip` counts. After a create that was not verified as a dry run, stderr names the command that lists leftover probe objects.
 - An ERROR row from any other cause (kubectl's `--request-timeout`, a server error that outlasts client-go's retries) stays in the printed report. Once applied, it replaces the identity's earlier row for that check, so a FAIL can show as ERROR until the next complete run.
 
@@ -233,7 +233,7 @@ Any non-zero exit fails the step: 1 for a FAIL (or for a SKIP with `--fail-on-sk
 
 ## Run it in a pod
 
-A CronJob, or a Tekton or Argo Workflows step, runs the tool in a pod. From v0.1.2, self mode and `--as` both work with the pod's own service account and no kubeconfig.
+A CronJob, or a Tekton or Argo Workflows step, runs the tool in a pod. From v0.1.2, self mode and `--as` both work with the pod's own service account and no kubeconfig. `--token` and `--certificate-authority` replace the pod's token and CA, as they do for kubectl.
 
 <details>
 <summary>v0.1.1 and earlier: <code>--as</code> in a pod needs a kubeconfig</summary>
@@ -321,6 +321,7 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 - `the API server refused /version for this identity`: the identity may not read `/version`; check its RBAC or the proxy role.
 - `unauthorized: the cluster rejected your credentials`: your token expired; log in again.
 - `no kubeconfig`: the tool found no kubeconfig (`KUBECONFIG`, `--kubeconfig` or `~/.kube/config`) and does not run in a pod.
+- `the kubeconfig sets no current context`: pass `--context`, or run `kubectl config use-context`.
 - `the kubeconfig's credential plugin failed`: the kubeconfig runs a login program (such as `aws` or `kubelogin`) that is missing or failed. Install it, or log in, and run again.
 - `the API server did not answer within --request-timeout`: raise kubectl's `--request-timeout`, or check the server.
 - `the proxy-url of cluster <name> holds user info that does not parse`: percent-encode the name and password in the proxy URL (a `%` is `%25`). The tool does not print the URL.
@@ -332,7 +333,7 @@ Run again with `--debug` and paste the stderr into the issue. `--debug` prints o
 - `cannot ask the cluster "may I?"`: the identity lacks `create selfsubjectaccessreviews`, which every authenticated user normally has.
 - `--as-group and --as-uid need a user to impersonate`: the API needs a user with the groups. To test a group alone, use `--as audit-probe --as-group <group>`.
 - `-o policyreport needs every check`: drop `--checks`. `--skip` is allowed and writes skip rows.
-- `-o policyreport needs a run that proved something`: every result was SKIP. Read the SKIP reasons with `-o wide`; a misspelled `-n`, `--as` or `--as-group` gives this.
+- `-o policyreport needs a run that proved something`: no check passed or failed. Read the SKIP reasons with `-o wide`; a misspelled `-n`, `--as` or `--as-group` gives this.
 - `-o policyreport needs results that describe the identity the flags name`: the cluster added or dropped groups, or named another user. Fix the access proxy's role or its impersonation settings, or use `-o json`.
 - `the kubeconfig server URL holds user info`: the server URL has a name or token before the `@`. Remove it from the URL. Put a token in the kubeconfig user entry's `token` field, or a basic-auth user and password in its `username` and `password` fields. The tool refuses such a URL because a failed request would print it in the report.
 - `-o policyreport needs to know who runs the tool`: no SelfSubjectReview named the identity. Re-run if the cluster was busy, or use `--as` or `-o json`.

@@ -847,3 +847,18 @@ func TestTheDeadlineOnAnyQuestionLeavesTheResultsToTheRunner(t *testing.T) {
 		})
 	}
 }
+
+// D195: an explicit deny on a controller question, not on create pods, also gets the note.
+func TestAT04NotesAnExplicitDenyOnAControllerQuestion(t *testing.T) {
+	answers := controllerAnswers()
+	answers["create deployments"] = `{"allowed":false,"denied":true}`
+	got := at04(t.Context(), connect(t, &ssarServer{answers: answers}), at04Spec(), ignore)
+	for _, r := range got {
+		if r.Verdict != report.Pass || r.Layer != "RBAC" || !strings.HasSuffix(r.Note, "such as an authorization webhook or an access proxy") {
+			t.Errorf("%s = %+v, want an RBAC PASS whose note names the other authorizer", r.ID, r)
+		}
+	}
+	if len(got) != 5 {
+		t.Errorf("%d results, want 5", len(got))
+	}
+}

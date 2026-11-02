@@ -85,7 +85,8 @@ func PolicyReport(w io.Writer, r Report) error {
 		Scope:   map[string]string{"apiVersion": "v1", "kind": "Namespace", "name": r.Namespace},
 		Summary: map[string]int{"pass": r.Summary.Pass, "fail": r.Summary.Fail, "warn": 0, "error": r.Summary.Error, "skip": r.Summary.Skip + len(r.SkippedByFlag)},
 	}
-	rows := slices.SortedStableFunc(slices.Values(append(slices.Clone(r.Results), r.SkippedByFlag...)), func(a, b Result) int { return cmp.Compare(a.ID, b.ID) }) // run order
+	rows := slices.Concat(r.Results, r.SkippedByFlag)
+	slices.SortStableFunc(rows, func(a, b Result) int { return cmp.Compare(a.ID, b.ID) }) // run order
 	for _, res := range rows {
 		props := map[string]string{"layer": res.Layer, "name": res.Name, "identity": id.Username, "mode": id.Mode}
 		if res.Hint != "" {

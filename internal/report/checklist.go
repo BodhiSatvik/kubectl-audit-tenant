@@ -30,7 +30,7 @@ func (p Checklist) Print(r Report) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "namespace %s%s%s%scluster %s\n", Sanitize(r.Namespace), dot, identity(r.Identity), dot, Sanitize(cmp.Or(r.Cluster.Context, r.Cluster.Server))) // in a pod, no context names the cluster (S5-F7)
 	if r.AdminHint {
-		b.WriteString(adminHint + "\n")
+		b.WriteString(AdminHint + "\n")
 	}
 	for _, w := range r.Warnings {
 		b.WriteString("warning: " + Sanitize(w) + "\n") // flag values are user text
