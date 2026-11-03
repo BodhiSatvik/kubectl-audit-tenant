@@ -222,7 +222,7 @@ func (o *runOptions) run(cmd *cobra.Command, streams genericiooptions.IOStreams,
 		if c.Identity.Username == "" {
 			entry = "no user entry (an in-cluster run)"
 		}
-		return exit2("-o policyreport needs to know who runs the tool: no SelfSubjectReview answer named the identity, and the kubeconfig names %s; re-run if the cluster was busy (Kubernetes 1.28 or newer answers it), or use --as or -o json", entry)
+		return exit2("-o policyreport needs to know who runs the tool: no SelfSubjectReview answer named the identity, and the kubeconfig names %s; re-run if the cluster was busy (Kubernetes 1.28 or newer answers it), or use -o json", entry)
 	}
 	var proxied []string // D196: what shows that something between the tool and the API server changed the impersonation
 	switch {
