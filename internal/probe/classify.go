@@ -33,6 +33,13 @@ const (
 // hintMutated is the hint of a probe that a mutating policy made invalid (Mutated).
 const hintMutated = "a mutating webhook or policy changed the probe so that it sets privileged: true together with allowPrivilegeEscalation: false, which the API server refuses as invalid before any security gate runs, so it decides nothing; check which mutation changes the probe's securityContext"
 
+// The API server's validation texts of rules 4b and 4c. The reason starts at them, as from() does
+// for the PASS rules: the text before names the generated probe and, in 4c, dumps its securityContext.
+const (
+	noPrivileged           = "privileged: Forbidden: disallowed by cluster policy"
+	privilegedNoEscalation = "cannot set `allowPrivilegeEscalation` to false and `privileged` to true"
+)
+
 // HintRetry is the one hint for a request that failed or met a throttled or failing server; the checks use it too.
 const HintRetry = "re-run; if it repeats, run with --debug and report the server message"
 
@@ -82,7 +89,9 @@ func Classify(err error) Outcome {
 	case decided && strings.Contains(msg, "admission webhook") && strings.Contains(msg, "denied the request"): // the API server's phrase; "denied" alone can be part of a webhook name
 		// Before PSA: a webhook such as Kyverno's podSecurity rule quotes the PSA text, but it decided.
 		return Outcome{report.Pass, "admission (webhook: " + between(msg, `admission webhook "`, `"`) + ")", from(msg, "admission webhook"), ""}
-	case decided && strings.Contains(msg, "violates PodSecurity"):
+	case decided && strings.HasPrefix(from(msg, "forbidden: "), "forbidden: violates PodSecurity"):
+		// Only PSA's own answer: the API server's first "forbidden: " is followed by PSA's text. A ValidatingAdmissionPolicy
+		// that quotes PSA puts its own name there, so the policy rule below decides it (D133).
 		return Outcome{report.Pass, LayerPSA, from(msg, "violates PodSecurity"), ""}
 	case decided && strings.Contains(msg, "ValidatingAdmissionPolicy") && strings.Contains(msg, "denied request"):
 		return Outcome{report.Pass, "admission (policy: " + between(msg, "ValidatingAdmissionPolicy '", "'") + ")", from(msg, "ValidatingAdmissionPolicy"), ""}
@@ -102,11 +111,11 @@ func Classify(err error) Outcome {
 		return Outcome{report.Skip, "-", full, hintQuota}
 	case decided && (strings.Contains(msg, " usage per Container is ") || strings.Contains(msg, " usage per Pod is ")): // LimitRanger, one violation or several in brackets
 		return Outcome{report.Skip, "-", full, hintLimitRange}
-	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, "privileged: Forbidden: disallowed by cluster policy"):
+	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, noPrivileged):
 		// kube-apiserver --allow-privileged=false refuses every privileged container at validation, for every identity.
-		return Outcome{report.Pass, LayerAPIServer, full, ""}
-	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, "cannot set `allowPrivilegeEscalation` to false and `privileged` to true"):
-		return Outcome{report.Skip, "-", full, hintMutated}
+		return Outcome{report.Pass, LayerAPIServer, from(msg, noPrivileged), ""}
+	case s.Code == http.StatusUnprocessableEntity && strings.Contains(msg, privilegedNoEscalation):
+		return Outcome{report.Skip, "-", from(msg, privilegedNoEscalation), hintMutated}
 	case s.Code == 400 || s.Code == 422:
 		return Outcome{report.Error, "-", full, hintMalformed}
 	}

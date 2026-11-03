@@ -33,6 +33,17 @@ func clusterWithSSAR(t *testing.T, ssar http.HandlerFunc) *testutil.Server {
 	}))
 }
 
+// impersonatingClusterWithSSAR is clusterWithSSAR whose SelfSubjectReview answers as the API server does.
+func impersonatingClusterWithSSAR(t *testing.T, ssar http.HandlerFunc) *testutil.Server {
+	t.Helper()
+	return testutil.NewServer(t, unreadable(map[string]http.HandlerFunc{
+		"GET /version": testutil.JSON(http.StatusOK, `{"gitVersion":"v1.37.0"}`),
+		"POST /apis/authentication.k8s.io/v1/selfsubjectreviews":      selfSubjectReview,
+		"GET /api/v1/namespaces/tenant-a":                             testutil.JSON(http.StatusOK, `{"metadata":{"name":"tenant-a"}}`),
+		"POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews": ssar,
+	}))
+}
+
 // nthSSAR answers the first n SSARs with first and the rest with then.
 func nthSSAR(n int, first, then http.HandlerFunc) http.HandlerFunc {
 	var mu sync.Mutex
@@ -122,8 +133,11 @@ func TestJSONReportsTheExitCodeTheProcessReturns(t *testing.T) {
 const nothingProven = "error: nothing was proven: every check was SKIP; read the SKIP reasons (a misspelled -n, --as or --as-group skips every check)\n"
 
 func TestARunOfOnlySkipsSaysNothingWasProven(t *testing.T) {
-	const want = nothingProven
 	for _, flags := range [][]string{nil, {"--fail-on-skip"}, {"-o", "json"}} {
+		want := nothingProven
+		if slices.Contains(flags, "json") { // S5-F3: -o json puts its warnings on stderr too
+			want = "warning: --checks or --skip ran 1 of 14 results; the others are not in this report\n" + want
+		}
 		// As above: AT-05 is SKIP.
 		srv := clusterWithSSAR(t, nthSSAR(2, testutil.SSAR(`{"allowed":false}`), testutil.SSAR(`{"allowed":true}`)))
 		_, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--kubeconfig", kubeconfig(t, srv.URL, ""), "--checks", "AT-05"}, flags...)...)
@@ -151,11 +165,12 @@ func noRights(w http.ResponseWriter, r *http.Request) {
 }
 
 // D199: the case D197 exists for, as a full run: a misspelled --as gets 14 SKIPs, exit 2 and the
-// stderr line in every format. Fails if any check's no-rights path stops being a SKIP.
+// stderr line in every format. Fails if any check's no-rights path stops being a SKIP. D203:
+// -o policyreport refuses such a run (TestPolicyReportRefusesARunThatProvedNothing).
 func TestAFullRunWithNoRightsSaysNothingWasProven(t *testing.T) {
-	for _, flags := range [][]string{nil, {"-o", "json"}, {"-o", "policyreport"}} {
-		srv := clusterWithSSAR(t, noRights)
-		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--as", "alcie", "--kubeconfig", kubeconfig(t, srv.URL, "")}, flags...)...)
+	for _, flags := range [][]string{nil, {"-o", "json"}} {
+		srv := impersonatingClusterWithSSAR(t, noRights)
+		code, stdout, stderr := run(t, append([]string{"-n", "tenant-a", "--as", "alcie", "--as-group", "devs", "--kubeconfig", kubeconfig(t, srv.URL, "")}, flags...)...)
 		if code != 2 || stderr != nothingProven || stdout == "" {
 			t.Errorf("flags %v: exit %d, stderr %q; want exit 2 and %q, and the report on stdout:\n%s", flags, code, stderr, nothingProven, stdout)
 		}

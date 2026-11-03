@@ -92,6 +92,9 @@ func TestAT04AnAcceptedProbeIsAFailProvedAtOnce(t *testing.T) {
 	if h := got[4].Hint; !strings.Contains(h, "restricted") || !strings.Contains(h, "baseline does not block") || !strings.Contains(h, "allowPrivilegeEscalation") {
 		t.Errorf("AT-04.5 hint = %q, want both fixes: restricted, or a policy against escalation", h)
 	}
+	if h := got[4].Hint; !strings.Contains(h, "ValidatingAdmissionPolicy (Kubernetes 1.30 or newer)") { // S7-F1: 1.28 and 1.29 do not serve it by default
+		t.Errorf("AT-04.5 hint = %q, want the ValidatingAdmissionPolicy fix to name Kubernetes 1.30", h)
+	}
 	if !slices.Equal(proven, at04IDs) { // each result proves once: AT-04.1 stops at its first accepted form (D84)
 		t.Errorf("proved %v, want every FAIL handed to the runner at once (D61)", proven)
 	}
@@ -478,6 +481,23 @@ func TestAT04AnAddedPrivilegedContainerProvesNothingForTheOtherProbes(t *testing
 	}
 }
 
+func TestAT04AControlRefusedForAnAddedPrivilegedContainerSaysSo(t *testing.T) {
+	// P4 /ship pass 3: the control pod is not privileged, so --allow-privileged=false refused a container a webhook added;
+	// "the namespace rejects even a compliant pod" would send the user to the wrong fix.
+	added := testutil.Status(http.StatusUnprocessableEntity, metav1.StatusReasonInvalid,
+		`Pod "audit-tenant-probe-x7k2p" is invalid: spec.containers[1].securityContext.privileged: Forbidden: disallowed by cluster policy`)
+	ps := &probeServer{answers: map[string]http.HandlerFunc{"control": added}}
+	got := at04(t.Context(), connectWith(t, &ssarServer{answers: mayPods}, ps.routes()), at04Spec(), ignore)
+	for _, r := range got {
+		if r.Verdict != report.Skip || r.Hint != hintAddedPrivileged {
+			t.Errorf("%s = %+v, want SKIP with the added-privileged hint", r.ID, r)
+		}
+	}
+	if len(got) != len(at04Results) {
+		t.Errorf("%d results, want %d", len(got), len(at04Results))
+	}
+}
+
 func TestAT04InterruptAfterTheFirstPrivilegedFormKeepsTheFail(t *testing.T) {
 	// D84(1), D61, D63: the first form was accepted; Ctrl-C arrives while the second is in flight.
 	// The FAIL is shown again only if AT-04.1 keeps sending its second form; with D84(2) it stops,
@@ -825,5 +845,20 @@ func TestTheDeadlineOnAnyQuestionLeavesTheResultsToTheRunner(t *testing.T) {
 				t.Errorf("results = %+v; want none, so the runner says \"not run: timeout\"", got)
 			}
 		})
+	}
+}
+
+// D195: an explicit deny on a controller question, not on create pods, also gets the note.
+func TestAT04NotesAnExplicitDenyOnAControllerQuestion(t *testing.T) {
+	answers := controllerAnswers()
+	answers["create deployments"] = `{"allowed":false,"denied":true}`
+	got := at04(t.Context(), connect(t, &ssarServer{answers: answers}), at04Spec(), ignore)
+	for _, r := range got {
+		if r.Verdict != report.Pass || r.Layer != "RBAC" || !strings.HasSuffix(r.Note, "such as an authorization webhook or an access proxy") {
+			t.Errorf("%s = %+v, want an RBAC PASS whose note names the other authorizer", r.ID, r)
+		}
+	}
+	if len(got) != 5 {
+		t.Errorf("%d results, want 5", len(got))
 	}
 }

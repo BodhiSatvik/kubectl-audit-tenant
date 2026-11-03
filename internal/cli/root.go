@@ -80,6 +80,7 @@ and the shorter one wins.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	root.CompletionOptions.DisableDefaultCmd = true // cobra's script completes "audit-tenant", not "kubectl audit-tenant" (S1-F4)
 	root.SetUsageTemplate(strings.NewReplacer("{{.UseLine}}", "kubectl {{.UseLine}}", "{{.CommandPath}}", "kubectl {{.CommandPath}}").Replace(root.UsageTemplate()))
 	root.SetOut(streams.Out)
 	root.SetErr(streams.ErrOut)

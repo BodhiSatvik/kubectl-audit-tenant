@@ -5,4 +5,5 @@ PASS  AT-05  NodePort services blocked        a NodePort Service was accepted in
 PASS  AT-09  Pod Security Admission enforced  cannot read namespace labels (forbidden)
 
 3 passed · 0 failed · 0 skipped · 0 errors · exit 0
+audit-tenant 0.1.0 · 2026-10-20T15:04:05Z · server https://127.0.0.1:6443 · Kubernetes v1.37.0
 MTB IDs and layers: -o wide · machine output: -o json, -o policyreport

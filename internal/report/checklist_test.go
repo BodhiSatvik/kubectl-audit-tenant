@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files from the current output")
@@ -284,5 +285,11 @@ func TestWideSanitizesLayerAndReasonAndStaysASCIIWhenPlain(t *testing.T) {
 	}
 	if !strings.Contains(out, "admission (webhook: evil.example.com)") || !strings.Contains(out, "line one; line two\n") {
 		t.Errorf("layer and reason must be sanitized:\n%s", out)
+	}
+	// Server text with characters outside ASCII (a quote, a name) prints as "?" under --plain.
+	r.Results[3].Reason, r.Identity.Username = "pod “web” refused", "José"
+	out = render(t, Checklist{Wide: true, Plain: true}, r)
+	if i := strings.IndexFunc(out, func(c rune) bool { return c > unicode.MaxASCII }); i >= 0 || !strings.Contains(out, `pod ?web? refused`) || !strings.Contains(out, "as Jos?") {
+		t.Errorf("--plain must print only ASCII; first other character at %d:\n%s", i, out)
 	}
 }

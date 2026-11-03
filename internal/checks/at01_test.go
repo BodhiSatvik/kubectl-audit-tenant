@@ -263,3 +263,33 @@ func TestAT01ProvesEachGrantAsSoonAsItIsKnown(t *testing.T) {
 		t.Errorf("at01() = %+v, want the last proven FAIL", got)
 	}
 }
+
+func TestAnExplicitDenyIsNotedAsAnotherAuthorizers(t *testing.T) {
+	// D195: RBAC never denies explicitly, so status.denied came from an authorization webhook or an
+	// access proxy (Teleport in the live test). The layer stays RBAC (contract); a note says so.
+	const deny = `{"allowed":false,"denied":true}`
+	const note = "the explicit deny came from an authorizer other than RBAC, such as an authorization webhook or an access proxy"
+	at01Answers := map[string]string{"list nodes": deny, "create namespaces": denied, "create clusterrolebindings": denied, "create persistentvolumes": denied}
+	at02Answers := map[string]string{"list nodes": denied, "get secrets": deny, "list secrets": denied, "watch secrets": denied}
+	at03Answers := at03Denied()
+	at03Answers["impersonate users"] = deny
+	at04Answers := controllerAnswers()
+	at04Answers["create pods"] = deny
+	at05Answers := map[string]string{"list nodes": denied, "create services": deny, "update services": denied, "patch services": denied}
+	for _, tt := range []struct {
+		spec    Spec
+		answers map[string]string
+	}{
+		{at01Spec(), at01Answers}, {at02Spec(), at02Answers}, {at03Spec(), at03Answers}, {at04Spec(), at04Answers}, {at05Spec(), at05Answers},
+	} {
+		for _, r := range tt.spec.Run(t.Context(), connect(t, &ssarServer{answers: tt.answers}), tt.spec, ignore) {
+			if r.Verdict != report.Pass || r.Layer != "RBAC" || !strings.HasSuffix(r.Note, note) {
+				t.Errorf("%s = %+v, want PASS on layer RBAC whose note ends %q", r.ID, r, note)
+			}
+		}
+	}
+	// A plain denial carries no such note.
+	if got := at01(t.Context(), connect(t, &ssarServer{answers: map[string]string{"list nodes": denied, "create namespaces": denied, "create clusterrolebindings": denied, "create persistentvolumes": denied}}), at01Spec(), ignore); got[0].Note != "" {
+		t.Errorf("at01() note = %q, want none without an explicit deny", got[0].Note)
+	}
+}

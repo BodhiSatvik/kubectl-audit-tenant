@@ -2,7 +2,43 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1] - 2026-10-30
+## [0.1.2] - 2026-11-02
+
+### Fixed
+
+- In a pod with no kubeconfig, `--as` uses the pod's service account. Before, every `--as` run there called `http://localhost:8080` and failed with `API server unreachable`. The README's kubeconfig ConfigMap is needed only for v0.1.1 and earlier.
+- With no kubeconfig outside a pod, the error says `no kubeconfig`.
+- A failed credential plugin (such as a missing `aws` or `kubelogin`) and a request that `--request-timeout` ended now say so, not `API server unreachable`.
+- A kubeconfig `proxy-url` whose user info does not parse gives a message that names the cluster only. Before, the error printed the whole URL, password included.
+- A service-account name that the API server cannot split (another `:`, or an invalid namespace) is treated as a plain user, as the API server treats it. `--as-group system:authenticated` alone gets the no-groups warning.
+- AT-10's note names a `maxSurge` that the Deployment controller cannot read, and counts no surge for it. Before, it counted no surge without saying so. Its refusal of a workload at 0 replicas now says that the quota refuses its pods when it scales up.
+- A ValidatingAdmissionPolicy whose message quotes the Pod Security text is reported as the policy, not as Pod Security Admission.
+- A control pod that `--allow-privileged=false` refused (a mutation added a privileged container) gets the hint for that case.
+- The reasons for an `--allow-privileged=false` refusal and for a mutated privileged probe no longer carry the random probe name, so a PolicyReport message stays the same between runs.
+- The AT-10 note on several HPAs that target one workload says what the HPA controller still does.
+- A kubeconfig with no current context says so. A kubeconfig whose server is `http://localhost:8080` is used as before. In a pod, `--token` and `--certificate-authority` apply as they do for kubectl. An empty group in the kubeconfig's `as-groups` exits 2, as an empty `--as-group` does.
+
+### Changed
+
+- `-o policyreport` accepts `--skip` and writes a `skip` row for each skipped result, so a shop that enforces pod security with a policy engine can skip AT-09 and keep a clean dashboard. A `--checks` subset is still refused. Skip rows do not change the exit code.
+- `-o policyreport` refuses, with exit 2, a run that proved nothing (no PASS and no FAIL, and at least one SKIP), an `--as` run that no SelfSubjectReview confirmed, and a run whose identity the cluster changed (added or dropped groups, or another user). Such a report would replace the identity's report with results that do not describe it. With `--fail-on-skip`, the refusal of a run that proved nothing exits 1, as the run would.
+- The checklist warns when the cluster drops a group that the run asked for (a service account's own groups count as asked for) or names another user, and when an `--as` identity is unverified.
+- `-o json` and `-o policyreport` also print their warnings on stderr.
+- An empty `--as-group` exits 2. The README pipeline example passes `--as-group` only when its variable is set.
+- `--plain` output is ASCII only: other characters in server text print as `?`.
+- Text output ends with a line that names the tool version, the run time, the server and the Kubernetes version. The header names the server when no kubeconfig context exists.
+- The `--other-namespace` warning says that the namespace is unconfirmed.
+- `version` says when a `go install` build recorded no commit or date.
+- RBAC FAILs (AT-01 to AT-03) name the binding that grants the access, from the API server's answer, in the reason and the fix line, when the API server names a binding for every allowed action; the fix line also says to check other bindings, because the API server names only the first it matched. In self mode, the fix line starts with `ask a cluster admin to`.
+- The AT-05 fix line names the built-in fix first: a ResourceQuota with `services.nodeports: "0"`. The AT-04.5 fix line says that a ValidatingAdmissionPolicy needs Kubernetes 1.30 or newer.
+- AT-10's FAIL reason puts the shortfall first (`requests.cpu short by 2: peak needs 6, hard is 4`), names at most three refused workloads, then "and N more", and compares with the quota's `status.hard` once the quota controller sets it.
+- A PASS from an explicit deny notes that an authorizer other than RBAC gave it, such as an authorization webhook or an access proxy.
+
+### Removed
+
+- The `completion` command. It made a script for a command named `audit-tenant`, which kubectl never runs.
+
+## [0.1.1] - 2026-11-02
 
 ### Changed
 
@@ -40,5 +76,6 @@ The first release.
 - A read-only HTTP transport with an exact allowlist: the tool never writes to the cluster and never reads a Secret.
 - Binaries for Linux and macOS (amd64 and arm64) and Windows (amd64), with checksums and a krew manifest.
 
+[0.1.2]: https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/tag/v0.1.2
 [0.1.1]: https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/tag/v0.1.1
 [0.1.0]: https://github.com/BodhiSatvik/kubectl-audit-tenant/releases/tag/v0.1.0

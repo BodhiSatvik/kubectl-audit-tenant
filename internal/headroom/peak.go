@@ -16,10 +16,12 @@ type Workload struct {
 	Name     string
 	Replicas int    // spec.replicas (default 1); the maxReplicas of the one HPA that targets it; with several, spec.replicas raised to their largest minReplicas (D126)
 	HPA      string // that HPA, or empty
-	// ConflictingHPAs are the HPAs, by name, when several target this workload; none scales it.
+	// ConflictingHPAs are the HPAs, by name, when several target this workload; none scales it on metrics.
 	ConflictingHPAs []string
 	Peak            int // pods while it rolls out
 	Pod             Pod
+	// BadSurge is a Deployment maxSurge the Deployment controller cannot read; it never rolls out (D135).
+	BadSurge bool
 }
 
 // defaultSurge is the maxSurge the API server sets on a Deployment that names none.
@@ -38,10 +40,16 @@ func Deployment(d appsv1.Deployment, hpas []autoscalingv2.HorizontalPodAutoscale
 	if ru := d.Spec.Strategy.RollingUpdate; ru != nil && ru.MaxSurge != nil {
 		surge = *ru.MaxSurge
 	}
-	// An invalid value cannot be stored (API validation), so the error is never set. The API
-	// bounds no maxSurge percent, and a huge one scales out of int range; any surge past
-	// MaxInt32 is far over every quota, so it is clamped there and the peak cannot wrap.
-	extra, _ := intstr.GetScaledValueFromIntOrPercent(&surge, w.Replicas, true)
+	// The API bounds no maxSurge percent. One of 2^63 or more passes validation but does not parse,
+	// here or in the Deployment controller, which then fails every sync: no surge pod is ever
+	// made, so none is counted, and BadSurge says why (D135). A huge percent that parses scales
+	// out of int range; any surge past MaxInt32 is far over every quota, so it is clamped there
+	// and the peak cannot wrap.
+	extra, err := intstr.GetScaledValueFromIntOrPercent(&surge, w.Replicas, true)
+	if err != nil {
+		w.BadSurge = true
+		return w
+	}
 	if extra < 0 || extra > math.MaxInt32 {
 		extra = math.MaxInt32
 	}
@@ -59,8 +67,9 @@ func StatefulSet(s appsv1.StatefulSet, hpas []autoscalingv2.HorizontalPodAutosca
 
 // workload sets the replica count: spec.replicas (default 1), or the maxReplicas of the one HPA
 // whose scaleTargetRef names this workload by API group (apps), kind and name. When several HPAs
-// target it, the HPA controller scales none of them (AmbiguousSelector, proven on kind, D126): the
-// count is spec.replicas raised to their largest minReplicas, and ConflictingHPAs names them.
+// target it, the HPA controller does not scale on metrics (AmbiguousSelector, proven on kind, D126)
+// but still moves replicas up to a minReplicas or down to a maxReplicas, so replicas never pass
+// spec.replicas raised to their largest minReplicas: that is the count, and ConflictingHPAs names them.
 func workload(kind, name string, replicas *int32, hpas []autoscalingv2.HorizontalPodAutoscaler) Workload {
 	w := Workload{Kind: kind, Name: name, Replicas: 1}
 	if replicas != nil {

@@ -20,4 +20,5 @@ ERROR  AT-10    AT-10    boom
        fix      retry
 
 0 passed · 4 failed (AT-01, AT-02, AT-03 and 1 more) · 4 skipped (AT-06, AT-07, AT-08 and 1 more), counted as failures (--fail-on-skip) · 1 error · exit 1
+audit-tenant 0.1.0 · 2026-10-20T15:04:05Z · server https://127.0.0.1:6443 · Kubernetes v1.37.0
 MTB IDs and layers: -o wide · machine output: -o json, -o policyreport

@@ -167,7 +167,7 @@ func TestMachineOutputCarriesTheAdminHint(t *testing.T) {
 	r.Warnings[0] = "--other-namespace prod is not checked"
 	out := printJSON(t, r)
 	var got struct{ Warnings []string }
-	if err := json.Unmarshal(out, &got); err != nil || len(got.Warnings) != 2 || got.Warnings[0] != r.Warnings[0] || got.Warnings[1] != adminHint || r.Warnings[:2][1] != "" {
+	if err := json.Unmarshal(out, &got); err != nil || len(got.Warnings) != 2 || got.Warnings[0] != r.Warnings[0] || got.Warnings[1] != AdminHint || r.Warnings[:2][1] != "" {
 		t.Errorf("err %v, warnings %q; want the run's caveat, then the admin hint, and the caller's slice untouched", err, got.Warnings)
 	}
 	var pr bytes.Buffer

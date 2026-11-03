@@ -47,8 +47,8 @@ func TestCompareNamesEveryShortKeyInOrder(t *testing.T) {
 		got = append(got, s.String())
 	}
 	want := []string{
-		"cpu: peak needs 6, hard is 4, short by 2",
-		"limits.memory: peak needs 3584Mi, hard is 2Gi, short by 1536Mi",
+		"cpu short by 2: peak needs 6, hard is 4",
+		"limits.memory short by 1536Mi: peak needs 3584Mi, hard is 2Gi",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("Compare() = %q,\nwant %q (pods fits exactly; services is not compared)", got, want)
@@ -66,8 +66,8 @@ func TestCompareReadsBothSpellingsOfAKey(t *testing.T) {
 		got = append(got, s.String())
 	}
 	want := []string{ // requests.memory 4Gi fits; its alias memory 2Gi does not
-		"memory: peak needs 3Gi, hard is 2Gi, short by 1Gi",
-		"count/pods: peak needs 3, hard is 2, short by 1",
+		"memory short by 1Gi: peak needs 3Gi, hard is 2Gi",
+		"count/pods short by 1: peak needs 3, hard is 2",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("Compare() = %q, want %q", got, want)
