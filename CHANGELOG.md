@@ -4,6 +4,10 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- `docs/runner-role.md`: the least rights to run with `--as` (`impersonate` on the tenant's identity only), for a service-account tenant and a user tenant, checked on kind. The README's Safety section now says that the tool sends no telemetry and talks only to the API server.
+
 ### Changed
 
 - The krew manifest's caveat names only what the setup needs: rights to impersonate an identity other than your own, and Kubernetes 1.28 or newer. The krew index allows no usage text in caveats; the exit codes stay in `--help` and the README.
