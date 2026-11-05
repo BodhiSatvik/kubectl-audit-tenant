@@ -261,6 +261,17 @@ Checked against the code on `phase-6-docs` (from `3f24d79`). One more item was m
   - Verify: `cffconvert --validate` or GitHub's CFF check; visual check of the SVG.
   - Depends on: none. Files: `CITATION.cff`, `CHANGELOG.md`, `docs/diagrams/*`, `GLOSSARY.md`.
   - Done (2026-10-22): `CITATION.cff` passes the CFF 1.2.0 JSON Schema (0 errors); `CHANGELOG.md` has the v0.1.0 entry (date set at the tag); the diagram triplet is re-rendered with gstack `/diagram` and the SVG and PNG show "PSA, webhook or policy"; the GLOSSARY deciding layer names the policy and quota gates.
+- [x] **B29 README.** Problem in two sentences; quick start on kind with the three install paths; the check table with the AT-04.5 note; "how this differs" (popeye, kubescape, kyverno audit mode, kubectl-mtb, NamespaceHound, kuota-calc, the can-i script); safety section with the audit-log note and "what a PASS does not prove"; troubleshooting (one entry per SKIP/ERROR hint, `--debug` line; the "timed out during startup" entry says a hung credential helper may keep running after the tool exits); pipeline example with `--fail-on-skip`; prior art and citation.
+  - AC: quick start works on a clean machine with Docker, kind and kubectl in five minutes (acceptance criterion 9); `hack/check-public.sh` passes.
+  - Verify: fresh-machine run (Satvik or a clean VM); `make check-fast`.
+  - Depends on: B21, B25. Files: `README.md`.
+  - Status (2026-10-22): built on `phase-6-docs`. `hack/check-public.sh` and `make check-fast` pass. The quick start, run word for word on this Mac with a local build in place of the release, took 17 s (node image cached) and printed the verdicts the README shows. Open: the clean-machine run with a release install, after v0.1.0 exists (Satvik or a clean VM).
+  - Done (2026-11-05, D218): the README quick start, run as written with the v0.1.2 release on a fresh GitHub Ubuntu runner by `hack/quickstart.sh` (PR #8, run 42054346389), took 37 s from the plugin install to the second audit and printed the README's summaries: `3 passed · 11 failed`, then `9 passed · 5 failed` with AT-04.1 to AT-04.5 and AT-09 passing. The `quickstart` workflow repeats it every Monday.
+- [x] **B31 Pre-release gate (Satvik and agent).** `audit-tenant.dev` is registered (done 2026-10-11, D20); `../../scripts/clean-room-check.sh .` passes; CONSTRAINTS.md "Measured" values recorded; `make check-full` green on main; Satvik pushes and tags `v0.1.0`; release job publishes five archives, checksums and the krew manifest; Satvik opens the krew-index PR.
+  - AC: acceptance criteria 1 to 11 in DESIGN.md section 12 all met; the release page shows the assets; `kubectl krew install --manifest-url` works from the release.
+  - Verify: release workflow; manual install on macOS and Linux.
+  - Depends on: B27, B28, B29, B30. Files: `CONSTRAINTS.md`, `TODOS.md`, release assets.
+  - Done (2026-11-05, D219): `v0.1.0` (2026-10-26), `v0.1.1` and `v0.1.2` (2026-11-02) are released with five archives, `checksums.txt` and the krew manifest; the release workflow installs them with krew on macOS and Linux runners and from `--manifest-url`; the clean-room check passes; CONSTRAINTS.md records the measured values; CI and e2e are green on `main`; Satvik opened the krew-index PR (kubernetes-sigs/krew-index#6591, 2026-11-05). DESIGN.md acceptance criteria 1 to 11 hold, criterion 9 by B29's clean-machine run.
 
 ### Decided before v0.1.0, group 2 (merged in PR #11, 2026-10-25)
 

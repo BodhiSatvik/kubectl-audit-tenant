@@ -65,12 +65,12 @@ Build the read-only kubectl plugin specified in `DESIGN.md` (approved after plan
 - [x] B28 Floor tests over the registry
 
 ### Checkpoint 5
-- [ ] CI `check` and `e2e` jobs green, `floor-guard` red only for the D164 findings Satvik has read; CONSTRAINTS.md measured values recorded
+- [x] CI `check` and `e2e` jobs green, `floor-guard` red only for the D164 findings Satvik has read; CONSTRAINTS.md measured values recorded (2026-11-05, D219: on `main` at `0ba3a7d`, `ci` (check, floor-guard) and `e2e` (kind) pass; `floor-guard` was red only on PRs #3, #5 and #6, each a protected file Satvik read and merged; CONSTRAINTS.md records coverage, binary size and `make check` time)
 
 ### Phase 6: docs and release
-- [ ] B29 README
+- [x] B29 README (2026-11-05, D218: the quick start on a fresh runner took 37 s, PR #8)
 - [x] B30 Citation, changelog, diagrams
-- [ ] B31 Pre-release gate and v0.1.0 tag (Satvik pushes, tags and opens the krew-index PR)
+- [x] B31 Pre-release gate and v0.1.0 tag (Satvik pushes, tags and opens the krew-index PR) (2026-11-05, D219: v0.1.0 to v0.1.2 released; krew-index PR #6591 opened)
 
 ### Checkpoint 6: complete
 - [ ] DESIGN.md acceptance criteria 1–11 met; ready for outreach
