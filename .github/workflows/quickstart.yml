@@ -1,0 +1,22 @@
+name: quickstart
+# The README quick start, word for word, on a fresh runner with the released plugin (D218, B29).
+on:
+  pull_request:
+    paths: [README.md, hack/quickstart.sh, .github/workflows/quickstart.yml]
+  schedule:
+    - cron: '17 6 * * 1' # Mondays: a new kind, kubectl or release can break the README without a commit here
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  quickstart:
+    runs-on: ubuntu-latest # Docker and kubectl come with the image, as on a user's machine
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          version: v0.33.0 # the kind that made the README's sample output (Kubernetes v1.37.0)
+          install_only: true
+      - run: hack/install-krew.sh
+      - run: hack/quickstart.sh
