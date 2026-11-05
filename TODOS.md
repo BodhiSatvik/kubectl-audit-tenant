@@ -8,16 +8,6 @@ Build list from the approved spec (`DESIGN.md`, approved after plan reviews 2026
 
 ### Phase 6: docs and release
 
-- [ ] **B29 README.** Problem in two sentences; quick start on kind with the three install paths; the check table with the AT-04.5 note; "how this differs" (popeye, kubescape, kyverno audit mode, kubectl-mtb, NamespaceHound, kuota-calc, the can-i script); safety section with the audit-log note and "what a PASS does not prove"; troubleshooting (one entry per SKIP/ERROR hint, `--debug` line; the "timed out during startup" entry says a hung credential helper may keep running after the tool exits); pipeline example with `--fail-on-skip`; prior art and citation.
-  - AC: quick start works on a clean machine with Docker, kind and kubectl in five minutes (acceptance criterion 9); `hack/check-public.sh` passes.
-  - Verify: fresh-machine run (Satvik or a clean VM); `make check-fast`.
-  - Depends on: B21, B25. Files: `README.md`.
-  - Status (2026-10-22): built on `phase-6-docs`. `hack/check-public.sh` and `make check-fast` pass. The quick start, run word for word on this Mac with a local build in place of the release, took 17 s (node image cached) and printed the verdicts the README shows. Open: the clean-machine run with a release install, after v0.1.0 exists (Satvik or a clean VM).
-- [ ] **B31 Pre-release gate (Satvik and agent).** `audit-tenant.dev` is registered (done 2026-10-11, D20); `../../scripts/clean-room-check.sh .` passes; CONSTRAINTS.md "Measured" values recorded; `make check-full` green on main; Satvik pushes and tags `v0.1.0`; release job publishes five archives, checksums and the krew manifest; Satvik opens the krew-index PR.
-  - AC: acceptance criteria 1 to 11 in DESIGN.md section 12 all met; the release page shows the assets; `kubectl krew install --manifest-url` works from the release.
-  - Verify: release workflow; manual install on macOS and Linux.
-  - Depends on: B27, B28, B29, B30. Files: `CONSTRAINTS.md`, `TODOS.md`, release assets.
-
 **Checkpoint 6 (v0.1.0):** every acceptance criterion met; `evidence/` row in the lab for the first outside install when it happens.
 
 ### Open review items, sorted (2026-10-22)
