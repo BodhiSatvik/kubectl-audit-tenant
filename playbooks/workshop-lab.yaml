@@ -1,0 +1,86 @@
+# The workshop cluster: two teams on one cluster, set up in a hurry before a launch.
+# Some fences are missing or wrong. Find them with kubectl audit-tenant; do not read this file first.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-b
+  labels: {pod-security.kubernetes.io/enforce: restricted}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: devs-edit, namespace: team-a}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: edit}
+subjects:
+- {apiGroup: rbac.authorization.k8s.io, kind: Group, name: team-a-devs}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: devs-edit, namespace: team-b}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: edit}
+subjects:
+- {apiGroup: rbac.authorization.k8s.io, kind: Group, name: team-b-devs}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: compute, namespace: team-a}
+spec:
+  hard: {requests.cpu: "2", requests.memory: 4Gi, limits.cpu: "4", limits.memory: 8Gi, pods: "20"}
+---
+apiVersion: v1
+kind: LimitRange
+metadata: {name: container-defaults, namespace: team-a}
+spec:
+  limits:
+  - {type: Container, default: {cpu: 500m, memory: 512Mi}, defaultRequest: {cpu: 100m, memory: 128Mi}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: team-a}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-egress, namespace: team-a}
+spec: {podSelector: {}, policyTypes: [Egress]}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata: {name: compute, namespace: team-b}
+spec:
+  hard: {requests.cpu: "2", requests.memory: 4Gi, limits.cpu: "4", limits.memory: 8Gi, pods: "20", services.nodeports: "0"}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny-ingress, namespace: team-b}
+spec: {podSelector: {}, policyTypes: [Ingress]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: secret-reader, namespace: team-b}
+rules:
+- {apiGroups: [""], resources: [secrets], verbs: [get, list, watch]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: team-a-migration-help, namespace: team-b}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: secret-reader}
+subjects:
+- {apiGroup: rbac.authorization.k8s.io, kind: Group, name: team-a-devs}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: storage-helper}
+rules:
+- {apiGroups: [""], resources: [persistentvolumes], verbs: [create]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: team-b-storage-helper}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: storage-helper}
+subjects:
+- {apiGroup: rbac.authorization.k8s.io, kind: Group, name: team-b-devs}
