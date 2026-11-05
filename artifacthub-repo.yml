@@ -1,0 +1,3 @@
+# Artifact Hub repository metadata (D217): the repository ID gives this repo the Verified publisher label.
+# Move this file to _archive/ with plugins/ when the krew index lists the plugin (TODOS).
+repositoryID: 95db0bba-e693-44d6-8e63-06bdf995466a
