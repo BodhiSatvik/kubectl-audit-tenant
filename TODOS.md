@@ -111,6 +111,8 @@ The floor guard and the benchmark evidence. None changes what a user sees.
 - [ ] Network behavior tests (need running pods)
 - [ ] Write the PolicyReport into the cluster (`--apply`)
 - [ ] Capsule `Tenant` discovery (audit every namespace of a tenant)
+- [ ] Split AT-01 into sub-results, AT-01.1 to .4, as AT-04 has (D221; found with Capsule 0.15.2 on kind, 2026-11-05). Capsule's `capsule-namespace-provisioner` ClusterRoleBinding lets every Tenant Owner create namespaces, and Capsule's webhook keeps each new namespace in the owner's Tenant. So AT-01 fails on every Capsule tenant, its fix line says to remove that binding (which breaks Capsule's namespace self-service), and the FAIL hides AT-01's other three answers. With sub-results, a run can `--skip` the namespace question and still show the rest. Then update the Capsule recipe.
+- [ ] AT-09's note says the identity "may patch namespace ..., so it can change or remove this label". A policy can reset the label at admission: Capsule's `managed` label rule did (2026-11-05: the Tenant Owner set the label to `privileged`, then removed it; both times it stayed `restricted`). The transport refuses every PATCH, dry run included, so the tool cannot test this; say in the note that a policy or controller may reset the label.
 - [ ] SARIF output
 - [ ] Gatekeeper constraint mapping
 - [ ] Helm chart or operator for scheduled runs
