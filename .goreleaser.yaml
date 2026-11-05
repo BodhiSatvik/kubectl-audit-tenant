@@ -50,9 +50,8 @@ krews:
       (SelfSubjectAccessReview) and rehearses creates with server-side dry runs, so Pod
       Security Admission, admission webhooks and ValidatingAdmissionPolicy answer them.
     caveats: |
-      Run it against your own namespace with your own kubeconfig, or as an admin with
-      --as <tenant identity>. Exit code 1 means a FAIL; 2 means an ERROR, a run that could not
-      start, or a run where every check was SKIP (check -n and --as).
+      Checking an identity other than your own needs RBAC rights to impersonate it.
+      Supported clusters: Kubernetes 1.28 or newer.
 release:
   draft: true # release.yml publishes it after the krew-install job passes
   replace_existing_draft: true # a re-run replaces its own draft, so publish finds one release per tag

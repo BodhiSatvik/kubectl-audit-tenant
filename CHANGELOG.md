@@ -2,6 +2,12 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The krew manifest's caveat names only what the setup needs: rights to impersonate an identity other than your own, and Kubernetes 1.28 or newer. The krew index allows no usage text in caveats; the exit codes stay in `--help` and the README.
+
 ## [0.1.2] - 2026-11-02
 
 ### Fixed
