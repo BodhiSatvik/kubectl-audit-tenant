@@ -132,5 +132,6 @@ The floor guard and the benchmark evidence. None changes what a user sees.
 - [ ] Detect whether the network plugin enforces NetworkPolicy
 - [ ] Weekly CI run against the oldest supported server (1.28)
 - [ ] krew-release-bot for releases after v0.1.0
+- [ ] Own Artifact Hub listing (D217): `plugins/audit-tenant.yaml` is the krew manifest plus Artifact Hub annotations, so Artifact Hub lists the plugin before the krew index does. Each release until then, copy the release's `audit-tenant.yaml` spec into it and keep the annotations (`validate-krew-manifest` must pass). When krew-index merges the plugin (kubernetes-sigs/krew-index#6591), Satvik removes this repo in the Artifact Hub control panel and `plugins/` moves to `_archive/`, so the plugin is listed once, under the krew index.
 - [ ] Migrate the e2e Kyverno policy from the legacy `restrict-nodeport` ClusterPolicy (pinned in `test/e2e/versions.env`; kyverno/policies keeps only CEL policies since 2026-09-29) to a CEL `ValidatingPolicy` at the next Kyverno bump (Checkpoint 1, D39)
 - [ ] Signed releases and SBOM (v0.2): goreleaser `signs` with cosign keyless (`id-token: write`), `sboms` with syft, and a README "verify the download" section (CEO review D21)
