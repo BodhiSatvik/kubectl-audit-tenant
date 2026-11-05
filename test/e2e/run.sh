@@ -39,8 +39,15 @@ helm upgrade --install kyverno kyverno --repo https://kyverno.github.io/kyverno/
 kubectl -n kyverno wait deployment -l app.kubernetes.io/component=admission-controller --for=condition=Available --timeout=180s
 
 say "restrict-nodeport policy from kyverno/policies@${KYVERNO_POLICIES_COMMIT:0:7}, switched to Enforce"
-curl -sfL "https://raw.githubusercontent.com/kyverno/policies/$KYVERNO_POLICIES_COMMIT/best-practices/restrict-node-port/restrict-node-port.yaml" \
-  | sed 's/validationFailureAction: Audit/validationFailureAction: Enforce/' | kubectl apply -f -
+policy=$(curl -sfL "https://raw.githubusercontent.com/kyverno/policies/$KYVERNO_POLICIES_COMMIT/best-practices/restrict-node-port/restrict-node-port.yaml" \
+  | sed 's/validationFailureAction: Audit/validationFailureAction: Enforce/')
+# The deployment is Available before the kyverno-svc webhook has a ready endpoint, so the apply can be refused.
+deadline=$((SECONDS + 90))
+until out=$(kubectl apply -f - <<<"$policy" 2>&1); do
+  [ "$SECONDS" -lt "$deadline" ] || fail "the restrict-nodeport policy did not apply within 90 s: $out"
+  sleep 2
+done
+echo "$out"
 
 say "PolicyReport CRD wgpolicyk8s.io/v1alpha2 (Kyverno's chart installs it; else the pinned upstream copy)"
 kubectl get crd policyreports.wgpolicyk8s.io >/dev/null 2>&1 \
