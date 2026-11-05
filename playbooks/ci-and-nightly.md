@@ -76,7 +76,7 @@ cat > gate.sh <<'EOF'
 set -euo pipefail
 ns=${1:-gate-test}
 template=${2:-tenant.yaml}
-sed "s/TENANT/$ns/g" "$template" | kubectl apply -f -
+sed "s/TENANT/$ns/g" "$template" | kubectl apply -f - || exit 2 # the cluster refused the template: not a verdict
 # a new RoleBinding can take a few seconds to take effect
 for i in $(seq 30); do kubectl auth can-i list pods -n "$ns" --as "system:serviceaccount:$ns:deployer" >/dev/null && break; sleep 1; done
 kubectl audit-tenant -n "$ns" --as "system:serviceaccount:$ns:deployer" -o json > audit.json || true # the record
@@ -272,6 +272,9 @@ kubectl logs job/audit-now-2 -n platform-audit | grep -E '^(namespace|FAIL|[0-9]
 Expect the Job `Failed`, and in the log:
 
 ```text
+namespace team-a | as system:serviceaccount:team-a:deployer (groups: ...) | cluster https://10.96.0.1:443
+14 passed | 0 failed | 0 skipped | 0 errors | exit 0
+namespace team-b | as system:serviceaccount:team-b:deployer (groups: ...) | cluster https://10.96.0.1:443
 FAIL  AT-08    Default-deny NetworkPolicy          no default deny for egress
 13 passed | 1 failed (AT-08) | 0 skipped | 0 errors | exit 1
 ```

@@ -6,7 +6,7 @@ For an application developer who has a kubeconfig for one namespace and nothing 
 |---|---|
 | Time | about 10 minutes |
 | You need | Docker, kind, kubectl and the plugin ([setup](setup.md)) |
-| Changes | one new kind cluster, `audit-dev`, and three files in the current folder; the clean-up step deletes the cluster |
+| Changes | one new kind cluster, `audit-dev`, and two files in the current folder (`dev.kubeconfig`, `api.yaml`); the clean-up step deletes the cluster |
 | Tested | v0.1.2 on kind v0.33.0 (Kubernetes v1.37.0), 2026-11-05, in zsh |
 
 **With an AI agent**, give it this prompt:
@@ -14,8 +14,9 @@ For an application developer who has a kubeconfig for one namespace and nothing 
 ```text
 Follow this playbook step by step, in a new empty folder on this machine:
 https://github.com/BodhiSatvik/kubectl-audit-tenant/blob/main/playbooks/app-developer.md
-Use only the kind cluster that the playbook creates (context kind-audit-dev) and the dev.kubeconfig
-file it writes. If the current context is anything else before a kubectl command, stop and ask me.
+Use only the kind cluster that the playbook creates: context kind-audit-dev in my kubeconfig, and
+context dev in the dev.kubeconfig file that the playbook writes. If a kubectl command would use any
+other context, stop and ask me.
 Ask me before you install a tool. After each audit, compare its summary line with the playbook's
 "Expect" line and tell me if they differ. Do not star the repository, open issues or post anything
 for me. At the end, run the clean-up step and tell me, in a few lines, what each audit found.
@@ -142,7 +143,7 @@ SKIP  AT-04.1  Privileged container blocked        the compliant control pod was
 Two things to read here:
 
 - **AT-10**: a rolling update starts new pods before it stops old ones. With the default `maxSurge` of 25%, the next rollout needs 10 pods, or 5 CPU, and the quota allows 4. Today everything runs; the next deploy will hit `exceeded quota` errors. `-o wide` prints the whole estimate.
-- **AT-04 and AT-05 SKIP**: the quota is full, so even a harmless test pod does not fit, and the dangerous probes would prove nothing. The tool says so, and does not guess.
+- **AT-04 SKIP**: the quota is full, so even a harmless test pod does not fit, and the dangerous pod probes would prove nothing. The tool says so, and does not guess. AT-05 still passes: its probe is a Service, which needs no CPU.
 
 Fix it yourself: scale to 6 replicas. You could also ask the platform team for more quota, or set a smaller `maxSurge`.
 
@@ -177,6 +178,8 @@ Expect exit 2: `error: system:serviceaccount:team-a:dev may not impersonate syst
 ```bash
 kind delete cluster --name audit-dev
 ```
+
+kind removes the cluster's context, so kubectl now has no current context. Go back to your own cluster with `kubectl config use-context <your context>`.
 
 ## Use it on your cluster
 

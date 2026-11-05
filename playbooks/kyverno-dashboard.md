@@ -5,7 +5,7 @@ For a team that enforces pod security with [Kyverno](https://kyverno.io/) and sh
 | | |
 |---|---|
 | Time | about 20 minutes |
-| You need | Docker with at least 4 CPUs and 8 GB, kind, kubectl, Helm and the plugin ([setup](setup.md)) |
+| You need | Docker with at least 4 CPUs and 8 GB, kind, kubectl, Helm and the plugin ([setup](setup.md)); delete other kind clusters first, because Kyverno needs room ([if kind fails](setup.md#if-kind-create-cluster-fails)) |
 | Changes | one new kind cluster, `audit-kyverno`, and two files in the current folder; the clean-up step deletes the cluster |
 | Tested | v0.1.2 on kind v0.33.0 (Kubernetes v1.37.0), Kyverno chart 3.9.2 (Kyverno v1.19.2), Policy Reporter chart 3.11.2, 2026-11-05 |
 
@@ -29,17 +29,17 @@ kubectl config current-context
 helm repo add kyverno https://kyverno.github.io/kyverno/
 helm repo add policy-reporter https://kyverno.github.io/policy-reporter
 helm repo update
-helm install kyverno kyverno/kyverno -n kyverno --create-namespace --version 3.9.2 --wait --timeout 6m
-helm install kyverno-policies kyverno/kyverno-policies -n kyverno --version 3.9.2 \
+helm install kyverno kyverno/kyverno --kube-context kind-audit-kyverno -n kyverno --create-namespace --version 3.9.2 --wait --timeout 6m
+helm install kyverno-policies kyverno/kyverno-policies --kube-context kind-audit-kyverno -n kyverno --version 3.9.2 \
   --set podSecurityStandard=restricted --set validationFailureAction=Enforce --wait
 ```
 
-Expect `kind-audit-kyverno` as the context, and each `helm install` to end with `STATUS: deployed`. The second chart installs Kyverno's version of the restricted Pod Security Standard, as `ValidatingPolicy` objects that deny.
+Expect `kind-audit-kyverno` as the context, and each `helm install` to end with `STATUS: deployed`. The second chart installs Kyverno's version of the restricted Pod Security Standard, as `ValidatingPolicy` objects that deny. Both installs name the kind context with `--kube-context`: if the cluster was not created, they fail instead of installing on another cluster.
 
 Kyverno's Pod Security policies do not cover NodePort Services. Add one policy for that, and wait until every policy is ready:
 
 ```bash
-kubectl apply -f - <<'EOF'
+kubectl --context kind-audit-kyverno apply -f - <<'EOF'
 apiVersion: policies.kyverno.io/v1
 kind: ValidatingPolicy
 metadata:
@@ -139,17 +139,17 @@ bash publish.sh
 kubectl get policyreports -n team-a
 ```
 
-Expect `serverside-applied`, and one report with `PASS 13`, `FAIL 0` and `SKIP 1` (the skipped AT-09 stays in the report as a `skip` row). The [README](../README.md#applying-a-policyreport) explains each choice in the script, and who may change a report.
+Expect the warning `--skip ran 13 of 14 results; the others are skip rows in this report`, then `serverside-applied`, and one report with `PASS 13`, `FAIL 0` and `SKIP 1`: the skipped AT-09 stays in the report as a `skip` row. The [README](../README.md#applying-a-policyreport) explains each choice in the script, and who may change a report.
 
 ## 5. See it in Policy Reporter
 
 ```bash
-helm install policy-reporter policy-reporter/policy-reporter -n policy-reporter --create-namespace \
+helm install policy-reporter policy-reporter/policy-reporter --kube-context kind-audit-kyverno -n policy-reporter --create-namespace \
   --version 3.11.2 --set ui.enabled=true --wait --timeout 5m
 kubectl port-forward service/policy-reporter-ui 8082:8080 -n policy-reporter
 ```
 
-Open http://localhost:8082. The dashboard lists **Audit-Tenant** as a source next to **KyvernoValidatingPolicy**. Its page, "Audit-tenant: multi-tenancy", shows `team-a` (kind Namespace, under Cluster Resources) with 13 pass, 0 warn, 0 fail and 0 error. Open the row to see each check's reason, layer and fix. Leave the port-forward running, and use a second terminal for the next step.
+Open http://localhost:8082. The dashboard lists **Audit-Tenant** as a source next to **KyvernoValidatingPolicy**. Its page, "Audit-tenant: multi-tenancy", shows `team-a` (kind Namespace, under Cluster Resources) with 13 pass, 0 warn, 0 fail and 0 error. Open the row to see each check's reason, layer and `hint` (the fix line). Leave the port-forward running, and use a second terminal for the next step.
 
 ## 6. Watch it turn red
 

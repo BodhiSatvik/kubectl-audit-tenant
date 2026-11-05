@@ -72,3 +72,9 @@ Expect `audit-tenant 0.1.2` and a commit. The playbooks show output from v0.1.2.
 - The files that a playbook writes go into the folder you run it in. Run each playbook in a new, empty folder.
 
 To uninstall the plugin: `kubectl krew uninstall audit-tenant`, or delete the `kubectl-audit_tenant` binary.
+
+## If kind create cluster fails
+
+- `could not find a log line that matches "Reached target .*Multi-User System.*` or `too many open files`: other kind clusters on the machine used up the Linux inotify limits. Delete the kind clusters you no longer need (`kind get clusters`, then `kind delete cluster --name <name>`), or raise the limits as kind's [known issues](https://kind.sigs.k8s.io/docs/user/known-issues/#pod-errors-due-to-too-many-open-files) page shows. With Colima: `colima ssh -- sudo sysctl -w fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288`.
+- A mount error: on macOS, Docker Desktop and Colima share only your home folder with kind by default. Run the playbook in a folder under your home folder.
+- `Cannot connect to the Docker daemon`: start Docker Desktop, or run `colima start`.

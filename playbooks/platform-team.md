@@ -150,7 +150,7 @@ cat > provision.sh <<'EOF'
 # provision.sh NAMESPACE: make a fenced namespace from tenant.yaml, then prove it as the team.
 set -euo pipefail
 ns=$1
-sed "s/TENANT/$ns/g" tenant.yaml | kubectl apply -f -
+sed "s/TENANT/$ns/g" tenant.yaml | kubectl apply -f - || exit 2 # the cluster refused the template: not a verdict
 # a new RoleBinding can take a few seconds to take effect
 for i in $(seq 30); do kubectl auth can-i list pods -n "$ns" --as "system:serviceaccount:$ns:deployer" >/dev/null && break; sleep 1; done
 kubectl audit-tenant -n "$ns" --as "system:serviceaccount:$ns:deployer" --fail-on-skip

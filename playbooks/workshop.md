@@ -19,6 +19,7 @@ For a meetup host, a teacher, or a study group. Each person gets a shared cluste
   ```
 
 - Plan for 2 to 3 people who could not install. Pair them with someone whose setup works.
+- Ask attendees to delete other kind clusters before the session (`kind get clusters`): each one uses memory and Linux inotify slots, and a full machine makes `kind create cluster` fail ([setup.md](setup.md#if-kind-create-cluster-fails)).
 - Do the lab yourself once, start to finish (about 20 minutes).
 
 | Time | Part |
@@ -46,10 +47,10 @@ At the end, run the clean-up step.
 ```bash
 kind create cluster --name audit-lab
 kubectl config current-context
-kubectl apply -f https://raw.githubusercontent.com/BodhiSatvik/kubectl-audit-tenant/main/playbooks/workshop-lab.yaml
+kubectl --context kind-audit-lab apply -f https://raw.githubusercontent.com/BodhiSatvik/kubectl-audit-tenant/main/playbooks/workshop-lab.yaml
 ```
 
-Expect `kind-audit-lab`, and a list of created objects. Do not read the lab file yet: the audit should tell you what is wrong.
+Expect `kind-audit-lab`, and a list of created objects. The lab file adds weak RBAC on purpose, so the command names the kind context: if the cluster was not created, it fails instead of touching another cluster. Do not read the lab file yet: the audit should tell you what is wrong.
 
 The cluster has two teams. The members of `team-a-devs` (such as `alice`) work in the namespace `team-a`; the members of `team-b-devs` (such as `bob`) work in `team-b`. You are the cluster admin. You test each team as that team with `--as` and `--as-group`.
 
@@ -111,7 +112,7 @@ kubectl label --overwrite namespace team-a pod-security.kubernetes.io/enforce=re
 # 2. NodePort Services: a quota of zero node ports, no policy engine needed
 kubectl patch resourcequota compute -n team-a --type merge -p '{"spec":{"hard":{"services.nodeports":"0"}}}'
 # 3. The cluster-wide grant to team-b
-kubectl delete clusterrolebinding team-b-storage-helper
+kubectl --context kind-audit-lab delete clusterrolebinding team-b-storage-helper
 # 4 and 5. Defaults for containers, and a default deny for egress
 kubectl apply -n team-b -f - <<'EOF'
 apiVersion: v1
@@ -127,14 +128,14 @@ metadata: {name: default-deny-egress}
 spec: {podSelector: {}, policyTypes: [Egress]}
 EOF
 # 6. The cross-team grant
-kubectl delete rolebinding team-a-migration-help -n team-b
+kubectl --context kind-audit-lab delete rolebinding team-a-migration-help -n team-b
 ```
 
 </details>
 
 ## Step 4. Prove the fixes
 
-Run the five audits from step 2 again. Expect `14 passed · 0 failed` for each team, and a PASS for each cross-team check.
+Run the four audits from step 2 again. Expect `14 passed · 0 failed` for each team, and a PASS for each cross-team check.
 
 Then discuss what a PASS does not prove. Each `note` line names a limit; the README lists them all in [What a PASS does not prove](../README.md#what-a-pass-does-not-prove). Two good examples: AT-08 reads the NetworkPolicy objects but cannot tell whether the network plugin enforces them, and a grant to one named Secret is not visible to an access review.
 
@@ -143,6 +144,8 @@ Then discuss what a PASS does not prove. Each `note` line names a limit; the REA
 ```bash
 kind delete cluster --name audit-lab
 ```
+
+kind removes the cluster's context, so kubectl now has no current context. Go back to your own cluster with `kubectl config use-context <your context>`.
 
 ## After the workshop
 

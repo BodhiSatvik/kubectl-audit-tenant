@@ -57,7 +57,7 @@ kind create cluster --name audit-security --config kind-audit.yaml
 kubectl config current-context
 ```
 
-Expect `kind-audit-security`. If `kind create cluster` fails on the mount, the folder is not shared with Docker (see the macOS note above).
+Expect `kind-audit-security`. If `kind create cluster` fails, two causes are common: the folder is not shared with Docker (see the macOS note above), or other kind clusters on the machine used up the inotify limits ([setup.md](setup.md#if-kind-create-cluster-fails)).
 
 ## 2. Two fenced teams
 
@@ -240,7 +240,7 @@ FAIL  AT-02  No cross-namespace secret access  RBAC allows get secrets in team-b
 PASS  AT-02  No cross-namespace secret access  no general get, list or watch on secrets in team-a
 ```
 
-The tool also warns that it cannot confirm the other namespace exists, so check the names in the loop.
+The `grep` keeps only the verdict lines. The full output also has a warning: the tool cannot confirm that the other namespace exists, so a misspelled name passes. Check the names in the loop.
 
 ## 5. Keep a dated evidence page
 
@@ -248,17 +248,18 @@ The tool also warns that it cannot confirm the other namespace exists, so check 
 
 ```bash
 mkdir -p evidence
-kubectl audit-tenant -n team-a --as alice --as-group team-a-devs -o wide --plain > "evidence/team-a-$(date +%F).txt"
-kubectl audit-tenant -n team-b --as bob --as-group team-b-devs -o wide --plain > "evidence/team-b-$(date +%F).txt"
-tail -2 evidence/team-a-*.txt
+kubectl audit-tenant -n team-a --as alice --as-group team-a-devs -o wide --plain > "evidence/before-team-a-$(date +%F).txt"
+kubectl audit-tenant -n team-b --as bob --as-group team-b-devs -o wide --plain > "evidence/before-team-b-$(date +%F).txt"
+tail -3 evidence/before-team-a-*.txt
 ```
 
 ```text
 13 passed | 1 failed (AT-02) | 0 skipped | 0 errors | exit 1
 audit-tenant 0.1.2 | 2026-11-05T21:22:42Z | server https://127.0.0.1:63920 | Kubernetes v1.37.0
+machine output: -o json, -o policyreport
 ```
 
-The last line names the tool version, the time (UTC), the server and the Kubernetes version, so the page is evidence on its own. For machine-readable records, use `-o json` (schema: [`docs/report.schema.json`](../docs/report.schema.json)). Keep the records outside the cluster.
+The line under the summary names the tool version, the time (UTC), the server and the Kubernetes version, so the page is evidence on its own. For machine-readable records, use `-o json` (schema: [`docs/report.schema.json`](../docs/report.schema.json)). Keep the records outside the cluster.
 
 ## 6. Prove that the tool changed nothing
 
@@ -289,17 +290,20 @@ The log also shows who ran the tool and whom it impersonated (`"user":{"username
 
 ```bash
 kubectl --context kind-audit-security delete -f leaks.yaml
-kubectl audit-tenant -n team-a --as alice --as-group team-a-devs
-kubectl audit-tenant -n team-b --as bob --as-group team-b-devs
+kubectl audit-tenant -n team-a --as alice --as-group team-a-devs -o wide --plain > "evidence/after-team-a-$(date +%F).txt"
+kubectl audit-tenant -n team-b --as bob --as-group team-b-devs -o wide --plain > "evidence/after-team-b-$(date +%F).txt"
+grep -h -E '^[0-9]+ passed' evidence/after-*.txt
 ```
 
-Expect `14 passed` for each team, and a PASS for the team-a to team-b loop. Save new evidence pages: the old and new pages together show the finding and the fix.
+Expect `14 passed` for each team. Run the loop from step 4 again: both directions now PASS. The `before` and `after` pages together show the finding and the fix.
 
 ## 8. Clean up
 
 ```bash
 kind delete cluster --name audit-security
 ```
+
+kind removes the cluster's context, so kubectl now has no current context. Go back to your own cluster with `kubectl config use-context <your context>`.
 
 ## Use it on your cluster
 

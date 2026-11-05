@@ -22,7 +22,7 @@ First time? Do [setup.md](setup.md): it checks and installs the four tools that 
 
 ## What every playbook promises
 
-- It makes one new kind cluster with its own name, and works only there. Commands that weaken a cluster on purpose name the kind context with `--context`.
+- It makes one new kind cluster with its own name, and works only there. Commands that install software, weaken a cluster on purpose or delete objects name the kind context (`--context`, or `--kube-context` for Helm). If the kind cluster was not created, they fail instead of touching another cluster.
 - It shows the output it expects, copied from a real run, and says which version, Kubernetes version and date it was tested with.
 - It ends with a clean-up step that deletes the cluster.
 - It never asks for a cloud account, a token or a password.
