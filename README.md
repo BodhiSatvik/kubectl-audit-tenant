@@ -101,7 +101,7 @@ On a namespace that already runs pods, read each `fix` line before you apply it:
 The tool runs as the identity that your kubeconfig and flags give it:
 
 - **Self mode.** With no impersonation, the tool runs as your own login.
-- **Impersonation.** With `--as` (or `as:` in the kubeconfig user), the tool impersonates the tenant. This needs `impersonate` rights.
+- **Impersonation.** With `--as` (or `as:` in the kubeconfig user), the tool impersonates the tenant. This needs `impersonate` rights on the tenant's identity, and no other rights: [docs/runner-role.md](docs/runner-role.md) has the minimal roles.
   - For a user, also pass the groups that the identity provider gives it with `--as-group`. The API server does not add them.
   - For a service account, give no groups. The API server then adds `system:serviceaccounts` and `system:serviceaccounts:<namespace>` itself.
 - **Behind an access proxy** such as Teleport (tested with Teleport 18), run in self mode with the tenant's own proxy login. When the proxy role passes the tenant's requests through, the verdicts match a direct run. When the role itself denies a request, the result still names the layer `RBAC`. With `--as` (or `as:` in the kubeconfig), the proxy can add its own role's groups to the impersonated user; when the SelfSubjectReview confirms the identity, the run warns and names them.
@@ -279,7 +279,7 @@ rules:
   resourceNames: [dev]
 ```
 
-- Bind the Role to the pod's service account with a RoleBinding in `team-a`. For a user tenant, use a ClusterRole with a `users` rule and a `groups` rule, each with `resourceNames`: the user, and the groups its identity provider gives it.
+- Bind the Role to the pod's service account with a RoleBinding in `team-a`. For a user tenant, use a ClusterRole with a `users` rule and a `groups` rule, each with `resourceNames`: the user, and the groups its identity provider gives it ([example](docs/runner-role.md#a-user-tenant)).
 - Run the Job in a namespace where only platform admins may create pods or exec into pods: whoever can do that holds these impersonation rights.
 - The release binary is static, so an image `FROM scratch` with `COPY kubectl-audit_tenant /` and a numeric non-root `USER` (such as `65532`) works. Its entrypoint is the binary itself, so the arguments start with `-n`. Under Pod Security `restricted`, the pod spec must also set `runAsNonRoot: true` and `seccompProfile: {type: RuntimeDefault}`, and the container `allowPrivilegeEscalation: false` and `capabilities: {drop: [ALL]}`.
 - The report goes to the pod log, and the Job fails on exit 1 or 2.
@@ -295,6 +295,7 @@ Checked on kind with Kubernetes 1.37: a v0.1.1 Job with `--as` and this kubeconf
   - Pod and Service creates in the target namespace, only with `dryRun=All`.
 
   Everything else is refused before it leaves the process: every subresource (such as `pods/exec`), every Secret path, every other namespace, and every PUT, PATCH and DELETE. The tool never reads a Secret.
+- **No telemetry.** The tool talks only to the cluster's API server, the one that the kubeconfig, `--server` or the pod's in-cluster address names; the transport refuses every other host. It does not check for updates. A proxy that the kubeconfig's `proxy-url` or the `HTTPS_PROXY` variable names carries that traffic, and a credential plugin that the kubeconfig runs (such as `aws` or `kubelogin`) may contact its own identity provider.
 - **Every create answer is checked.** A dry-run answer must have a generated `audit-tenant-probe-` name and no `resourceVersion`. If a proxy drops `dryRun=All` and the server stores an object, the check reports ERROR with the object's name, and the run sends no further create.
 - **What a run leaves in the API audit log.** SSARs, one SelfSubjectReview, and dry-run creates of pods and Services named `audit-tenant-probe-*`, labeled `app.kubernetes.io/managed-by=audit-tenant`, all under the tenant identity. With `--as`, the audit log also records the user who impersonated. Admission webhooks see the dry-run requests too.
 - **Request count.** In the end-to-end tests, a full run sends at most 40 API requests and takes well under a second on kind (see [Benchmarks](#benchmarks)). A tenant that may not create pods needs more requests (about 63), because AT-04 then asks about each pod controller.
