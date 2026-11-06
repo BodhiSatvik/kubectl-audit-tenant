@@ -18,7 +18,7 @@ Use only the kind cluster that the playbook creates (context kind-audit-capsule)
 context is anything else before a kubectl or helm command, stop and ask me. Ask me before you install
 a tool. After each audit, compare its summary line with the playbook's "Expect" line and tell me if
 they differ. Do not star the repository, open issues or post anything for me. At the end, run the
-clean-up step and tell me, in a few lines, what each audit found.
+clean-up step and tell me, in a few lines, what each audit found. Then give me the report link from the playbook's last section.
 ```
 
 ## 1. A cluster with Capsule
@@ -212,4 +212,10 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 - When you change how the fences are set (for example from the Tenant fields that Capsule 0.15 deprecates to `rules` and replications, or to a policy engine), run the same audits before and after. The audit tests the result, not the configuration, so the verdicts must not change.
 - To run it every night, see [ci-and-nightly.md](ci-and-nightly.md). The runner needs `impersonate` on each owner and on the group `projectcapsule.dev` only ([docs/runner-role.md](../docs/runner-role.md)).
 
-Did it help, or did something not work? [Tell us](README.md#tell-us).
+## Tell us how it went
+
+A [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=capsule) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
+
+- How should the tool treat Capsule's namespace grant in AT-01?
+- How do you set fences today: Tenant rules, replications, or a policy engine?
+- The step that broke or was unclear, if any.

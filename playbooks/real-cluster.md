@@ -17,7 +17,8 @@ https://github.com/BodhiSatvik/kubectl-audit-tenant/blob/main/playbooks/real-clu
 Show me the current kubectl context and ask me to confirm it before you run anything.
 Run only kubectl audit-tenant, kubectl auth whoami, kubectl auth can-i, and kubectl get commands.
 Never apply, label, patch or delete anything in this cluster: write the fix commands down for me instead.
-Do not star the repository, open issues or post anything for me.
+Do not star the repository, open issues or post anything for me. At the end, give me the report link
+from the playbook's last section.
 ```
 
 ## 1. Before you run it
@@ -120,4 +121,10 @@ After the fixes, the same command into a new folder gave `14 passed` for all fou
 
 ## Tell us what changed
 
-If the tool found something that you then fixed, we would like to hear it, in whatever detail you can share: open an ["I use this" issue](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=i-use-this.yml). Counts help other teams decide, in a form such as "N of M namespaces had no default-deny egress policy; after the fixes, none". Bugs and rough edges: [Tell us](README.md#tell-us).
+After your first real run, a [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=real-cluster) takes a few minutes, and the playbook name is already filled in. Choose the kind of cluster you ran it on, and share only what you may share. The answers that help most for this playbook:
+
+- What did the first run find, and which finding surprised you?
+- What did you change because of it, and how many namespaces did it touch? Counts help other teams decide, in a form such as "N of M namespaces had no default-deny egress policy; after the fixes, none".
+- What stopped you, if anything: approvals, rights, noise in the output?
+
+If your team keeps running it, please also open an ["I use this" issue](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=i-use-this.yml). Bugs and rough edges: [Tell us](README.md#tell-us).

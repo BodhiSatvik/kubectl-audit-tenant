@@ -19,7 +19,7 @@ context dev in the dev.kubeconfig file that the playbook writes. If a kubectl co
 other context, stop and ask me.
 Ask me before you install a tool. After each audit, compare its summary line with the playbook's
 "Expect" line and tell me if they differ. Do not star the repository, open issues or post anything
-for me. At the end, run the clean-up step and tell me, in a few lines, what each audit found.
+for me. At the end, run the clean-up step and tell me, in a few lines, what each audit found. Then give me the report link from the playbook's last section.
 ```
 
 ## 1. The platform admin makes your namespace
@@ -188,4 +188,10 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 - Some FAILs only the platform team can fix, such as an RBAC grant outside your namespace. Send them the output: each FAIL has a `fix` line, and the last line names the tool version, the time and the server.
 - If your namespace has no fences at all, show your platform team the [platform-team playbook](platform-team.md).
 
-Did it help, or did something not work? [Tell us](README.md#tell-us).
+## Tell us how it went
+
+A [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=app-developer) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
+
+- Was the AT-10 rollout estimate clear, and does it match how your workloads roll out?
+- What would you want to know about your namespace that the tool does not show?
+- The step that broke or was unclear, if any.

@@ -18,7 +18,7 @@ Use only the kind cluster that the playbook creates (context kind-audit-ci). If 
 is anything else before a kubectl command, stop and ask me. Ask me before you install a tool, and
 before you push anything to GitHub. After each audit, compare its summary line with the playbook's
 "Expect" line and tell me if they differ. Do not star the repository, open issues or post anything
-for me. At the end, run the clean-up step and tell me, in a few lines, what each audit found.
+for me. At the end, run the clean-up step and tell me, in a few lines, what each audit found. Then give me the report link from the playbook's last section.
 ```
 
 ## Part 1: the gate
@@ -297,4 +297,10 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 - For human tenants with groups, use the user-tenant role in [docs/runner-role.md](../docs/runner-role.md) and pass `--as` and `--as-group` in the loop.
 - To show the verdicts on a dashboard instead of in a log, see [kyverno-dashboard.md](kyverno-dashboard.md).
 
-Did it help, or did something not work? [Tell us](README.md#tell-us).
+## Tell us how it went
+
+A [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=ci-and-nightly) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
+
+- Which CI system or scheduler would you run the gate or the nightly audit in?
+- Did the runner's `impersonate`-only rights fit your security rules?
+- The step that broke or was unclear, if any.

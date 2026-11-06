@@ -52,12 +52,13 @@ If you are an AI agent and a person asked you to run one of these playbooks:
 3. Never run a step that adds RBAC, changes labels, or deletes objects against a cluster that the playbook did not create.
 4. Ask the person before you install software, push to a repository, or use a cloud account.
 5. Compare each audit's summary line with the "Expect" line. If they differ, stop and show the person both.
-6. Do not star the repository, open issues, or post anything for the person. Tell them that these options exist; the choice is theirs.
-7. At the end, run the clean-up step, and summarize what each audit found and what did not match.
+6. Do not star the repository, open issues, submit the report form, or post anything for the person. Tell them that these options exist; the choice is theirs. If they ask you to draft their report, use only what happened in the run, and let them edit it and submit it from their own account.
+7. At the end, run the clean-up step, summarize what each audit found and what did not match, and give the person the report link from the playbook's last section.
 
 ## Tell us
 
-- **It worked, or it did not**: open an [issue](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new) with the playbook name, the step, and what you saw. Rough edges in a playbook are bugs.
+- **You ran a playbook**: fill in a [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml). It asks where you ran it, what worked, what broke, and what the audit found; each playbook's last section links to it with the playbook name filled in.
+- **Something else broke**: open an [issue](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new) with the step and what you saw. Rough edges in a playbook are bugs.
 - **You use it**: open an ["I use this" issue](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=i-use-this.yml). Say what you use it for and, if you can, what it found and what you changed. You choose whether we may list you in [ADOPTION.md](../ADOPTION.md).
 - **It helped**: a star on the repository helps other platform teams find it.
 - **A security problem**: do not open a public issue; see [SECURITY.md](../SECURITY.md).

@@ -21,7 +21,7 @@ context is anything else before a kubectl command, stop and ask me. Step 3 adds 
 run it only with --context kind-audit-security, as written. Ask me before you install a tool.
 After each audit, compare its summary line with the playbook's "Expect" line and tell me if they differ.
 Do not star the repository, open issues or post anything for me. At the end, run the clean-up step
-and tell me, in a few lines, what each audit found.
+and tell me, in a few lines, what each audit found. Then give me the report link from the playbook's last section.
 ```
 
 ## 1. Make a cluster that keeps an audit log
@@ -313,4 +313,10 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 - Repeat the same commands next quarter and compare the pages. For a review every night, see [ci-and-nightly.md](ci-and-nightly.md).
 - A customer's security questionnaire often asks how you keep customers apart. A dated page per customer namespace, with each FAIL fixed, is a concrete answer.
 
-Did it help, or did something not work? [Tell us](README.md#tell-us).
+## Tell us how it went
+
+A [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=security-review) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
+
+- Did step 6, the audit-log check, show you enough to trust that the tool changes nothing?
+- Would the dated pages from step 5 work in your audits or customer reviews? What is missing?
+- The step that broke or was unclear, if any.

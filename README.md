@@ -407,7 +407,7 @@ Issues and pull requests are welcome. For a change in behavior, open an issue fi
 
 ## Using it? Tell us
 
-If you use audit-tenant, please open an ["I use this" issue](../../issues/new?template=i-use-this.yml). It takes two minutes and helps the project. See [ADOPTION.md](ADOPTION.md).
+If you use audit-tenant, please open an ["I use this" issue](../../issues/new?template=i-use-this.yml). It takes two minutes and helps the project. See [ADOPTION.md](ADOPTION.md). If you ran one of the [playbooks](playbooks/), a [playbook report](../../issues/new?template=playbook-report.yml) tells us what worked and what did not.
 
 ## Prior art and citation
 

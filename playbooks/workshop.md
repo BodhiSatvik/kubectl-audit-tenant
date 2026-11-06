@@ -39,7 +39,7 @@ https://github.com/BodhiSatvik/kubectl-audit-tenant/blob/main/playbooks/workshop
 Use only the kind cluster that the workshop creates (context kind-audit-lab). Run steps 1 and 2, then
 stop. Do not show me the answers or the lab file. When I propose a fix, run it, re-run the audit and
 tell me what changed. Do not star the repository, open issues or post anything for me.
-At the end, run the clean-up step.
+At the end, run the clean-up step, then give me the report link from the workshop's last section.
 ```
 
 ## Step 1. Your cluster
@@ -152,3 +152,11 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 - To try it on a real cluster safely, read [real-cluster.md](real-cluster.md).
 - To see the tool prove from the API server's audit log that it wrote nothing, do part 6 of [security-review.md](security-review.md).
 - Something confusing, wrong or missing? Please open an issue from your own GitHub account, with what you ran and what you saw: [Tell us](README.md#tell-us).
+
+## Tell us how it went
+
+Attendees and facilitators: a [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=workshop) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
+
+- Facilitators: where and when it ran, how many people took part, and how many reached 14 of 14 for both teams.
+- Which problem took the longest to find or fix, and why?
+- The step that broke or was unclear, if any.

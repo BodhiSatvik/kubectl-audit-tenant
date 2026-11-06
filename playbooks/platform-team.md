@@ -18,7 +18,7 @@ Use only the kind cluster that the playbook creates (context kind-audit-platform
 context is anything else before a kubectl command, stop and ask me. Ask me before you install a tool.
 After each audit, compare its summary line with the playbook's "Expect" line and tell me if they differ.
 Do not star the repository, open issues or post anything for me. At the end, run the clean-up step
-and tell me, in a few lines, what each audit found.
+and tell me, in a few lines, what each audit found. Then give me the report link from the playbook's last section.
 ```
 
 ## 1. Make the cluster
@@ -279,4 +279,10 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 - For your existing namespaces, start with [real-cluster.md](real-cluster.md): one namespace, read-only, before any fix.
 - If your teams deploy only through Argo CD or Flux and may not create pods, AT-04 shows SKIP: the probes need an identity that may create pods. See [What a PASS does not prove](../README.md#what-a-pass-does-not-prove).
 
-Did it help, or did something not work? [Tell us](README.md#tell-us).
+## Tell us how it went
+
+A [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=platform-team) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
+
+- Would a gate like `provision.sh` fit how your team makes namespaces (Helm, Terraform, a portal, GitOps)?
+- On a namespace of yours that already runs apps, which fence would be the hardest to add, and why?
+- The step that broke or was unclear, if any.

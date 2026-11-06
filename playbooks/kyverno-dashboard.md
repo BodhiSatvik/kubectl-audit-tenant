@@ -18,7 +18,7 @@ Use only the kind cluster that the playbook creates (context kind-audit-kyverno)
 context is anything else before a kubectl or helm command, stop and ask me. Ask me before you install
 a tool. After each audit, compare its summary line with the playbook's "Expect" line and tell me if
 they differ. Do not star the repository, open issues or post anything for me. At the end, run the
-clean-up step and tell me, in a few lines, what each audit found.
+clean-up step and tell me, in a few lines, what each audit found. Then give me the report link from the playbook's last section.
 ```
 
 ## 1. A cluster with Kyverno
@@ -180,4 +180,10 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 - A tenant bound to `admin` may edit PolicyReports in its own namespace, and so could turn its own FAIL into a PASS. For an audit record, also keep the `-o json` output outside the cluster.
 - The layer column names whatever admission step refused a probe, so the audit also reads a Gatekeeper webhook or a ValidatingAdmissionPolicy as the fence. This playbook tested Kyverno only. Policy Reporter needs the PolicyReport CRD, which the Kyverno chart installs; without Kyverno, install the CRD from [wg-policy-prototypes](https://github.com/kubernetes-sigs/wg-policy-prototypes).
 
-Did it help, or did something not work? [Tell us](README.md#tell-us).
+## Tell us how it went
+
+A [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=kyverno-dashboard) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
+
+- Do these verdicts belong next to Kyverno's results in your dashboard, or somewhere else?
+- Does `--skip AT-09` fit how you enforce pod security?
+- The step that broke or was unclear, if any.
