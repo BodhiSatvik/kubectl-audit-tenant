@@ -4,7 +4,7 @@ Check, from the tenant's side, whether a Kubernetes namespace is fenced.
 
 > Status: v0.1.2 (2026-11-02). The first release, v0.1.0, was on 2026-10-26.
 
-[Why](#why) · [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start-kind-about-five-minutes) · [Usage](#usage) · [The checks](#the-checks) · [Verdicts and exit codes](#verdicts-and-exit-codes) · [Output formats](#output-formats) · [Run it in a pod](#run-it-in-a-pod) · [Safety](#safety) · [What a PASS does not prove](#what-a-pass-does-not-prove) · [Troubleshooting](#troubleshooting) · [How it differs](#how-it-differs) · [Contributing](#development-and-contributing)
+[Why](#why) · [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start-kind-about-five-minutes) · [Playbooks](#playbooks) · [Usage](#usage) · [The checks](#the-checks) · [Verdicts and exit codes](#verdicts-and-exit-codes) · [Output formats](#output-formats) · [Run it in a pod](#run-it-in-a-pod) · [Safety](#safety) · [What a PASS does not prove](#what-a-pass-does-not-prove) · [Troubleshooting](#troubleshooting) · [How it differs](#how-it-differs) · [Contributing](#development-and-contributing)
 
 ## Why
 
@@ -88,6 +88,10 @@ kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
 AT-04.1 to AT-04.5 and AT-09 now pass. Each AT-04 reason quotes the Pod Security Admission message that refused the probe, and AT-09 names the label. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`.
 
 On a namespace that already runs pods, read each `fix` line before you apply it: a Pod Security level or a compute quota also applies to the next pods of your running workloads. The AT-09 fix starts with a `--dry-run=server` that warns about the pods the level would refuse.
+
+## Playbooks
+
+[playbooks/](playbooks/) has step-by-step setups by role, each from zero on a kind cluster and tested: a minimal platform with a provisioning gate, a security review with planted RBAC leaks and an audit-log check, an application developer's own namespace, a CI gate and a nightly CronJob, Kyverno with Policy Reporter, Capsule tenants, a 60-minute workshop, and a guide for the first run on a real cluster. Each one starts with a prompt that you can give to a coding agent.
 
 ## Who runs it, and how
 
@@ -403,7 +407,7 @@ Issues and pull requests are welcome. For a change in behavior, open an issue fi
 
 ## Using it? Tell us
 
-If you use audit-tenant, please open an ["I use this" issue](../../issues/new?template=i-use-this.yml). It takes two minutes and helps the project. See [ADOPTION.md](ADOPTION.md).
+If you use audit-tenant, please open an ["I use this" issue](../../issues/new?template=i-use-this.yml). It takes two minutes and helps the project. See [ADOPTION.md](ADOPTION.md). If you ran one of the [playbooks](playbooks/), a [playbook report](../../issues/new?template=playbook-report.yml) tells us what worked and what did not.
 
 ## Prior art and citation
 

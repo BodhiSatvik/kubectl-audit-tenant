@@ -1,0 +1,95 @@
+name: Playbook report
+description: You ran a playbook. Tell us how it went, what it found, and what did not work.
+title: "[Playbook report] "
+labels: ["playbook-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying a playbook. Short answers are fine. Use your own words, and share only what you may share: remove cluster, namespace and company names if you need to. A report about problems is as useful as a report about success.
+  - type: input
+    id: playbook
+    attributes:
+      label: Which playbook?
+      description: For example platform-team, security-review, app-developer, ci-and-nightly, kyverno-dashboard, capsule, workshop, real-cluster, or the README quick start.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The first line of `kubectl audit-tenant version`.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you run it?
+      options:
+        - On the playbook's test cluster (kind on my machine)
+        - On a test or staging cluster that my team uses
+        - On a production cluster
+        - Somewhere else (say where below)
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Who ran the steps?
+      options:
+        - I ran them myself
+        - A coding agent ran them with the playbook's prompt
+        - Both
+  - type: dropdown
+    id: worked
+    attributes:
+      label: Did every step work as the playbook says?
+      options:
+        - "Yes"
+        - Mostly
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: problems
+    attributes:
+      label: What broke, or what was unclear?
+      description: The step, what you expected, and what you saw. "Nothing" is a useful answer too.
+  - type: textarea
+    id: found
+    attributes:
+      label: What did the audit find?
+      description: Paste the summary line (for example "13 passed · 1 failed (AT-02)"), or describe the FAILs and SKIPs. On a test cluster, say what surprised you.
+  - type: textarea
+    id: changed
+    attributes:
+      label: Did you change anything because of a finding?
+      description: What you changed, where, and when. Counts help, for example "N of M namespaces had no default-deny egress policy; we added one". Leave it empty if you changed nothing.
+  - type: dropdown
+    id: next
+    attributes:
+      label: What next?
+      options:
+        - Nothing for now
+        - I may try it on a real cluster
+        - We run it on real clusters
+        - We run it in CI or on a schedule
+  - type: input
+    id: who
+    attributes:
+      label: Who are you? (optional)
+      description: Your role, and your organization if you may name it. Share only what you are happy to make public.
+  - type: input
+    id: source
+    attributes:
+      label: How did you hear about audit-tenant? (optional)
+      description: For example a friend, a colleague, a meetup, a post, or a search.
+  - type: checkboxes
+    id: permission
+    attributes:
+      label: Permission (optional)
+      options:
+        - label: You may quote this report, with my GitHub handle, when you describe how people use audit-tenant.
+        - label: You may contact me about this report.
+  - type: markdown
+    attributes:
+      value: |
+        If your team keeps running audit-tenant on a real cluster, please also open an [I use this](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=i-use-this.yml) issue.
