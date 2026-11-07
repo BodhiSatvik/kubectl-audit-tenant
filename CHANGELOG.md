@@ -13,6 +13,10 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 - The krew manifest's caveat names only what the setup needs: rights to impersonate an identity other than your own, and Kubernetes 1.28 or newer. The krew index allows no usage text in caveats; the exit codes stay in `--help` and the README.
 
+### Fixed
+
+- The README's paper link opens the paper's page. The paper's DOI resolves to a removed page for now; `CITATION.cff` keeps the DOI and adds the page URL.
+
 ## [0.1.2] - 2026-11-02
 
 ### Fixed
