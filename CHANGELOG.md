@@ -15,7 +15,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 
-- The README's paper link opens the paper's page. The paper's DOI resolves to a removed page for now; `CITATION.cff` keeps the DOI and adds the page URL.
+- The README's paper link opens the paper's ResearchGate page. The paper's DOI resolves to a removed page for now; `CITATION.cff` keeps the DOI and adds the publisher's page URL.
 
 ## [0.1.2] - 2026-11-02
 
