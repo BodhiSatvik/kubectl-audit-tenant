@@ -418,7 +418,7 @@ If you use audit-tenant, please open an ["I use this" issue](../../issues/new?te
 
 This project implements ideas from:
 
-> Bhasin, S. (2026). GNLF for Large-Scale Legacy Migration on a GitOps-Driven Kubernetes Platform. https://doi.org/10.56975/ijcrt.v14i4.305793
+> Bhasin, S. (2026). GNLF for Large-Scale Legacy Migration on a GitOps-Driven Kubernetes Platform. https://www.researchgate.net/publication/404238804_GNLF_for_Large-Scale_Legacy_Migration_on_a_GitOps-Driven_Kubernetes_Platform
 
 See [CITATION.cff](CITATION.cff).
 
