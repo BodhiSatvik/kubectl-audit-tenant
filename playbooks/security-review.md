@@ -214,7 +214,7 @@ FAIL  AT-01    No cluster-scoped access            RBAC allows create persistent
 FAIL  AT-03    No privilege escalation             RBAC allows impersonate serviceaccounts; granted by ClusterRoleBinding "team-b-ci-impersonator" of ClusterRole "ci-impe…
 ```
 
-Leak 5 does not show as a FAIL. AT-02 passes for team-b with the line `note not tested: grants limited to named secrets (resourceNames)`. An access review (SSAR) asks about a resource type, not about one named object, so grants by name are a known blind spot, and the output says so. Read the `note` lines: they list what each PASS did not test.
+Leak 5 does not show as a FAIL. AT-02 passes for team-b with the line `note not tested: grants limited to named secrets (resourceNames)`. The tool's access reviews (SSARs) ask about a resource type, not about one named object, so grants by name are a known blind spot, and the output says so. Read the `note` lines: they list what each PASS did not test.
 
 Leak 2 is between two tenants. AT-02 checks `kube-system` by default; `--other-namespace` points it at another namespace. Check every pair of teams:
 
