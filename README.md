@@ -91,7 +91,7 @@ On a namespace that already runs pods, read each `fix` line before you apply it:
 
 ## Playbooks
 
-[playbooks/](playbooks/) has step-by-step setups by role, each from zero on a kind cluster and tested: a minimal platform with a provisioning gate, a security review with planted RBAC leaks and an audit-log check, an application developer's own namespace, a CI gate and a nightly CronJob, Kyverno with Policy Reporter, Capsule tenants, a 60-minute workshop, and a guide for the first run on a real cluster. Each one starts with a prompt that you can give to a coding agent.
+[playbooks/](playbooks/) has step-by-step setups by role, each from zero on a kind cluster and tested: a minimal platform with a provisioning gate, a security review with planted RBAC leaks and an audit-log check, an application developer's own namespace, a CI gate and a nightly CronJob, Kyverno with Policy Reporter, Capsule tenants, a 60-minute workshop, and a guide for the first run on a real cluster. Each one starts with a prompt that you can give to a coding agent. The separate [Platform Engineering 101](https://github.com/BodhiSatvik/platform-engineering-101) workshop is a 2-hour class: ship one app by hand, then through a small demo platform, and check both namespaces with audit-tenant.
 
 ## Who runs it, and how
 
