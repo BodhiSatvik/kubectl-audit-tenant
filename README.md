@@ -50,16 +50,16 @@ To uninstall, run `kubectl krew uninstall audit-tenant`, or remove the `kubectl-
 
 ## Quick start (kind, about five minutes)
 
-You need Docker, [kind](https://kind.sigs.k8s.io/), kubectl and the plugin. Make a cluster with one tenant namespace, and run the audit as the tenant's service account:
+You need Docker, [kind](https://kind.sigs.k8s.io/), kubectl and the plugin. Make a cluster with one tenant namespace, and run the audit as the tenant's service account. Each command after `kind create` names the kind context, so if the cluster was not created they fail instead of changing another cluster:
 
 ```bash
 kind create cluster --name audit-demo
-kubectl create namespace team-a
-kubectl create serviceaccount dev -n team-a
-kubectl create rolebinding dev-edit -n team-a --clusterrole=edit --serviceaccount=team-a:dev
+kubectl --context kind-audit-demo create namespace team-a
+kubectl --context kind-audit-demo create serviceaccount dev -n team-a
+kubectl --context kind-audit-demo create rolebinding dev-edit -n team-a --clusterrole=edit --serviceaccount=team-a:dev
 # on a cluster only seconds old, the role can take a few seconds to take effect
-for i in $(seq 30); do kubectl auth can-i list pods -n team-a --as system:serviceaccount:team-a:dev >/dev/null && break; sleep 1; done
-kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
+for i in $(seq 30); do kubectl --context kind-audit-demo auth can-i list pods -n team-a --as system:serviceaccount:team-a:dev >/dev/null && break; sleep 1; done
+kubectl audit-tenant --context kind-audit-demo -n team-a --as system:serviceaccount:team-a:dev
 ```
 
 The namespace has no fences yet, so most checks fail. An excerpt of a real run on Kubernetes v1.37.0 on kind:
@@ -81,11 +81,11 @@ FAIL  AT-09    Pod Security Admission enforced     namespace team-a has no pod-s
 Add one fence and run again:
 
 ```bash
-kubectl label namespace team-a pod-security.kubernetes.io/enforce=restricted
-kubectl audit-tenant -n team-a --as system:serviceaccount:team-a:dev
+kubectl --context kind-audit-demo label namespace team-a pod-security.kubernetes.io/enforce=restricted
+kubectl audit-tenant --context kind-audit-demo -n team-a --as system:serviceaccount:team-a:dev
 ```
 
-AT-04.1 to AT-04.5 and AT-09 now pass. Each AT-04 reason quotes the Pod Security Admission message that refused the probe, and AT-09 names the label. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`.
+AT-04.1 to AT-04.5 and AT-09 now pass. Each AT-04 reason quotes the Pod Security Admission message that refused the probe, and AT-09 names the label. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`. kind removes its context, so switch kubectl back to your own cluster with `kubectl config use-context`.
 
 On a namespace that already runs pods, read each `fix` line before you apply it: a Pod Security level or a compute quota also applies to the next pods of your running workloads. The AT-09 fix starts with a `--dry-run=server` that warns about the pods the level would refuse.
 
@@ -306,7 +306,7 @@ Checked on kind with Kubernetes 1.37: a v0.1.1 Job with `--as` and this kubeconf
 
 ## What a PASS does not prove
 
-- **Grants limited to named objects.** SSARs carry no resource name, so a role that grants access to specific Secrets or roles by `resourceNames` is not seen.
+- **Grants limited to named objects.** The tool's SSARs carry no resource name, so a role that grants access to specific Secrets or roles by `resourceNames` is not seen.
 - **That the network plugin enforces NetworkPolicy.** AT-08 reads the policy objects only.
 - **That PSA applies to the tenant.** AT-09 passes on the namespace label. Whether Pod Security Admission really refuses the tenant's pods is what AT-04 tests: an exemption for the identity or the namespace shows there, not in AT-09.
 - **Pods created by controllers.** If the tenant may not create pods but may create or scale Deployments, Jobs or other pod controllers, AT-04 shows SKIP: those pods bypass the tenant's own RBAC. A PASS also says nothing about pods that a controller's service account creates under a Pod Security Admission exemption that the tenant's own probes do not have.
