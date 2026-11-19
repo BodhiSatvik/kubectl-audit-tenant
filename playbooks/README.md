@@ -10,7 +10,7 @@ Step-by-step ways to try `kubectl audit-tenant` for your role, from zero, on a t
 | A platform team | Build a minimal shared cluster from zero, give every team a fenced namespace, and refuse a namespace that is not fenced | [platform-team.md](platform-team.md) | 15 min |
 | A startup that runs each customer or environment in its own namespace | Show, with dated evidence, that customers are kept apart | [platform-team.md](platform-team.md), then [security-review.md](security-review.md) | 35 min |
 | A security engineer, an auditor or a consultant | Find RBAC leaks between teams, and keep a dated page of verdicts per team | [security-review.md](security-review.md) | 20 min |
-| The person who must approve a new tool | Prove from the API server's own audit log that it changes nothing | [security-review.md](security-review.md), part 6 | 10 min |
+| The person who must approve a new tool | Check in the API server's own audit log that it made no writes | [security-review.md](security-review.md), part 6 | 10 min |
 | An application developer | Check your own namespace with your own login, and see whether your next rollout fits the quota | [app-developer.md](app-developer.md) | 10 min |
 | A DevOps or CI owner | Fail a pull request when the namespace template drops a fence, and audit every team each night | [ci-and-nightly.md](ci-and-nightly.md) | 20 min |
 | A Kyverno user | Show what each tenant can really do next to Kyverno's results in Policy Reporter | [kyverno-dashboard.md](kyverno-dashboard.md) | 20 min |
