@@ -8,6 +8,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 - `playbooks/`: step-by-step setups from zero on kind, by role: a platform team, a security review, an application developer, a CI gate and nightly audit, Kyverno with Policy Reporter, Capsule tenants and a 60-minute workshop, plus a guide for the first run on a real cluster. Each one shows output from a real v0.1.2 run, starts with a prompt for a coding agent, and ends with a link to the new "Playbook report" issue form (`.github/ISSUE_TEMPLATE/playbook-report.yml`), with the playbook name filled in.
 - `docs/runner-role.md`: the least rights to run with `--as` (`impersonate` on the tenant's identity only), for a service-account tenant and a user tenant, checked on kind. The README's Safety section now says that the tool sends no telemetry and talks only to the API server.
+- `playbooks/README.md` and the README link the Platform Engineering 101 workshop, a separate repo (`BodhiSatvik/platform-engineering-101`): a 2-hour class that ships one app by hand, then through a small demo platform, and checks both namespaces with audit-tenant.
 
 ### Changed
 

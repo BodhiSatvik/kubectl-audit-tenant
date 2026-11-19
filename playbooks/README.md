@@ -16,6 +16,7 @@ Step-by-step ways to try `kubectl audit-tenant` for your role, from zero, on a t
 | A Kyverno user | Show what each tenant can really do next to Kyverno's results in Policy Reporter | [kyverno-dashboard.md](kyverno-dashboard.md) | 20 min |
 | A Capsule user | Check each tenant's namespaces as the tenant owner | [capsule.md](capsule.md) | 15 min |
 | A meetup host, a teacher or a student | Run a 60-minute hands-on lab: find and fix six broken fences | [workshop.md](workshop.md) | 60 min |
+| A meetup host, a teacher or a student | Teach platform engineering 101: ship one app by hand, then through a small demo platform, and check both namespaces with audit-tenant | [platform-engineering-101](https://github.com/BodhiSatvik/platform-engineering-101) (a separate repo) | 2 hours |
 | Anyone who finished a playbook | Use it on a real cluster safely, then on every namespace | [real-cluster.md](real-cluster.md) | 30 min |
 
 First time? Do [setup.md](setup.md): it checks and installs the four tools that every playbook needs.
