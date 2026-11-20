@@ -19,6 +19,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - The README quick start names the kind context in every kubectl command, so a failed `kind create cluster` cannot send them to another cluster.
 - The README and the security-review playbook say that the tool's SSARs, not SSARs in general, carry no resource name. `DESIGN.md` names rakkess as a permission viewer that takes `--as`, and dates kubectl-mtb by its last change: it had no tagged release.
 - The README's paper link opens the paper's ResearchGate page. The paper's DOI resolves to a removed page for now; `CITATION.cff` keeps the DOI and adds the publisher's page URL.
+- The README and the playbooks say that the tool is designed to avoid persistent changes, not that it never changes the cluster, and what a run does when a proxy drops `dryRun=All`. The README quick start has no `#` comment line in its code (plain interactive zsh runs it as a command), and its long commands break at 72 characters or less.
 
 ## [0.1.2] - 2026-11-02
 

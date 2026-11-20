@@ -8,7 +8,7 @@ Check, from the tenant's side, whether a Kubernetes namespace is fenced.
 
 ## Why
 
-A platform team that shares one cluster between teams must show that team A cannot reach team B, and today the proof usually comes from the admin's side: tools that read roles and policies and infer what a tenant could do. `kubectl audit-tenant` asks the cluster directly, as the tenant, with permission checks and server-side dry runs, and prints one verdict per fence with the layer that decided it, a benchmark ID and a fix. It never changes the cluster.
+A platform team that shares one cluster between teams must show that team A cannot reach team B, and today the proof usually comes from the admin's side: tools that read roles and policies and infer what a tenant could do. `kubectl audit-tenant` asks the cluster directly, as the tenant, with permission checks and server-side dry runs, and prints one verdict per fence with the layer that decided it, a benchmark ID and a fix. It is designed to avoid persistent changes: the API server stores nothing for a dry-run request. If a proxy drops `dryRun=All` and the server stores an object, the run reports ERROR with the object's name and sends no further create ([Safety](#safety)).
 
 The results cover the ten checks below (fourteen results). They do not prove complete tenant isolation.
 
@@ -50,16 +50,21 @@ To uninstall, run `kubectl krew uninstall audit-tenant`, or remove the `kubectl-
 
 ## Quick start (kind, about five minutes)
 
-You need Docker, [kind](https://kind.sigs.k8s.io/), kubectl and the plugin. Make a cluster with one tenant namespace, and run the audit as the tenant's service account. Each command after `kind create` names the kind context, so if the cluster was not created they fail instead of changing another cluster:
+You need Docker, [kind](https://kind.sigs.k8s.io/), kubectl and the plugin. Make a cluster with one tenant namespace, and run the audit as the tenant's service account. On a cluster only seconds old, the role can take a few seconds to take effect, so the loop waits for it. Each command after `kind create` names the kind context, so if the cluster was not created they fail instead of changing another cluster:
 
 ```bash
 kind create cluster --name audit-demo
 kubectl --context kind-audit-demo create namespace team-a
 kubectl --context kind-audit-demo create serviceaccount dev -n team-a
-kubectl --context kind-audit-demo create rolebinding dev-edit -n team-a --clusterrole=edit --serviceaccount=team-a:dev
-# on a cluster only seconds old, the role can take a few seconds to take effect
-for i in $(seq 30); do kubectl --context kind-audit-demo auth can-i list pods -n team-a --as system:serviceaccount:team-a:dev >/dev/null && break; sleep 1; done
-kubectl audit-tenant --context kind-audit-demo -n team-a --as system:serviceaccount:team-a:dev
+kubectl --context kind-audit-demo create rolebinding dev-edit \
+  -n team-a --clusterrole=edit --serviceaccount=team-a:dev
+for i in $(seq 30); do
+  kubectl --context kind-audit-demo auth can-i list pods -n team-a \
+    --as system:serviceaccount:team-a:dev >/dev/null && break
+  sleep 1
+done
+kubectl audit-tenant --context kind-audit-demo -n team-a \
+  --as system:serviceaccount:team-a:dev
 ```
 
 The namespace has no fences yet, so most checks fail. An excerpt of a real run on Kubernetes v1.37.0 on kind:
@@ -81,8 +86,10 @@ FAIL  AT-09    Pod Security Admission enforced     namespace team-a has no pod-s
 Add one fence and run again:
 
 ```bash
-kubectl --context kind-audit-demo label namespace team-a pod-security.kubernetes.io/enforce=restricted
-kubectl audit-tenant --context kind-audit-demo -n team-a --as system:serviceaccount:team-a:dev
+kubectl --context kind-audit-demo label namespace team-a \
+  pod-security.kubernetes.io/enforce=restricted
+kubectl audit-tenant --context kind-audit-demo -n team-a \
+  --as system:serviceaccount:team-a:dev
 ```
 
 AT-04.1 to AT-04.5 and AT-09 now pass. Each AT-04 reason quotes the Pod Security Admission message that refused the probe, and AT-09 names the label. The five FAILs left (NodePort, quota, LimitRange, NetworkPolicy, rollout headroom) each print a `fix` line. When you are done, run `kind delete cluster --name audit-demo`. kind removes its context, so switch kubectl back to your own cluster with `kubectl config use-context`.

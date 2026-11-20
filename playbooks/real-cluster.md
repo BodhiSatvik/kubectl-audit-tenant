@@ -25,7 +25,7 @@ from the playbook's last section.
 
 Read [Safety](../README.md#safety) in the README. In short:
 
-- **It changes nothing.** It sends access reviews (SelfSubjectAccessReview, the API call that asks "may this identity do X?"), one SelfSubjectReview, and pod and Service creates with `dryRun=All`, which the API server checks and then throws away. Its HTTP transport refuses every other request before it leaves the process. It never reads a Secret.
+- **It is designed to avoid persistent changes.** It sends access reviews (SelfSubjectAccessReview, the API call that asks "may this identity do X?"), one SelfSubjectReview, and pod and Service creates with `dryRun=All`, which the API server checks and then throws away. If a proxy drops `dryRun=All` and the server stores an object, the run reports ERROR with the object's name and sends no further create. Its HTTP transport refuses every other request before it leaves the process. It never reads a Secret.
 - **It talks only to your API server.** No telemetry, no update check.
 - **Others will see it.** Your API audit log records every request, with the user agent `audit-tenant/0.1.2`. Admission webhooks and policy engines see the dry-run pods, including the dangerous ones that they refuse. If your security team alerts on refused requests, tell them before you run it. To check the read-only claim yourself first, do part 6 of [security-review.md](security-review.md) on kind.
 - **Check the binary.** The release has a `checksums.txt`; [setup.md](setup.md) shows how to check it.

@@ -1,6 +1,6 @@
 # Playbook: a security review between teams
 
-For a security engineer, an auditor, or a consultant who must answer "can team A reach team B?" with proof, and for anyone who must approve a new tool before it touches a real cluster. You build a cluster with two fenced teams, plant five RBAC mistakes of the kind found in real clusters, find them as each team, keep a dated evidence page, and then prove from the API server's own audit log that the tool changed nothing.
+For a security engineer, an auditor, or a consultant who must answer "can team A reach team B?" with proof, and for anyone who must approve a new tool before it touches a real cluster. You build a cluster with two fenced teams, plant five RBAC mistakes of the kind found in real clusters, find them as each team, keep a dated evidence page, and then check in the API server's own audit log that the tool made no writes.
 
 | | |
 |---|---|
@@ -261,7 +261,7 @@ machine output: -o json, -o policyreport
 
 The line under the summary names the tool version, the time (UTC), the server and the Kubernetes version, so the page is evidence on its own. For machine-readable records, use `-o json` (schema: [`docs/report.schema.json`](../docs/report.schema.json)). Keep the records outside the cluster.
 
-## 6. Prove that the tool changed nothing
+## 6. Check that the tool made no writes
 
 Copy the audit log out of the kind node, then look only at the requests whose user agent is the tool's:
 
@@ -317,6 +317,6 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 
 A [playbook report](https://github.com/BodhiSatvik/kubectl-audit-tenant/issues/new?template=playbook-report.yml&playbook=security-review) takes a few minutes, and the playbook name is already filled in. A report about problems helps as much as one about success. The answers that help most for this playbook:
 
-- Did step 6, the audit-log check, show you enough to trust that the tool changes nothing?
+- Did step 6, the audit-log check, show you enough to trust that the tool made no writes?
 - Would the dated pages from step 5 work in your audits or customer reviews? What is missing?
 - The step that broke or was unclear, if any.

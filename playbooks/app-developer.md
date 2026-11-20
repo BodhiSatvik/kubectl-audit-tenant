@@ -183,7 +183,7 @@ kind removes the cluster's context, so kubectl now has no current context. Go ba
 
 ## Use it on your cluster
 
-- Run `kubectl audit-tenant` with your usual kubeconfig, in the namespace you deploy to. It needs no rights beyond your own, and it changes nothing ([Safety](../README.md#safety)).
+- Run `kubectl audit-tenant` with your usual kubeconfig, in the namespace you deploy to. It needs no rights beyond your own, and it is designed to avoid persistent changes ([Safety](../README.md#safety)).
 - Before you raise `replicas` or the HPA's `maxReplicas`, run `kubectl audit-tenant --checks AT-10 -o wide`.
 - Some FAILs only the platform team can fix, such as an RBAC grant outside your namespace. Send them the output: each FAIL has a `fix` line, and the last line names the tool version, the time and the server.
 - If your namespace has no fences at all, show your platform team the [platform-team playbook](platform-team.md).
